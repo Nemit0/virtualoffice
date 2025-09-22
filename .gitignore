@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.env
 
 # OSX useful to ignore
 *.DS_Store
@@ -60,3 +61,7 @@ var/
 
 # Briefcase log files
 logs/
+# Simulation artifacts
+vdos.db
+*.db
+
