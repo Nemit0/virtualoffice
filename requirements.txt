@@ -1,0 +1,8 @@
+openai
+fastapi
+uvicorn
+email-validator
+httpx
+briefcase
+python-dotenv
+PyQT6
