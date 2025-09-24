@@ -1,23 +1,66 @@
-# Repository Guidelines
+﻿# Repository Guidelines
 
-## Project Structure & Module Organization
-VirtualOffice is a Briefcase-generated PySide6 app. Core UI code lives in `src/virtualoffice/app.py`, and auxiliary modules are grouped by role: `servers/` hosts background services such as `email_server.py`; `virtualWorkers/` holds simulated agent logic; `utils/` contains shared helpers like `completion_util.py` for OpenAI access. Assets bundled with the app belong under `src/virtualoffice/resources/`. Tests reside in `tests/`, mirroring package names.
+## Project Overview
+Virtual Department Operations Simulator (VDOS) is a headless-first sandbox that generates realistic departmental comms (email + chat) and agent behaviour so downstream systems (dashboards, analytics, AI assistants) can iterate without exposing production data.
 
-## Build, Test, and Development Commands
-- `python -m venv .venv && .venv\Scripts\activate` sets up the expected virtual environment.
-- `python -m pip install -r requirements.txt` syncs runtime and tooling deps.
-- `python -m briefcase dev` launches the desktop app in development mode.
-- `briefcase build windows` packages a distributable build; swap the platform token as needed.
-- `pytest` runs the unit suite in `tests/`.
+## Current High-Level Architecture
+- **PySide6 App** (`src/virtualoffice/app.py`): developer GUI for spinning up services, driving the sim, and tailing logs.
+- **FastAPI services** (`src/virtualoffice/servers`): REST backends for email and chat communication.
+- **Simulation manager** (`src/virtualoffice/sim_manager`): orchestrates ticks, persists people/events, and calls the comms services.
+- **Virtual workers** (`src/virtualoffice/virtualWorkers`): persona templates + helpers for hourly planning prompts.
+- **Common utilities** (`src/virtualoffice/common` & `src/virtualoffice/utils`): database access, OpenAI helper.
+- **Tests** (`tests/`): pytest suite covering email/chat servers, simulation control loop, and worker markdown.
 
-## Coding Style & Naming Conventions
-Follow PEP 8 with 4-space indentation. Keep modules and functions in `snake_case`, Qt widget subclasses in `PascalCase`, and constants in `UPPER_SNAKE_CASE`. Organize imports as stdlib, third-party, then local. When touching server code, prefer FastAPI path functions that return dictionaries. Log meaningful events with the configured root logger rather than `print`.
+## Modules & Responsibilities
 
-## Testing Guidelines
-Add or update `tests/test_*.py` files alongside new modules. Use pytest's fixture pattern for setup, and assert against concrete payloads (for example, serialized email records) instead of broad truthiness. Target at least one regression test per bug fix and cover new API endpoints or UI flows before submitting.
+### PySide6 Application (`src/virtualoffice/app.py`)
+- Starts/stops each FastAPI service individually from the GUI.
+- Provides simulation controls (seed worker, start/stop sim, advance ticks) and a live log viewer.
+- Uses background threads (`RequestWorker`) so HTTP calls and server startup do not block the UI.
+- Exposes `start_server(name)`, `stop_server(name)`, and `is_server_running(name)` used by the dashboard.
 
-## Commit & Pull Request Guidelines
-The repository has no formal history yet; adopt Conventional Commit prefixes (`feat:`, `fix:`, `chore:`) and keep messages under 72 characters in the subject. Open pull requests with a concise summary, testing notes (`pytest`, `briefcase dev`, etc.), and link to any tracking issue. Include screenshots or log excerpts when UI or server behavior changes.
+### Email Server (`src/virtualoffice/servers/email`)
+- `app.py`: FastAPI app exposing `/emails/send`, `/mailboxes/{address}/emails`, `/mailboxes/{address}/drafts`, etc.
+- `models.py`: Pydantic models for payloads (`EmailSend`, `DraftCreate`, `Mailbox`).
+- Persists to SQLite via `virtualoffice.common.db`. Automatically provisions mailboxes when needed.
 
-## Security & Configuration Tips
-Store secrets such as `OPENAI_API_KEY` in `.env` and never commit overrides. Confirm `.env` is loaded before running `completion_util.py`. Rotate generated SQLite files under `src/virtualoffice/servers/database/` when sharing artifacts, and scrub sample data that may contain user identifiers.
+### Chat Server (`src/virtualoffice/servers/chat`)
+- `app.py`: FastAPI service for rooms, messages, and DMs (auto-creates users/rooms as needed).
+- `models.py`: Pydantic models for chat entities.
+- Stores memberships and messages in SQLite, paralleling the email server’s structure.
+
+### Simulation Manager (`src/virtualoffice/sim_manager`)
+- `app.py`: FastAPI API (start/stop/advance, CRUD people, event injection).
+- `engine.py`: SQLite-backed orchestration of ticks, email/chat dispatch, persona markdown storage.
+- `gateways.py`: HTTP client adapters for talking to email/chat services.
+- `schemas.py`: request/response models for the Simulation API.
+
+### Virtual Workers (`src/virtualoffice/virtualWorkers`)
+- `worker.py`: markdown persona builder (`WorkerPersona`, `ScheduleBlock`, `build_worker_markdown`) and `VirtualWorker` helper that can form chat prompts.
+
+### Common Utilities
+- `src/virtualoffice/common/db.py`: SQLite connection helpers used by all services.
+- `src/virtualoffice/utils/completion_util.py`: OpenAI client wrapper (optional dependency).
+
+### Tests (`tests/`)
+- `test_email_server.py`, `test_chat_server.py`: exercise REST endpoints with ASGI testclients.
+- `test_sim_manager.py`: spins up in-memory email/chat services and validates simulation API flows.
+- `test_virtual_worker.py`: ensures persona markdown builder formatting.
+
+## Typical Dev Loop
+1. Activate `.venv` and install deps (`pip install -r requirements.txt`).
+2. `python -m pytest` for regression suite.
+3. Launch GUI via `briefcase dev`, start services individually, and drive sim from the dashboard.
+
+## Notable Configuration / Env Vars
+- `VDOS_EMAIL_HOST`, `VDOS_EMAIL_PORT`, `VDOS_CHAT_HOST`, `VDOS_CHAT_PORT`: service endpoints used by GUI and simulation manager.
+- `VDOS_SIM_HOST`, `VDOS_SIM_PORT`, `VDOS_SIM_BASE_URL`: simulation API endpoint.
+- `VDOS_DB_PATH`: overrides SQLite location (defaults to `src/virtualoffice/vdos.db`).
+- `.env` (LOCAL ONLY): stores `OPENAI_API_KEY` for `completion_util`.
+
+## Next Steps / Ideas
+- Replace FastAPI `@app.on_event` hooks with lifespan handlers to remove deprecation warnings.
+- Extend PySide dashboard with persona CRUD and live metrics.
+- Add more detailed simulation logic (tick policies, event reactions) inside `SimulationEngine`.
+- Package services separately for production (disable GUI auto start, provide CLI scripts).
+#

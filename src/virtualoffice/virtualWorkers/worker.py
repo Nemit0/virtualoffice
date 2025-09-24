@@ -10,6 +10,32 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when optional deps mi
     def generate_text(*args, **kwargs):  # type: ignore[override]
         raise RuntimeError("OpenAI client is not installed; install optional dependencies to enable text generation.")
 
+def _to_minutes(value: str) -> int:
+    hour, minute = value.split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def _format_minutes(total: int) -> str:
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def render_minute_schedule(blocks: Sequence[ScheduleBlock], granularity: int = 15) -> str:
+    if not blocks:
+        return "00:00-23:59 Hold for assignments"
+    slices: list[str] = []
+    for block in blocks:
+        start = _to_minutes(block.start)
+        end = _to_minutes(block.end)
+        if end <= start:
+            end = start + granularity
+        current = start
+        while current < end:
+            next_mark = min(current + granularity, end)
+            slices.append(f"{_format_minutes(current)}-{_format_minutes(next_mark)} {block.activity}")
+            current = next_mark
+    return "\n".join(slices)
+
+
 DEFAULT_STATUSES: Sequence[str] = (
     "Working",
     "Away",
@@ -166,6 +192,10 @@ class VirtualWorker(Worker):
             statuses=self.statuses,
         )
 
+    def minute_schedule(self, granularity: int = 15) -> str:
+        schedule_blocks = [ScheduleBlock(block.start, block.end, block.activity) for block in self.schedule]
+        return render_minute_schedule(schedule_blocks, granularity=granularity)
+
     def plan_next_hour(self):
         raise NotImplementedError("VirtualWorker planning is orchestrated by the simulation manager.")
 
@@ -178,7 +208,7 @@ class VirtualWorker(Worker):
             {"role": "user", "content": "Provide the next hourly plan."},
         ]
 
-    def request_plan(self, model: str = "gpt-3.5-turbo") -> tuple[str, int]:
+    def request_plan(self, model: str = "gpt-4o-mini") -> tuple[str, int]:
         prompt = self.as_prompt()
         response_text, tokens = generate_text(prompt, model=model)
         self.memory.append(response_text)
@@ -208,3 +238,15 @@ if __name__ == "__main__":
     )
     worker = VirtualWorker(persona, schedule)
     print(worker.persona_markdown)
+
+    # test the planning request
+    plan, token_count = worker.request_plan()
+    print(f"--- Plan (tokens: {token_count}) ---\n{plan}")
+    print("Done")
+
+    # minute schedule test
+    print("--- Minute Schedule (15 min) ---")
+    print(worker.minute_schedule(granularity=15))
+    print("--- Minute Schedule (30 min) ---")
+    print(worker.minute_schedule(granularity=30))
+    print("Done")

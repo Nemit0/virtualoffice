@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 
 from .engine import SimulationEngine
 from .gateways import HttpChatGateway, HttpEmailGateway
@@ -12,10 +12,17 @@ from .schemas import (
     EventRead,
     PersonCreate,
     PersonRead,
+    PlanTypeLiteral,
+    ProjectPlanRead,
     SimulationAdvanceRequest,
     SimulationAdvanceResult,
     SimulationControlResponse,
+    SimulationStartRequest,
     SimulationState,
+    DailyReportRead,
+    SimulationReportRead,
+    TokenUsageSummary,
+    WorkerPlanRead,
 )
 
 API_PREFIX = "/api/v1"
@@ -68,19 +75,80 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     def create_person(payload: PersonCreate, engine: SimulationEngine = Depends(get_engine)) -> PersonRead:
         return engine.create_person(payload)
 
+    @app.delete(f"{API_PREFIX}/people/by-name/{{person_name}}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_person(person_name: str, engine: SimulationEngine = Depends(get_engine)) -> None:
+        deleted = engine.delete_person_by_name(person_name)
+        if not deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+
+    @app.get(f"{API_PREFIX}/simulation/project-plan", response_model=ProjectPlanRead | None)
+    def get_project_plan(engine: SimulationEngine = Depends(get_engine)) -> ProjectPlanRead | None:
+        plan = engine.get_project_plan()
+        return plan if plan is not None else None
+
+    @app.get(f"{API_PREFIX}/people/{{person_id}}/plans", response_model=list[WorkerPlanRead])
+    def get_worker_plans(
+        person_id: int,
+        plan_type: PlanTypeLiteral | None = Query(default=None),
+        limit: int | None = Query(default=20, ge=1, le=200),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> list[WorkerPlanRead]:
+        return engine.list_worker_plans(person_id, plan_type=plan_type, limit=limit)
+
+    @app.get(f"{API_PREFIX}/people/{{person_id}}/daily-reports", response_model=list[DailyReportRead])
+    def get_daily_reports(
+        person_id: int,
+        day_index: int | None = Query(default=None, ge=0),
+        limit: int | None = Query(default=20, ge=1, le=200),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> list[DailyReportRead]:
+        return engine.list_daily_reports(person_id, day_index=day_index, limit=limit)
+
+    @app.get(f"{API_PREFIX}/simulation/reports", response_model=list[SimulationReportRead])
+    def get_simulation_reports(
+        limit: int | None = Query(default=10, ge=1, le=200),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> list[SimulationReportRead]:
+        return engine.list_simulation_reports(limit=limit)
+
+    @app.get(f"{API_PREFIX}/simulation/token-usage", response_model=TokenUsageSummary)
+    def get_token_usage(engine: SimulationEngine = Depends(get_engine)) -> TokenUsageSummary:
+        usage = engine.get_token_usage()
+        total = sum(usage.values())
+        return TokenUsageSummary(per_model=usage, total_tokens=total)
+
     @app.get(f"{API_PREFIX}/simulation", response_model=SimulationState)
     def get_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationState:
         return engine.get_state()
 
     @app.post(f"{API_PREFIX}/simulation/start", response_model=SimulationControlResponse)
-    def start_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
-        state = engine.start()
-        return SimulationControlResponse(current_tick=state.current_tick, is_running=state.is_running, message="Simulation started")
+    def start_simulation(
+        payload: SimulationStartRequest | None = Body(default=None),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> SimulationControlResponse:
+        try:
+            state = engine.start(payload)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        message = "Simulation started"
+        if payload is not None:
+            message += f" for project '{payload.project_name}'"
+        return SimulationControlResponse(current_tick=state.current_tick, is_running=state.is_running, auto_tick=state.auto_tick, message=message)
 
     @app.post(f"{API_PREFIX}/simulation/stop", response_model=SimulationControlResponse)
     def stop_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         state = engine.stop()
-        return SimulationControlResponse(current_tick=state.current_tick, is_running=state.is_running, message="Simulation stopped")
+        return SimulationControlResponse(current_tick=state.current_tick, is_running=state.is_running, auto_tick=state.auto_tick, message="Simulation stopped")
+
+    @app.post(f"{API_PREFIX}/simulation/ticks/start", response_model=SimulationControlResponse)
+    def start_ticks(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
+        state = engine.start_auto_ticks()
+        return SimulationControlResponse(current_tick=state.current_tick, is_running=state.is_running, auto_tick=state.auto_tick, message="Automatic ticking enabled")
+
+    @app.post(f"{API_PREFIX}/simulation/ticks/stop", response_model=SimulationControlResponse)
+    def stop_ticks(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
+        state = engine.stop_auto_ticks()
+        return SimulationControlResponse(current_tick=state.current_tick, is_running=state.is_running, auto_tick=state.auto_tick, message="Automatic ticking disabled")
 
     @app.post(f"{API_PREFIX}/simulation/advance", response_model=SimulationAdvanceResult)
     def advance_simulation(

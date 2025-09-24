@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Literal, Sequence
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -20,6 +20,7 @@ class PersonCreate(BaseModel):
     communication_style: str
     email_address: str
     chat_handle: str
+    is_department_head: bool = False
     skills: Sequence[str]
     personality: Sequence[str]
     objectives: Sequence[str] | None = None
@@ -45,6 +46,7 @@ class PersonRead(PersonCreate):
 class SimulationState(BaseModel):
     current_tick: int = 0
     is_running: bool = False
+    auto_tick: bool = False
 
 
 class SimulationAdvanceRequest(BaseModel):
@@ -73,3 +75,65 @@ class EventCreate(BaseModel):
 
 class EventRead(EventCreate):
     id: int
+
+class SimulationStartRequest(BaseModel):
+    project_name: str
+    project_summary: str
+    duration_weeks: int = Field(default=4, ge=1, le=52)
+    department_head_name: str | None = None
+    model_hint: str | None = Field(default=None, description="Optional override for planning model")
+
+
+class ProjectPlanRead(BaseModel):
+    id: int
+    project_name: str
+    project_summary: str
+    plan: str
+    generated_by: int | None = None
+    duration_weeks: int
+    model_used: str
+    tokens_used: int | None = None
+    created_at: str
+
+
+PlanTypeLiteral = Literal['daily', 'hourly']
+
+
+class WorkerPlanRead(BaseModel):
+    id: int
+    person_id: int
+    tick: int
+    plan_type: PlanTypeLiteral
+    content: str
+    model_used: str
+    tokens_used: int | None = None
+    context: str | None = None
+    created_at: str
+
+
+
+class DailyReportRead(BaseModel):
+    id: int
+    person_id: int
+    day_index: int
+    report: str
+    schedule_outline: str
+    model_used: str
+    tokens_used: int | None = None
+    created_at: str
+
+
+class SimulationReportRead(BaseModel):
+    id: int
+    report: str
+    model_used: str
+    tokens_used: int | None = None
+    total_ticks: int
+    created_at: str
+
+
+
+class TokenUsageSummary(BaseModel):
+    per_model: dict[str, int] = Field(default_factory=dict)
+    total_tokens: int = 0
+
