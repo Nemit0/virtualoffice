@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Callable, Protocol, Sequence
 
 try:
@@ -15,6 +16,13 @@ from .schemas import PersonRead
 
 PlanGenerator = Callable[[list[dict[str, str]], str], tuple[str, int]]
 
+
+
+DEFAULT_PROJECT_MODEL = os.getenv("VDOS_PLANNER_PROJECT_MODEL", "gpt-4o-mini")
+DEFAULT_DAILY_MODEL = os.getenv("VDOS_PLANNER_DAILY_MODEL", DEFAULT_PROJECT_MODEL)
+DEFAULT_HOURLY_MODEL = os.getenv("VDOS_PLANNER_HOURLY_MODEL", DEFAULT_DAILY_MODEL)
+DEFAULT_DAILY_REPORT_MODEL = os.getenv("VDOS_PLANNER_DAILY_REPORT_MODEL")
+DEFAULT_SIM_REPORT_MODEL = os.getenv("VDOS_PLANNER_SIM_REPORT_MODEL")
 
 @dataclass
 class PlanResult:
@@ -96,11 +104,11 @@ class GPTPlanner:
     def __init__(
         self,
         generator: PlanGenerator | None = None,
-        project_model: str = "o3",
-        daily_model: str = "gpt-4o-mini",
-        hourly_model: str = "gpt-4o-mini",
-        daily_report_model: str | None = None,
-        simulation_report_model: str | None = None,
+        project_model: str = DEFAULT_PROJECT_MODEL,
+        daily_model: str = DEFAULT_DAILY_MODEL,
+        hourly_model: str = DEFAULT_HOURLY_MODEL,
+        daily_report_model: str | None = DEFAULT_DAILY_REPORT_MODEL,
+        simulation_report_model: str | None = DEFAULT_SIM_REPORT_MODEL,
     ) -> None:
         if generator is None:
             def _default(messages: list[dict[str, str]], model: str) -> tuple[str, int]:
@@ -307,3 +315,124 @@ class GPTPlanner:
         except Exception as exc:  # pragma: no cover - surface as planning failure
             raise PlanningError(str(exc)) from exc
         return PlanResult(content=content, model_used=model, tokens_used=tokens)
+
+
+class StubPlanner:
+    """Fallback planner that produces deterministic text without external calls."""
+
+    def _result(self, label: str, body: str, model: str) -> PlanResult:
+        content = f"[{label}]\n{body}"
+        return PlanResult(content=content, model_used=model, tokens_used=0)
+
+    def generate_project_plan(
+        self,
+        *,
+        department_head: PersonRead,
+        project_name: str,
+        project_summary: str,
+        duration_weeks: int,
+        team: Sequence[PersonRead],
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        teammates = "\n".join(f"- {member.name} ({member.role})" for member in team)
+        body = "\n".join([
+            f"Project: {project_name}",
+            f"Summary: {project_summary}",
+            f"Duration: {duration_weeks} week(s)",
+            f"Department head: {department_head.name}",
+            "Team:",
+            teammates or "- (none)",
+            "Initial focus: break work into design, build, review, and communication checkpoints.",
+        ])
+        model = model_hint or "vdos-stub-project"
+        return self._result("Project Plan", body, model)
+
+    def generate_daily_plan(
+        self,
+        *,
+        worker: PersonRead,
+        project_plan: str,
+        day_index: int,
+        duration_weeks: int,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        total_days = max(duration_weeks, 1) * 5
+        body = "\n".join([
+            f"Worker: {worker.name} ({worker.role})",
+            f"Day: {day_index + 1} / {total_days}",
+            "Goals:",
+            "- Advance project milestones",
+            "- Communicate blockers",
+            "- Capture progress for end-of-day report",
+        ])
+        model = model_hint or "vdos-stub-daily"
+        return self._result("Daily Plan", body, model)
+
+    def generate_hourly_plan(
+        self,
+        *,
+        worker: PersonRead,
+        project_plan: str,
+        daily_plan: str,
+        tick: int,
+        context_reason: str,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        hour = tick % 60 or 60
+        body = "\n".join([
+            f"Worker: {worker.name}",
+            f"Tick: {tick} (minute {hour})",
+            f"Reason: {context_reason}",
+            "Outline:",
+            "- Review priorities",
+            "- Heads-down execution",
+            "- Share update with team",
+        ])
+        model = model_hint or "vdos-stub-hourly"
+        return self._result("Hourly Plan", body, model)
+
+    def generate_daily_report(
+        self,
+        *,
+        worker: PersonRead,
+        project_plan: str,
+        day_index: int,
+        daily_plan: str,
+        hourly_log: str,
+        minute_schedule: str,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        body = "\n".join([
+            f"Worker: {worker.name}",
+            f"Day {day_index + 1} summary",
+            "Highlights:",
+            "- Delivered planned work",
+            "- Communicated status",
+            "Risks:",
+            "- Pending follow-ups",
+        ])
+        model = model_hint or "vdos-stub-daily-report"
+        return self._result("Daily Report", body, model)
+
+    def generate_simulation_report(
+        self,
+        *,
+        project_plan: str,
+        team: Sequence[PersonRead],
+        total_ticks: int,
+        tick_log: str,
+        daily_reports: str,
+        event_summary: str,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        teammates = ", ".join(person.name for person in team) or "(none)"
+        body = "\n".join([
+            f"Total ticks: {total_ticks}",
+            f"Team: {teammates}",
+            "Recap:",
+            "- Work advanced",
+            "- Communications logged",
+            "- Review outstanding risks",
+        ])
+        model = model_hint or "vdos-stub-simulation"
+        return self._result("Simulation Report", body, model)

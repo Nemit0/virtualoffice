@@ -49,27 +49,6 @@ In many orgs, the **data you want to analyze doesn’t exist yet** or can’t be
 
 ## System architecture
 
-```
-
-+-----------------------+           +----------------------+
-\|   Simulation Manager  |<--------->|  State Store (SQLite |
-\|  (orchestrates ticks) |           |   or PostgreSQL)     |
-+-----------+-----------+           +----------+-----------+
-\|                                   |
-v                                   v
-+----------------------+               +---------------------+
-\|     Email Server     |<------------->|      Chat Server    |
-\|  (FastAPI service)   |               |   (FastAPI service) |
-+----------+-----------+               +----------+----------+
-^                                      ^
-\|                                      |
-\|                                      |
-+------+-------+                        +-----+------+
-\|   Agents     |                        | Monitoring |
-\| (Employees)  |                        |   GUI/API  |
-+--------------+                        +------------+
-
-````
 
 **Implementation stance**
 - Each server is a standalone FastAPI app exposing REST endpoints.
@@ -94,6 +73,8 @@ v                                   v
 ### 3) Simulation Manager
 - Owns **clock**, **event schedule**, **project backlog**, and **policy knobs**.
 - At each tick: advances time, dispatches planned sends, injects events, triggers replanning, records metrics, and writes audit logs.
+- Supports per-run persona filters (include/exclude), reproducible random seeds, and automatic ticking loops.
+- Persists runtime state (worker inbox queues, exchange logs, status overrides, events) so long-running sims survive restarts.
 - Can run **headless** (CLI) or expose control endpoints.
 
 ### 4) Employee/Manager Agents
@@ -102,6 +83,12 @@ v                                   v
 - Maintain a personal **hourly plan** and **task queue**; adapt when events arrive.
 - Generate **messages** (email/chat) as part of plan execution.
 - Produce **daily report** before `OffDuty`.
+
+### 5) PySide6 Control Panel (Developer GUI)
+- Starts/stops each FastAPI service individually and surfaces live logs.
+- Provides project setup (name/summary/duration), random-seed entry, auto-tick toggles, and manual tick advances.
+- Offers persona creation (manual or GPT-assisted), active-persona checklists, and a department-head dropdown backed by the roster.
+- Displays hourly plans, daily reports, events, and token usage for quick inspection during runs.
 
 ---
 

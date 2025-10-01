@@ -47,6 +47,7 @@ class SimulationState(BaseModel):
     current_tick: int = 0
     is_running: bool = False
     auto_tick: bool = False
+    sim_time: str = "Day 0 00:00"
 
 
 class SimulationAdvanceRequest(BaseModel):
@@ -59,6 +60,7 @@ class SimulationAdvanceResult(BaseModel):
     current_tick: int
     emails_sent: int
     chat_messages_sent: int
+    sim_time: str
 
 
 class SimulationControlResponse(SimulationState):
@@ -82,6 +84,11 @@ class SimulationStartRequest(BaseModel):
     duration_weeks: int = Field(default=4, ge=1, le=52)
     department_head_name: str | None = None
     model_hint: str | None = Field(default=None, description="Optional override for planning model")
+    random_seed: int | None = Field(default=None, ge=0, description="Optional seed for reproducible events")
+    include_person_ids: Sequence[int] | None = Field(default=None, description="Limit the run to these persona IDs")
+    include_person_names: Sequence[str] | None = Field(default=None, description="Limit the run to personas matching these names")
+    exclude_person_ids: Sequence[int] | None = Field(default=None, description="Remove these persona IDs from the run")
+    exclude_person_names: Sequence[str] | None = Field(default=None, description="Remove personas whose names match these values")
 
 
 class ProjectPlanRead(BaseModel):
@@ -136,4 +143,11 @@ class SimulationReportRead(BaseModel):
 class TokenUsageSummary(BaseModel):
     per_model: dict[str, int] = Field(default_factory=dict)
     total_tokens: int = 0
+
+
+# --- Persona generation (dashboard autofill) ---
+class PersonaGenerateRequest(BaseModel):
+    prompt: str
+    model_hint: str | None = Field(default=None, description="Optional model name, e.g. gpt-4o-mini")
+
 

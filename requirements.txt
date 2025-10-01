@@ -5,4 +5,6 @@ email-validator
 httpx
 briefcase
 python-dotenv
-PyQT6
+PyQT6playwright
+markitdown
+markitdown[all]

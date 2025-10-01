@@ -15,7 +15,9 @@ Virtual Department Operations Simulator (VDOS) is a headless-first sandbox that 
 
 ### PySide6 Application (`src/virtualoffice/app.py`)
 - Starts/stops each FastAPI service individually from the GUI.
-- Provides simulation controls (seed worker, start/stop sim, advance ticks) and a live log viewer.
+- Provides simulation controls (seed worker, start/stop sim, advance ticks, automatic tick toggle) plus random-seed entry and a live log viewer.
+- Lets operators pick active personas per run via a checklist and department-head dropdown that stay in sync with the roster.
+- Offers persona creation/editing with optional GPT-4o auto-fill for markdown specs.
 - Uses background threads (`RequestWorker`) so HTTP calls and server startup do not block the UI.
 - Exposes `start_server(name)`, `stop_server(name)`, and `is_server_running(name)` used by the dashboard.
 
@@ -30,10 +32,10 @@ Virtual Department Operations Simulator (VDOS) is a headless-first sandbox that 
 - Stores memberships and messages in SQLite, paralleling the email server’s structure.
 
 ### Simulation Manager (`src/virtualoffice/sim_manager`)
-- `app.py`: FastAPI API (start/stop/advance, CRUD people, event injection).
-- `engine.py`: SQLite-backed orchestration of ticks, email/chat dispatch, persona markdown storage.
+- `app.py`: FastAPI API (start/stop/advance, CRUD people, event injection) with support for include/exclude persona filters and reproducible random seeds.
+- `engine.py`: SQLite-backed orchestration of ticks, email/chat dispatch, persona markdown storage, auto-tick loop management, and runtime persistence (exchange logs, inbox queue, status overrides, events).
 - `gateways.py`: HTTP client adapters for talking to email/chat services.
-- `schemas.py`: request/response models for the Simulation API.
+- `schemas.py`: request/response models for the Simulation API, including worker filtering fields.
 
 ### Virtual Workers (`src/virtualoffice/virtualWorkers`)
 - `worker.py`: markdown persona builder (`WorkerPersona`, `ScheduleBlock`, `build_worker_markdown`) and `VirtualWorker` helper that can form chat prompts.
@@ -44,7 +46,7 @@ Virtual Department Operations Simulator (VDOS) is a headless-first sandbox that 
 
 ### Tests (`tests/`)
 - `test_email_server.py`, `test_chat_server.py`: exercise REST endpoints with ASGI testclients.
-- `test_sim_manager.py`: spins up in-memory email/chat services and validates simulation API flows.
+- `test_sim_manager.py`: spins up in-memory email/chat services, exercises auto-ticking, event persistence, worker filtering, and writes rich run artifacts to `output/`.
 - `test_virtual_worker.py`: ensures persona markdown builder formatting.
 
 ## Typical Dev Loop
@@ -58,9 +60,7 @@ Virtual Department Operations Simulator (VDOS) is a headless-first sandbox that 
 - `VDOS_DB_PATH`: overrides SQLite location (defaults to `src/virtualoffice/vdos.db`).
 - `.env` (LOCAL ONLY): stores `OPENAI_API_KEY` for `completion_util`.
 
-## Next Steps / Ideas
-- Replace FastAPI `@app.on_event` hooks with lifespan handlers to remove deprecation warnings.
-- Extend PySide dashboard with persona CRUD and live metrics.
-- Add more detailed simulation logic (tick policies, event reactions) inside `SimulationEngine`.
-- Package services separately for production (disable GUI auto start, provide CLI scripts).
-#
+
+## Custom Instruction
+
+For any error output that can only be read from the gui, read the output from logs/error_output.txt

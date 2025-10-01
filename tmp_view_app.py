@@ -6,7 +6,6 @@ from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 
 from .engine import SimulationEngine
 from .gateways import HttpChatGateway, HttpEmailGateway
@@ -81,12 +80,6 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None) ->
             else:
                 raise
         # Minimal normalization
-        # Harmonize naming to satisfy dashboard/tests expectations
-        if "developer" in prompt.lower():
-            if not str(data.get("name", "")).lower().startswith("auto "):
-                data["name"] = "Auto Dev"
-            # Keep test-friendly default skill for developer prompts
-            data["skills"] = ["Python"]
         data.setdefault("timezone", "UTC")
         data.setdefault("work_hours", "09:00-17:00")
         data.setdefault("break_frequency", "50/10 cadence")
@@ -126,7 +119,7 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None) ->
             "schedule": [{"start": "09:00", "end": "10:00", "activity": "Plan"}],
         }
 
-with open(os.path.join(os.path.dirname(__file__), "index_new.html"), "r", encoding="utf-8") as f:
+with open(os.path.join(os.path.dirname(__file__), "index.html"), "r", encoding="utf-8") as f:
     DASHBOARD_HTML = f.read()
 
 def _build_default_engine() -> SimulationEngine:
@@ -158,10 +151,6 @@ def _build_default_engine() -> SimulationEngine:
 def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     app = FastAPI(title="VDOS Simulation Manager", version="0.1.0")
     app.state.engine = engine or _build_default_engine()
-
-    # Mount static files
-    static_path = os.path.join(os.path.dirname(__file__), "static")
-    app.mount("/static", StaticFiles(directory=static_path), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:
@@ -287,17 +276,6 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Simulation reset",
         )
 
-    @app.post(f"{API_PREFIX}/simulation/full-reset", response_model=SimulationControlResponse)
-    def full_reset_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
-        state = engine.reset_full()
-        return SimulationControlResponse(
-            current_tick=state.current_tick,
-            is_running=state.is_running,
-            auto_tick=state.auto_tick,
-            sim_time=state.sim_time,
-            message="Full reset complete (personas deleted)",
-        )
-
     @app.post(f"{API_PREFIX}/simulation/ticks/start", response_model=SimulationControlResponse)
     def start_ticks(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         try:
@@ -360,3 +338,4 @@ def _bootstrap_default_app() -> FastAPI:
 
 
 app = _bootstrap_default_app()
+

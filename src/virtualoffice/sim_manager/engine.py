@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from typing import Any, Iterable, List, Sequence
+import hashlib
+import logging
+import random
+import time
+import threading
+import math
+from collections import deque
+from datetime import datetime, timezone
+import math
+from dataclasses import dataclass, field
+from typing import Any, Iterable, List, Sequence, Tuple
 
 from virtualoffice.common.db import execute_script, get_connection
 from virtualoffice.virtualWorkers.worker import (
@@ -13,7 +22,7 @@ from virtualoffice.virtualWorkers.worker import (
 )
 
 from .gateways import ChatGateway, EmailGateway
-from .planner import GPTPlanner, PlanResult, Planner, PlanningError
+from .planner import GPTPlanner, PlanResult, Planner, PlanningError, StubPlanner
 from .schemas import (
     EventCreate,
     PersonCreate,
@@ -23,6 +32,34 @@ from .schemas import (
     SimulationStartRequest,
     SimulationState,
 )
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class _InboundMessage:
+    sender_id: int
+    sender_name: str
+    subject: str
+    summary: str
+    action_item: str | None
+    message_type: str
+    channel: str
+    tick: int
+    message_id: int | None = None
+
+
+@dataclass
+class _WorkerRuntime:
+    person: PersonRead
+    inbox: list[_InboundMessage] = field(default_factory=list)
+
+    def queue(self, message: _InboundMessage) -> None:
+        self.inbox.append(message)
+
+    def drain(self) -> list[_InboundMessage]:
+        items = self.inbox
+        self.inbox = []
+        return items
 
 SIM_SCHEMA = """
 CREATE TABLE IF NOT EXISTS people (
@@ -129,6 +166,36 @@ CREATE TABLE IF NOT EXISTS simulation_reports (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS worker_runtime_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_id INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(recipient_id) REFERENCES people(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS worker_exchange_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tick INTEGER NOT NULL,
+    sender_id INTEGER,
+    recipient_id INTEGER,
+    channel TEXT NOT NULL,
+    subject TEXT,
+    summary TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(sender_id) REFERENCES people(id) ON DELETE SET NULL,
+    FOREIGN KEY(recipient_id) REFERENCES people(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS worker_status_overrides (
+    worker_id INTEGER PRIMARY KEY,
+    status TEXT NOT NULL,
+    until_tick INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(worker_id) REFERENCES people(id) ON DELETE CASCADE
+);
+
 """
 
 
@@ -148,22 +215,134 @@ class SimulationEngine:
         sim_manager_handle: str = "sim-manager",
         planner: Planner | None = None,
         hours_per_day: int = 8,
+        tick_interval_seconds: float = 1.0,
     ) -> None:
         self.email_gateway = email_gateway
         self.chat_gateway = chat_gateway
         self.sim_manager_email = sim_manager_email
         self.sim_manager_handle = sim_manager_handle
         self.planner = planner or GPTPlanner()
+        self._stub_planner = StubPlanner()
         self.hours_per_day = hours_per_day
         self.project_duration_weeks = 4
         self._project_plan_cache: dict[str, Any] | None = None
         self._planner_model_hint: str | None = None
+        self._tick_interval_seconds = tick_interval_seconds
+        self._auto_tick_thread: threading.Thread | None = None
+        self._auto_tick_stop: threading.Event | None = None
+        self._advance_lock = threading.Lock()
+        self._worker_runtime: dict[int, _WorkerRuntime] = {}
+        self._status_overrides: dict[int, Tuple[str, int]] = {}
+        self._active_person_ids: list[int] | None = None
+        self._work_hours_ticks: dict[int, tuple[int, int]] = {}
+        self._random = random.Random()
+        self._planner_metrics: deque[dict[str, Any]] = deque(maxlen=200)
+        self._planner_metrics_lock = threading.Lock()
         execute_script(SIM_SCHEMA)
         self._apply_migrations()
         self._ensure_state_row()
         self._bootstrap_channels()
+        self._load_status_overrides()
+        self._sync_worker_runtimes(self.list_people())
 
     def _apply_migrations(self) -> None:
+        with get_connection() as conn:
+            people_columns = {row["name"] for row in conn.execute("PRAGMA table_info(people)")}
+            if "is_department_head" not in people_columns:
+                conn.execute("ALTER TABLE people ADD COLUMN is_department_head INTEGER NOT NULL DEFAULT 0")
+            state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(simulation_state)")}
+            if "auto_tick" not in state_columns:
+                conn.execute("ALTER TABLE simulation_state ADD COLUMN auto_tick INTEGER NOT NULL DEFAULT 0")
+
+    def _parse_time_to_tick(self, time_str: str, *, round_up: bool = False) -> int:
+        try:
+            hours, minutes = time_str.split(':')
+            total_minutes = int(hours) * 60 + int(minutes)
+        except Exception:
+            return 0
+        ticks_per_day = max(1, self.hours_per_day)
+        ticks_float = (total_minutes / 1440) * ticks_per_day
+        if round_up:
+            tick = math.ceil(ticks_float)
+        else:
+            tick = math.floor(ticks_float)
+        return max(0, min(ticks_per_day, tick))
+
+    def _parse_work_hours_to_ticks(self, work_hours: str) -> tuple[int, int]:
+        ticks_per_day = max(1, self.hours_per_day)
+        if ticks_per_day < 6:
+            return (0, ticks_per_day)
+        if not work_hours or '-' not in work_hours:
+            return (0, ticks_per_day)
+        start_str, end_str = [segment.strip() for segment in work_hours.split('-', 1)]
+        start_tick = self._parse_time_to_tick(start_str, round_up=False)
+        end_tick = self._parse_time_to_tick(end_str, round_up=True)
+        start_tick = max(0, min(ticks_per_day - 1, start_tick))
+        end_tick = max(0, min(ticks_per_day, end_tick))
+        if start_tick == end_tick:
+            return (0, ticks_per_day)
+        return (start_tick, end_tick)
+
+    def _update_work_windows(self, people: Sequence[PersonRead]) -> None:
+        cache: dict[int, tuple[int, int]] = {}
+        for person in people:
+            start_tick, end_tick = self._parse_work_hours_to_ticks(getattr(person, 'work_hours', '') or '')
+            cache[person.id] = (start_tick, end_tick)
+        self._work_hours_ticks = cache
+
+    def _is_within_work_hours(self, person: PersonRead, tick: int) -> bool:
+        if not self.hours_per_day:
+            return True
+        window = self._work_hours_ticks.get(person.id)
+        if not window:
+            return True
+        start_tick, end_tick = window
+        tick_of_day = (tick - 1) % self.hours_per_day
+        if start_tick <= end_tick:
+            return start_tick <= tick_of_day < end_tick
+        return tick_of_day >= start_tick or tick_of_day < end_tick
+
+    def _format_sim_time(self, tick: int) -> str:
+        if tick <= 0:
+            return "Day 0 00:00"
+        ticks_per_day = max(1, self.hours_per_day)
+        day_index = (tick - 1) // ticks_per_day + 1
+        tick_of_day = (tick - 1) % ticks_per_day
+        minutes = int((tick_of_day / ticks_per_day) * 1440)
+        hour = minutes // 60
+        minute = minutes % 60
+        return f"Day {day_index} {hour:02d}:{minute:02d}"
+
+
+    def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        summary: dict[str, Any] = {}
+        worker = kwargs.get('worker')
+        if worker is not None:
+            summary['worker'] = getattr(worker, 'name', worker)
+        department_head = kwargs.get('department_head')
+        if department_head is not None:
+            summary['department_head'] = getattr(department_head, 'name', department_head)
+        project_name = kwargs.get('project_name')
+        if project_name:
+            summary['project_name'] = project_name
+        day_index = kwargs.get('day_index')
+        if day_index is not None:
+            summary['day_index'] = day_index
+        tick = kwargs.get('tick')
+        if tick is not None:
+            summary['tick'] = tick
+        model_hint = kwargs.get('model_hint')
+        if model_hint:
+            summary['model_hint'] = model_hint
+        return summary
+
+    def get_planner_metrics(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._planner_metrics_lock:
+            data = list(self._planner_metrics)
+        if limit <= 0:
+            return data
+        return data[-limit:]
+
         with get_connection() as conn:
             people_columns = {row["name"] for row in conn.execute("PRAGMA table_info(people)")}
             if "is_department_head" not in people_columns:
@@ -237,7 +416,9 @@ class SimulationEngine:
         self.email_gateway.ensure_mailbox(payload.email_address, payload.name)
         self.chat_gateway.ensure_user(payload.chat_handle, payload.name)
 
-        return self.get_person(person_id)
+        person = self.get_person(person_id)
+        self._get_worker_runtime(person)
+        return person
 
     def list_people(self) -> List[PersonRead]:
         with get_connection() as conn:
@@ -259,10 +440,65 @@ class SimulationEngine:
             if not row:
                 return False
             conn.execute("DELETE FROM people WHERE id = ?", (row["id"],))
+        self._worker_runtime.pop(row["id"], None)
         return True
 
     # ------------------------------------------------------------------
     # Planning lifecycle
+    def _call_planner(self, method_name: str, **kwargs) -> PlanResult:
+        planner = self.planner
+        method = getattr(planner, method_name)
+        planner_name = planner.__class__.__name__
+        fallback_name = self._stub_planner.__class__.__name__
+        context = self._planner_context_summary(kwargs)
+        start = time.perf_counter()
+        logger.info("Planner %s using %s starting with context=%s", method_name, planner_name, context)
+        try:
+            result = method(**kwargs)
+        except PlanningError as exc:
+            duration = time.perf_counter() - start
+            if isinstance(planner, StubPlanner):
+                logger.error("Stub planner %s failed after %.2fs: %s", method_name, duration, exc)
+                raise
+            logger.warning("Planner %s using %s failed after %.2fs: %s. Falling back to stub planner.", method_name, planner_name, duration, exc)
+            fallback_method = getattr(self._stub_planner, method_name)
+            fallback_start = time.perf_counter()
+            fallback_result = fallback_method(**kwargs)
+            fallback_duration = time.perf_counter() - fallback_start
+            logger.info("Stub planner %s succeeded in %.2fs (model=%s)", fallback_name, fallback_duration, getattr(fallback_result, 'model_used', 'vdos-stub'))
+            entry = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'method': method_name,
+                'planner': planner_name,
+                'result_planner': fallback_name,
+                'model': getattr(fallback_result, 'model_used', 'vdos-stub'),
+                'duration_ms': round(duration * 1000, 2),
+                'fallback_duration_ms': round(fallback_duration * 1000, 2),
+                'fallback': True,
+                'error': str(exc),
+                'context': context,
+            }
+            with self._planner_metrics_lock:
+                self._planner_metrics.append(entry)
+            return fallback_result
+        else:
+            duration = time.perf_counter() - start
+            logger.info("Planner %s using %s succeeded in %.2fs (model=%s)", method_name, planner_name, duration, getattr(result, 'model_used', 'unknown'))
+            entry = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'method': method_name,
+                'planner': planner_name,
+                'result_planner': planner_name,
+                'model': getattr(result, 'model_used', 'unknown'),
+                'duration_ms': round(duration * 1000, 2),
+                'fallback_duration_ms': None,
+                'fallback': False,
+                'context': context,
+            }
+            with self._planner_metrics_lock:
+                self._planner_metrics.append(entry)
+            return result
+
     # ------------------------------------------------------------------
     def get_project_plan(self) -> dict[str, Any] | None:
         if self._project_plan_cache is not None:
@@ -328,18 +564,19 @@ class SimulationEngine:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [self._row_to_simulation_report(row) for row in rows]
 
-    def _initialise_project_plan(self, request: SimulationStartRequest) -> None:
-        people = self.list_people()
-        if not people:
+    def _initialise_project_plan(self, request: SimulationStartRequest, team: Sequence[PersonRead]) -> None:
+        if not team:
             raise RuntimeError("Cannot initialise project plan without any personas")
-        department_head = self._resolve_department_head(people, request.department_head_name)
+        self._sync_worker_runtimes(team)
+        department_head = self._resolve_department_head(team, request.department_head_name)
         try:
-            plan_result = self.planner.generate_project_plan(
+            plan_result = self._call_planner(
+                'generate_project_plan',
                 department_head=department_head,
                 project_name=request.project_name,
                 project_summary=request.project_summary,
                 duration_weeks=request.duration_weeks,
-                team=people,
+                team=team,
                 model_hint=request.model_hint,
             )
         except PlanningError as exc:
@@ -351,7 +588,7 @@ class SimulationEngine:
             generated_by=department_head.id if department_head else None,
             duration_weeks=request.duration_weeks,
         )
-        for person in people:
+        for person in team:
             daily_result = self._generate_daily_plan(person, plan_record, day_index=0)
             self._generate_hourly_plan(
                 person,
@@ -368,12 +605,14 @@ class SimulationEngine:
             for person in people:
                 if person.name == requested_name:
                     return person
+            raise RuntimeError(
+                f"Department head '{requested_name}' not found among registered personas."
+            )
         for person in people:
             if getattr(person, "is_department_head", False):
                 return person
-        raise RuntimeError(
-            "No department head defined. Mark a persona with is_department_head=True or pass department_head_name."
-        )
+        # Default to the first registered persona so small teams can start without explicit leads.
+        return people[0]
 
     def _store_project_plan(
         self,
@@ -421,9 +660,10 @@ class SimulationEngine:
         self, person: PersonRead, project_plan: dict[str, Any], day_index: int
     ) -> PlanResult:
         try:
-            result = self.planner.generate_daily_plan(
+            result = self._call_planner(
+                'generate_daily_plan',
                 worker=person,
-                project_plan=project_plan["plan"],
+                project_plan=project_plan['plan'],
                 day_index=day_index,
                 duration_weeks=self.project_duration_weeks,
                 model_hint=self._planner_model_hint,
@@ -446,11 +686,13 @@ class SimulationEngine:
         daily_plan_text: str,
         tick: int,
         reason: str,
+        adjustments: list[str] | None = None,
     ) -> PlanResult:
         try:
-            result = self.planner.generate_hourly_plan(
+            result = self._call_planner(
+                'generate_hourly_plan',
                 worker=person,
-                project_plan=project_plan["plan"],
+                project_plan=project_plan['plan'],
                 daily_plan=daily_plan_text,
                 tick=tick,
                 context_reason=reason,
@@ -458,14 +700,23 @@ class SimulationEngine:
             )
         except PlanningError as exc:
             raise RuntimeError(f"Unable to generate hourly plan for {person.name}: {exc}") from exc
+
+        context = f"reason={reason}"
+        content_result = result
+        if adjustments:
+            bullets = "\n".join(f"- {item}" for item in adjustments)
+            content = f"{result.content}\n\nAdjustments from live collaboration:\n{bullets}"
+            content_result = PlanResult(content=content, model_used=result.model_used, tokens_used=result.tokens_used)
+            context += f";adjustments={len(adjustments)}"
+
         self._store_worker_plan(
             person_id=person.id,
             tick=tick,
             plan_type="hourly",
-            result=result,
-            context=f"reason={reason}",
+            result=content_result,
+            context=context,
         )
-        return result
+        return content_result
 
     def _store_worker_plan(
         self,
@@ -573,9 +824,10 @@ class SimulationEngine:
         ]
         minute_schedule = render_minute_schedule(schedule_blocks)
         try:
-            result = self.planner.generate_daily_report(
+            result = self._call_planner(
+                'generate_daily_report',
                 worker=person,
-                project_plan=project_plan["plan"],
+                project_plan=project_plan['plan'],
                 day_index=day_index,
                 daily_plan=daily_plan_text,
                 hourly_log=hourly_summary,
@@ -641,8 +893,9 @@ class SimulationEngine:
         ) or "No events logged."
         daily_reports = self.list_daily_reports_for_summary()
         try:
-            result = self.planner.generate_simulation_report(
-                project_plan=project_plan["plan"],
+            result = self._call_planner(
+                'generate_simulation_report',
+                project_plan=project_plan['plan'],
                 team=people,
                 total_ticks=total_ticks,
                 tick_log=tick_summary,
@@ -722,107 +975,295 @@ class SimulationEngine:
     # ------------------------------------------------------------------
     def get_state(self) -> SimulationState:
         status = self._fetch_state()
-        return SimulationState(current_tick=status.current_tick, is_running=status.is_running, auto_tick=status.auto_tick)
+        return SimulationState(
+            current_tick=status.current_tick,
+            is_running=status.is_running,
+            auto_tick=status.auto_tick,
+            sim_time=self._format_sim_time(status.current_tick),
+        )
 
     def start(self, request: SimulationStartRequest | None = None) -> SimulationState:
+        seed = self._derive_seed(request)
+        self._random.seed(seed)
+        self._reset_runtime_state()
+        all_people = self.list_people()
+        if not all_people:
+            raise RuntimeError("Cannot start simulation without any personas")
+        active_people = self._resolve_active_people(request, all_people)
+        self._active_person_ids = [person.id for person in active_people]
         if request is not None:
             self.project_duration_weeks = request.duration_weeks
             self._planner_model_hint = request.model_hint
-            self._initialise_project_plan(request)
+            self._initialise_project_plan(request, active_people)
         self._set_running(True)
+        self._sync_worker_runtimes(active_people)
         status = self._fetch_state()
-        return SimulationState(current_tick=status.current_tick, is_running=status.is_running, auto_tick=status.auto_tick)
+        return SimulationState(
+            current_tick=status.current_tick,
+            is_running=status.is_running,
+            auto_tick=status.auto_tick,
+            sim_time=self._format_sim_time(status.current_tick),
+        )
 
     def stop(self) -> SimulationState:
+        self.stop_auto_ticks()
         status = self._fetch_state()
         if status.is_running:
             project_plan = self.get_project_plan()
             if project_plan is not None:
                 self._generate_simulation_report(project_plan, total_ticks=status.current_tick)
         self._set_running(False)
+        self._active_person_ids = None
         status = self._fetch_state()
-        return SimulationState(current_tick=status.current_tick, is_running=status.is_running, auto_tick=status.auto_tick)
+        return SimulationState(
+            current_tick=status.current_tick,
+            is_running=status.is_running,
+            auto_tick=status.auto_tick,
+            sim_time=self._format_sim_time(status.current_tick),
+        )
 
     def start_auto_ticks(self) -> SimulationState:
-        self._set_auto_tick(True)
         status = self._fetch_state()
-        return SimulationState(current_tick=status.current_tick, is_running=status.is_running, auto_tick=status.auto_tick)
+        if not status.is_running:
+            raise RuntimeError("Simulation must be running before enabling automatic ticks")
+        self._set_auto_tick(True)
+        thread = self._auto_tick_thread
+        if thread is None or not thread.is_alive():
+            stop_event = threading.Event()
+            self._auto_tick_stop = stop_event
+            thread = threading.Thread(
+                target=self._run_auto_tick_loop,
+                args=(stop_event,),
+                name="vdos-auto-tick",
+                daemon=True,
+            )
+            self._auto_tick_thread = thread
+            thread.start()
+        status = self._fetch_state()
+        return SimulationState(
+            current_tick=status.current_tick,
+            is_running=status.is_running,
+            auto_tick=status.auto_tick,
+            sim_time=self._format_sim_time(status.current_tick),
+        )
 
     def stop_auto_ticks(self) -> SimulationState:
         self._set_auto_tick(False)
+        stop_event = self._auto_tick_stop
+        if stop_event is not None:
+            stop_event.set()
+        thread = self._auto_tick_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                logger.warning("Automatic tick thread did not exit cleanly within timeout")
+        self._auto_tick_thread = None
+        self._auto_tick_stop = None
         status = self._fetch_state()
-        return SimulationState(current_tick=status.current_tick, is_running=status.is_running, auto_tick=status.auto_tick)
+        return SimulationState(
+            current_tick=status.current_tick,
+            is_running=status.is_running,
+            auto_tick=status.auto_tick,
+            sim_time=self._format_sim_time(status.current_tick),
+        )
+
+    def _run_auto_tick_loop(self, stop_event: threading.Event) -> None:
+        while not stop_event.wait(self._tick_interval_seconds):
+            state = self._fetch_state()
+            if not state.is_running or not state.auto_tick:
+                break
+            try:
+                self.advance(1, "auto")
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.exception("Automatic tick failed; disabling auto ticks.")
+                self._set_auto_tick(False)
+                break
 
     def advance(self, ticks: int, reason: str) -> SimulationAdvanceResult:
-        status = self._fetch_state()
-        if not status.is_running:
-            raise RuntimeError("Simulation is not running; call start first")
-        if ticks <= 0:
-            raise ValueError("Ticks must be positive")
+        with self._advance_lock:
+            status = self._fetch_state()
+            if not status.is_running:
+                raise RuntimeError("Simulation is not running; call start first")
+            if ticks <= 0:
+                raise ValueError("Ticks must be positive")
 
-        project_plan = self.get_project_plan()
-        if project_plan is None:
-            raise RuntimeError("Project plan is not initialised; start the simulation with project details before advancing.")
+            project_plan = self.get_project_plan()
+            if project_plan is None:
+                raise RuntimeError("Project plan is not initialised; start the simulation with project details before advancing.")
 
-        people = self.list_people()
-        if not people:
-            raise RuntimeError("Cannot advance simulation without registered people")
+            people = self._get_active_people()
+            if not people:
+                raise RuntimeError("Cannot advance simulation without any active personas")
+            self._sync_worker_runtimes(people)
+            people_by_id = {person.id: person for person in people}
 
-        emails_sent = 0
-        chats_sent = 0
+            emails_sent = 0
+            chats_sent = 0
 
-        for _ in range(ticks):
-            status.current_tick += 1
-            self._update_tick(status.current_tick, reason)
-            day_index = (status.current_tick - 1) // self.hours_per_day
-            for person in people:
-                daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
-                hourly_result = self._generate_hourly_plan(
-                    person,
-                    project_plan,
-                    daily_plan_text,
-                    tick=status.current_tick,
-                    reason=reason,
-                )
-                daily_summary = self._summarise_plan(daily_plan_text, max_lines=3)
-                hourly_summary = self._summarise_plan(hourly_result.content)
-                subject = f"[Tick {status.current_tick}] {reason.title()} update for {person.name}"
-                body = (
-                    f"Project: {project_plan['project_name']}\n"
-                    f"Daily focus:\n{daily_summary}\n\n"
-                    f"Hourly plan:\n{hourly_summary}\n\n"
-                    "Finish slightly ahead to absorb surprises."
-                )
-                self.email_gateway.send_email(
-                    sender=self.sim_manager_email,
-                    to=[person.email_address],
-                    subject=subject,
-                    body=body,
-                )
-                emails_sent += 1
-
-                chat_body = (
-                    f"Tick {status.current_tick}: {hourly_summary.replace('\n', ' / ')}\n"
-                    "Ping me if you need to reallocate the buffer."
-                )
-                self.chat_gateway.send_dm(
-                    sender=self.sim_manager_handle,
-                    recipient=person.chat_handle,
-                    body=chat_body,
-                )
-                chats_sent += 1
-
-            if status.current_tick % self.hours_per_day == 0:
-                completed_day = (status.current_tick // self.hours_per_day) - 1
+            for _ in range(ticks):
+                status.current_tick += 1
+                self._update_tick(status.current_tick, reason)
+                self._refresh_status_overrides(status.current_tick)
+                event_adjustments, _ = self._maybe_generate_events(people, status.current_tick, project_plan)
+                day_index = (status.current_tick - 1) // self.hours_per_day
                 for person in people:
-                    self._generate_daily_report(person, completed_day, project_plan)
+                    runtime = self._get_worker_runtime(person)
+                    incoming = runtime.drain()
+                    working = self._is_within_work_hours(person, status.current_tick)
+                    adjustments: list[str] = list(event_adjustments.get(person.id, []))
+                    override = self._status_overrides.get(person.id)
+                    if override and override[0] == 'SickLeave':
+                        incoming = []
+                        adjustments.append('Observe sick leave and hold tasks until recovered.')
+                    if not working:
+                        if incoming:
+                            for message in incoming:
+                                runtime.queue(message)
+                        for note in adjustments:
+                            reminder = _InboundMessage(
+                                sender_id=0,
+                                sender_name='Simulation Manager',
+                                subject='Pending adjustment',
+                                summary=note,
+                                action_item=note,
+                                message_type='event',
+                                channel='system',
+                                tick=status.current_tick,
+                            )
+                            runtime.queue(reminder)
+                        logger.info("Skipping planning for %s at tick %s (off hours)", person.name, status.current_tick)
+                        continue
+                    should_plan = bool(incoming) or bool(adjustments) or reason != 'auto' or (((status.current_tick - 1) % self.hours_per_day) == 0)
+                    if not should_plan:
+                        continue
+                    self._remove_runtime_messages([msg.message_id for msg in incoming if msg.message_id is not None])
+                    for message in incoming:
+                        sender_person = people_by_id.get(message.sender_id)
+                        if message.message_type == "ack":
+                            adjustments.append(f"Acknowledged by {message.sender_name}: {message.summary}")
+                            continue
+                        if message.action_item:
+                            adjustments.append(f"Handle request from {message.sender_name}: {message.action_item}")
+                        if sender_person is None:
+                            continue
+                        ack_phrase = (message.action_item or message.summary or "your latest update").rstrip('.')
+                        ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
+                        self.chat_gateway.send_dm(
+                            sender=person.chat_handle,
+                            recipient=sender_person.chat_handle,
+                            body=ack_body,
+                        )
+                        chats_sent += 1
+                        self._log_exchange(status.current_tick, person.id, sender_person.id, 'chat', None, ack_body)
+                        ack_message = _InboundMessage(
+                            sender_id=person.id,
+                            sender_name=person.name,
+                            subject=f"Acknowledgement from {person.name}",
+                            summary=ack_body,
+                            action_item=None,
+                            message_type='ack',
+                            channel='chat',
+                            tick=status.current_tick,
+                        )
+                        self._queue_runtime_message(sender_person, ack_message)
 
-        return SimulationAdvanceResult(
-            ticks_advanced=ticks,
-            current_tick=status.current_tick,
-            emails_sent=emails_sent,
-            chat_messages_sent=chats_sent,
-        )
+                    daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
+                    hourly_result = self._generate_hourly_plan(
+                        person,
+                        project_plan,
+                        daily_plan_text,
+                        tick=status.current_tick,
+                        reason=reason,
+                        adjustments=adjustments or None,
+                    )
+                    daily_summary = self._summarise_plan(daily_plan_text, max_lines=3)
+                    hourly_summary = self._summarise_plan(hourly_result.content)
+                    if override and override[0] == 'SickLeave':
+                        continue
+                    recipients = self._select_collaborators(person, people)
+                    if not recipients:
+                        subject = f"[Tick {status.current_tick}] {reason.title()} update for {person.name}"
+                        body_lines = [
+                            f"Project: {project_plan['project_name']}",
+                            f"Daily focus:\n{daily_summary}",
+                            "",
+                            f"Hourly plan:\n{hourly_summary}",
+                            "",
+                            "Keep the runway clear for surprises.",
+                        ]
+                        body_text = "\n".join(body_lines)
+                        self.email_gateway.send_email(
+                            sender=self.sim_manager_email,
+                            to=[person.email_address],
+                            subject=subject,
+                            body=body_text,
+                        )
+                        emails_sent += 1
+                        self._log_exchange(status.current_tick, None, person.id, "email", subject, body_text)
+                        chat_body = f"Tick {status.current_tick}: {hourly_summary.replace('\n', ' / ')}\nLet me know if you need support."
+                        self.chat_gateway.send_dm(
+                            sender=self.sim_manager_handle,
+                            recipient=person.chat_handle,
+                            body=chat_body,
+                        )
+                        chats_sent += 1
+                        self._log_exchange(status.current_tick, None, person.id, "chat", None, chat_body)
+                        continue
+                    action_item = self._derive_action_item(hourly_summary, daily_summary)
+                    for recipient in recipients:
+                        subject = f"[Tick {status.current_tick}] {person.name} -> {recipient.name}: {reason.title()} focus"
+                        body_lines = [
+                            f"Hey {recipient.name.split()[0]},",
+                            "",
+                            "Current focus:",
+                            hourly_summary or daily_summary or "Heads down on deliverables.",
+                            "",
+                            f"Request: {action_item}",
+                            "Ping me if you need anything shifted.",
+                        ]
+                        body = "\n".join(body_lines)
+                        self.email_gateway.send_email(
+                            sender=person.email_address,
+                            to=[recipient.email_address],
+                            subject=subject,
+                            body=body,
+                        )
+                        emails_sent += 1
+                        self._log_exchange(status.current_tick, person.id, recipient.id, "email", subject, body)
+
+                        chat_body = f"Tick {status.current_tick}: {action_item}"
+                        self.chat_gateway.send_dm(
+                            sender=person.chat_handle,
+                            recipient=recipient.chat_handle,
+                            body=chat_body,
+                        )
+                        chats_sent += 1
+                        self._log_exchange(status.current_tick, person.id, recipient.id, "chat", None, chat_body)
+
+                        inbound = _InboundMessage(
+                            sender_id=person.id,
+                            sender_name=person.name,
+                            subject=subject,
+                            summary=action_item,
+                            action_item=action_item,
+                            message_type="update",
+                            channel="email+chat",
+                            tick=status.current_tick,
+                        )
+                        self._queue_runtime_message(recipient, inbound)
+
+                if status.current_tick % self.hours_per_day == 0:
+                    completed_day = (status.current_tick // self.hours_per_day) - 1
+                    for person in people:
+                        self._generate_daily_report(person, completed_day, project_plan)
+
+            return SimulationAdvanceResult(
+                ticks_advanced=ticks,
+                current_tick=status.current_tick,
+                emails_sent=emails_sent,
+                chat_messages_sent=chats_sent,
+                sim_time=self._format_sim_time(status.current_tick),
+            )
 
     # ------------------------------------------------------------------
     # Events
@@ -854,6 +1295,380 @@ class SimulationEngine:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _get_worker_runtime(self, person: PersonRead) -> _WorkerRuntime:
+        runtime = self._worker_runtime.get(person.id)
+        if runtime is None:
+            runtime = _WorkerRuntime(person=person)
+            self._worker_runtime[person.id] = runtime
+            self._load_runtime_messages(runtime)
+        else:
+            runtime.person = person
+        return runtime
+
+    def _sync_worker_runtimes(self, people: Sequence[PersonRead]) -> None:
+        active_ids = {person.id for person in people}
+        self._update_work_windows(people)
+        for person in people:
+            self._get_worker_runtime(person)
+        for person_id in list(self._worker_runtime.keys()):
+            if person_id not in active_ids:
+                self._worker_runtime.pop(person_id, None)
+
+    def _load_status_overrides(self) -> None:
+        with get_connection() as conn:
+            rows = conn.execute("SELECT worker_id, status, until_tick FROM worker_status_overrides").fetchall()
+        self._status_overrides = {row["worker_id"]: (row["status"], row["until_tick"]) for row in rows}
+
+    def _queue_runtime_message(self, recipient: PersonRead, message: _InboundMessage) -> None:
+        runtime = self._get_worker_runtime(recipient)
+        runtime.queue(message)
+        self._persist_runtime_message(recipient.id, message)
+
+    def _persist_runtime_message(self, recipient_id: int, message: _InboundMessage) -> None:
+        payload = {
+            "sender_id": message.sender_id,
+            "sender_name": message.sender_name,
+            "subject": message.subject,
+            "summary": message.summary,
+            "action_item": message.action_item,
+            "message_type": message.message_type,
+            "channel": message.channel,
+            "tick": message.tick,
+        }
+        with get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO worker_runtime_messages(recipient_id, payload) VALUES (?, ?)",
+                (recipient_id, json.dumps(payload)),
+            )
+            message.message_id = cursor.lastrowid
+
+    def _remove_runtime_messages(self, message_ids: Sequence[int]) -> None:
+        if not message_ids:
+            return
+        with get_connection() as conn:
+            conn.executemany("DELETE FROM worker_runtime_messages WHERE id = ?", [(message_id,) for message_id in message_ids])
+
+    def _load_runtime_messages(self, runtime: _WorkerRuntime) -> None:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, payload FROM worker_runtime_messages WHERE recipient_id = ? ORDER BY id",
+                (runtime.person.id,),
+            ).fetchall()
+        runtime.inbox = []
+        for row in rows:
+            payload = json.loads(row["payload"])
+            runtime.inbox.append(
+                _InboundMessage(
+                    sender_id=payload["sender_id"],
+                    sender_name=payload["sender_name"],
+                    subject=payload["subject"],
+                    summary=payload["summary"],
+                    action_item=payload.get("action_item"),
+                    message_type=payload["message_type"],
+                    channel=payload["channel"],
+                    tick=payload["tick"],
+                    message_id=row["id"],
+                )
+            )
+
+    def _log_exchange(self, tick: int, sender_id: int | None, recipient_id: int | None, channel: str, subject: str | None, summary: str | None) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO worker_exchange_log(tick, sender_id, recipient_id, channel, subject, summary) VALUES (?, ?, ?, ?, ?, ?)",
+                (tick, sender_id, recipient_id, channel, subject, summary),
+            )
+
+    def _set_status_override(self, worker_id: int, status: str, until_tick: int, reason: str) -> None:
+        self._status_overrides[worker_id] = (status, until_tick)
+        with get_connection() as conn:
+            conn.execute(
+                ("INSERT INTO worker_status_overrides(worker_id, status, until_tick, reason) VALUES (?, ?, ?, ?)"
+                 " ON CONFLICT(worker_id) DO UPDATE SET status = excluded.status, until_tick = excluded.until_tick, reason = excluded.reason"),
+                (worker_id, status, until_tick, reason),
+            )
+
+    def _refresh_status_overrides(self, current_tick: int) -> None:
+        expired = [worker_id for worker_id, (_, until_tick) in self._status_overrides.items() if until_tick <= current_tick]
+        if not expired:
+            return
+        with get_connection() as conn:
+            conn.executemany(
+                "DELETE FROM worker_status_overrides WHERE worker_id = ?",
+                [(worker_id,) for worker_id in expired],
+            )
+        for worker_id in expired:
+            self._status_overrides.pop(worker_id, None)
+
+    def _reset_runtime_state(self) -> None:
+        self._worker_runtime.clear()
+        self._status_overrides.clear()
+        self._active_person_ids = None
+        with get_connection() as conn:
+            conn.execute("DELETE FROM worker_runtime_messages")
+            conn.execute("DELETE FROM worker_status_overrides")
+        self._load_status_overrides()
+
+    def _resolve_active_people(
+        self,
+        request: SimulationStartRequest | None,
+        available: Sequence[PersonRead],
+    ) -> list[PersonRead]:
+        if not available:
+            return []
+        if request is None:
+            return list(available)
+
+        include_ids = {int(person_id) for person_id in (request.include_person_ids or [])}
+        include_names = {name.strip().lower() for name in (request.include_person_names or []) if name.strip()}
+
+        if include_ids or include_names:
+            matched = [
+                person
+                for person in available
+                if person.id in include_ids or person.name.lower() in include_names
+            ]
+            matched_ids = {person.id for person in matched}
+            matched_names = {person.name.lower() for person in matched}
+            missing_parts: list[str] = []
+            missing_ids = sorted(include_ids - matched_ids)
+            missing_names = sorted(include_names - matched_names)
+            if missing_ids:
+                missing_parts.append("ids " + ", ".join(str(identifier) for identifier in missing_ids))
+            if missing_names:
+                missing_parts.append("names " + ", ".join(missing_names))
+            if missing_parts:
+                raise RuntimeError("Requested personas not found: " + "; ".join(missing_parts))
+        else:
+            matched = list(available)
+
+        exclude_ids = {int(person_id) for person_id in (request.exclude_person_ids or [])}
+        exclude_names = {name.strip().lower() for name in (request.exclude_person_names or []) if name.strip()}
+        filtered = [
+            person
+            for person in matched
+            if person.id not in exclude_ids and person.name.lower() not in exclude_names
+        ]
+        if not filtered:
+            raise RuntimeError("No personas remain after applying include/exclude filters")
+        return filtered
+
+    def _get_active_people(self) -> list[PersonRead]:
+        available = self.list_people()
+        if not available:
+            return []
+        if self._active_person_ids is None:
+            return list(available)
+        lookup = {person.id: person for person in available}
+        active: list[PersonRead] = []
+        for person_id in self._active_person_ids:
+            person = lookup.get(person_id)
+            if person is not None:
+                active.append(person)
+        if not active:
+            return []
+        if len(active) != len(self._active_person_ids):
+            self._active_person_ids = [person.id for person in active]
+        return active
+
+    def _select_collaborators(self, person: PersonRead, people: Sequence[PersonRead]) -> list[PersonRead]:
+        if len(people) <= 1:
+            return []
+        head = next((p for p in people if getattr(p, "is_department_head", False)), people[0])
+        if person.id == head.id:
+            return [member for member in people if member.id != person.id][:2]
+        recipients: list[PersonRead] = []
+        if head.id != person.id:
+            recipients.append(head)
+        for candidate in people:
+            if candidate.id not in {person.id, head.id}:
+                recipients.append(candidate)
+                break
+        return recipients
+
+    def _derive_action_item(self, hourly_summary: str, daily_summary: str) -> str:
+        for source in (hourly_summary, daily_summary):
+            if not source:
+                continue
+            for line in source.splitlines():
+                cleaned = line.strip().lstrip('-•').strip()
+                if cleaned:
+                    return cleaned
+        return "Keep momentum on the current deliverables"
+
+    def reset(self) -> SimulationState:
+        with self._advance_lock:
+            self.stop_auto_ticks()
+            with get_connection() as conn:
+                for table in ("project_plans", "worker_plans", "worker_exchange_log", "worker_runtime_messages", "daily_reports", "simulation_reports", "events", "tick_log"):
+                    conn.execute(f"DELETE FROM {table}")
+                conn.execute("DELETE FROM worker_status_overrides")
+                conn.execute("UPDATE simulation_state SET current_tick = 0, is_running = 0, auto_tick = 0 WHERE id = 1")
+            self._project_plan_cache = None
+            self._planner_model_hint = None
+            self._planner_metrics.clear()
+            self.project_duration_weeks = 4
+            self._reset_runtime_state()
+            people = self.list_people()
+            self._update_work_windows(people)
+            status = self._fetch_state()
+            return SimulationState(
+                current_tick=status.current_tick,
+                is_running=status.is_running,
+                auto_tick=status.auto_tick,
+                sim_time=self._format_sim_time(status.current_tick),
+            )
+
+    def reset_full(self) -> SimulationState:
+        """Resets simulation state and deletes all personas.
+
+        Intended for a destructive "start fresh" action in the dashboard.
+        """
+        with self._advance_lock:
+            # First clear runtime and planning artifacts
+            self.reset()
+            # Then purge personas (cascades schedule blocks via FK)
+            with get_connection() as conn:
+                conn.execute("DELETE FROM people")
+                conn.execute("DELETE FROM worker_status_overrides")
+            # Reset runtime caches after purge
+            self._reset_runtime_state()
+            self._update_work_windows([])
+            status = self._fetch_state()
+            return SimulationState(
+                current_tick=status.current_tick,
+                is_running=status.is_running,
+                auto_tick=status.auto_tick,
+                sim_time=self._format_sim_time(status.current_tick),
+            )
+
+    def _record_event(self, event_type: str, target_ids: Sequence[int], tick: int, payload: dict | None = None) -> None:
+        event = EventCreate(type=event_type, target_ids=list(target_ids), at_tick=tick, payload=payload)
+        self.inject_event(event)
+
+    def _derive_seed(self, request: SimulationStartRequest | None) -> int:
+        if request and request.random_seed is not None:
+            return request.random_seed
+        base = (request.project_name if request else 'vdos-default').encode('utf-8')
+        digest = hashlib.sha256(base).digest()
+        return int.from_bytes(digest[:8], 'big')
+
+    def _maybe_generate_events(self, people: Sequence[PersonRead], tick: int, project_plan: dict[str, Any]) -> tuple[dict[int, list[str]], dict[int, list[_InboundMessage]]]:
+        adjustments: dict[int, list[str]] = {}
+        immediate: dict[int, list[_InboundMessage]] = {}
+        if not people:
+            return adjustments, immediate
+        rng = self._random
+
+        # Sick leave event
+        if rng.random() < 0.25:
+            active_people = [p for p in people if self._status_overrides.get(p.id, (None, 0))[0] != 'SickLeave']
+            if active_people:
+                target = rng.choice(active_people)
+                until_tick = tick + self.hours_per_day
+                self._set_status_override(target.id, 'SickLeave', until_tick, f'Sick leave triggered at tick {tick}')
+                rest_message = _InboundMessage(
+                    sender_id=0,
+                    sender_name='Simulation Manager',
+                    subject='Rest and recover',
+                    summary='Take the remainder of the day off to recover.',
+                    action_item='Pause all work and update once you are back online.',
+                    message_type='event',
+                    channel='system',
+                    tick=tick,
+                )
+                self._queue_runtime_message(target, rest_message)
+                immediate.setdefault(target.id, []).append(rest_message)
+                adjustments.setdefault(target.id, []).append('Rest and reschedule tasks due to sudden illness.')
+
+                head = next((p for p in people if getattr(p, 'is_department_head', False)), None)
+                if head and head.id != target.id:
+                    subject = f'Coverage needed: {target.name} is out sick'
+                    body = f"{target.name} reported sick leave at tick {tick}. Please redistribute their urgent work."
+                    self.email_gateway.send_email(
+                        sender=self.sim_manager_email,
+                        to=[head.email_address],
+                        subject=subject,
+                        body=body,
+                    )
+                    self._log_exchange(tick, None, head.id, 'email', subject, body)
+                    head_message = _InboundMessage(
+                        sender_id=0,
+                        sender_name='Simulation Manager',
+                        subject=subject,
+                        summary=body,
+                        action_item=f'Coordinate cover for {target.name}.',
+                        message_type='event',
+                        channel='email',
+                        tick=tick,
+                    )
+                    self._queue_runtime_message(head, head_message)
+                    immediate.setdefault(head.id, []).append(head_message)
+                    adjustments.setdefault(head.id, []).append(f'Coordinate cover while {target.name} recovers.')
+
+                self._record_event('sick_leave', [target.id], tick, {'until_tick': until_tick})
+
+        # Client feature request
+        if rng.random() < 0.3:
+            head = next((p for p in people if getattr(p, 'is_department_head', False)), people[0])
+            feature = rng.choice([
+                'refresh hero messaging',
+                'prepare launch analytics dashboard',
+                'add testimonial carousel',
+                'deliver onboarding walkthrough',
+            ])
+            subject = f'Client request: {feature}'
+            body = f"Client requested {feature} at tick {tick}. Align on next steps within this cycle."
+            self.email_gateway.send_email(
+                sender=self.sim_manager_email,
+                to=[head.email_address],
+                subject=subject,
+                body=body,
+            )
+            self._log_exchange(tick, None, head.id, 'email', subject, body)
+            head_message = _InboundMessage(
+                sender_id=0,
+                sender_name='Simulation Manager',
+                subject=subject,
+                summary=body,
+                action_item=f'Plan response to client request: {feature}.',
+                message_type='event',
+                channel='email',
+                tick=tick,
+            )
+            self._queue_runtime_message(head, head_message)
+            immediate.setdefault(head.id, []).append(head_message)
+            adjustments.setdefault(head.id, []).append(f'Plan response to client request: {feature}.')
+
+            collaborators = [p for p in people if p.id != head.id]
+            if collaborators:
+                partner = rng.choice(collaborators)
+                partner_message = _InboundMessage(
+                    sender_id=head.id,
+                    sender_name=head.name,
+                    subject=subject,
+                    summary=f'Partner with {head.name} on {feature}.',
+                    action_item=f'Support {head.name} on {feature}.',
+                    message_type='event',
+                    channel='chat',
+                    tick=tick,
+                )
+                self._queue_runtime_message(partner, partner_message)
+                immediate.setdefault(partner.id, []).append(partner_message)
+                adjustments.setdefault(partner.id, []).append(f'Partner with {head.name} on client request: {feature}.')
+                chat_body = f"Client request: {feature}. Let's sync on next steps."
+                self.chat_gateway.send_dm(
+                    sender=head.chat_handle,
+                    recipient=partner.chat_handle,
+                    body=chat_body,
+                )
+                self._log_exchange(tick, head.id, partner.id, 'chat', None, chat_body)
+                targets = [head.id, partner.id]
+            else:
+                targets = [head.id]
+            self._record_event('client_feature_request', targets, tick, {'feature': feature})
+
+        return adjustments, immediate
+
     def _bootstrap_channels(self) -> None:
         self.email_gateway.ensure_mailbox(self.sim_manager_email, "Simulation Manager")
         self.chat_gateway.ensure_user(self.sim_manager_handle, "Simulation Manager")
@@ -959,9 +1774,13 @@ class SimulationEngine:
         )
 
     def close(self) -> None:
+        self.stop_auto_ticks()
         close_email = getattr(self.email_gateway, "close", None)
         if callable(close_email):
             close_email()
         close_chat = getattr(self.chat_gateway, "close", None)
         if callable(close_chat):
             close_chat()
+
+
+

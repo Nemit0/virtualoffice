@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VDOS Dashboard</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header>
+    <h1>VDOS Dashboard</h1>
+    <div id="status-message"></div>
+  </header>
+
+  <main>
+    <section id="control-panel">
+      <h2>Controls</h2>
+      <div class="controls-grid">
+        <div class="card">
+          <div class="form-group">
+            <label for="project-name">Project Name</label>
+            <input id="project-name" type="text" value="Dashboard Project"/>
+          </div>
+          <div class="form-group">
+            <label for="project-summary">Project Summary</label>
+            <textarea id="project-summary">Generated from web dashboard</textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="project-duration">Duration (weeks)</label>
+              <input id="project-duration" type="number" min="1" value="1"/>
+            </div>
+            <div class="form-group">
+              <label for="random-seed">Random Seed (optional)</label>
+              <input id="random-seed" type="number"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="model-hint">Model Hint (optional)</label>
+            <input id="model-hint" type="text" placeholder="gpt-4o-mini"/>
+          </div>
+          <div class="toolbar">
+            <button id="start-btn">Start</button>
+            <button id="stop-btn" class="secondary">Stop</button>
+            <button id="reset-btn" class="secondary">Reset</button>
+            <button id="full-reset-btn" class="secondary">Full Reset (Delete Personas)</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="advance-ticks">Advance ticks</label>
+              <input id="advance-ticks" type="number" min="1" value="1"/>
+            </div>
+            <div class="form-group">
+              <label for="advance-reason">Reason</label>
+              <input id="advance-reason" type="text" value="manual"/>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="advance-btn">Advance</button>
+            <button id="auto-start-btn">Start Auto</button>
+            <button id="auto-stop-btn" class="secondary">Stop Auto</button>
+            <button id="refresh-btn">Refresh</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="state-panel">
+      <h2>Simulation State</h2>
+      <div class="simulation-state">
+        <div class="state-item">
+          <strong>Status</strong><br>
+          <span id="state-status">—</span>
+        </div>
+        <div class="state-item">
+          <strong>Current Tick</strong><br>
+          <span id="state-current_tick">0</span>
+        </div>
+        <div class="state-item">
+          <strong>Simulation Time</strong><br>
+          <span id="state-sim_time">Day 0 00:00</span>
+        </div>
+        <div class="state-item">
+          <strong>Auto Tick</strong><br>
+          <span id="state-auto">False</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="people-section">
+      <h2>Personas</h2>
+      <p>Select personas to include in the next simulation run.</p>
+      <div id="people-container"></div>
+    </section>
+
+    <section id="persona-section">
+      <h2>Create Persona</h2>
+      <div class="controls-grid">
+        <div class="card">
+          <div class="form-group">
+            <label for="persona-prompt">Prompt</label>
+            <input id="persona-prompt" type="text" placeholder="Full stack developer focused on dashboards"/>
+          </div>
+          <div class="toolbar">
+            <button id="persona-generate-btn">Generate with GPT</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-name">Name</label>
+              <input id="persona-name" type="text"/>
+            </div>
+            <div class="form-group">
+              <label for="persona-role">Role</label>
+              <input id="persona-role" type="text"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-timezone">Timezone</label>
+              <input id="persona-timezone" type="text" value="UTC"/>
+            </div>
+            <div class="form-group">
+              <label for="persona-hours">Work hours</label>
+              <input id="persona-hours" type="text" value="09:00-17:00"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-break">Break frequency</label>
+              <input id="persona-break" type="text" value="50/10 cadence"/>
+            </div>
+            <div class="form-group">
+              <label for="persona-style">Communication style</label>
+              <input id="persona-style" type="text" value="Warm async"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-email">Email address</label>
+              <input id="persona-email" type="text" placeholder="name@vdos.local"/>
+            </div>
+            <div class="form-group">
+              <label for="persona-chat">Chat handle</label>
+              <input id="persona-chat" type="text" placeholder="handle"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>
+              <input id="persona-is-head" type="checkbox"/> Department head
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-group">
+            <label for="persona-skills">Skills (comma separated)</label>
+            <input id="persona-skills" type="text"/>
+          </div>
+          <div class="form-group">
+            <label for="persona-personality">Personality (comma separated)</label>
+            <input id="persona-personality" type="text"/>
+          </div>
+          <div class="form-group">
+            <label for="persona-objectives">Objectives (one per line)</label>
+            <textarea id="persona-objectives"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-metrics">Metrics (one per line)</label>
+            <textarea id="persona-metrics"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-guidelines">Planning guidelines (one per line)</label>
+            <textarea id="persona-guidelines"></textarea>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-group">
+            <label for="persona-schedule">Schedule (HH:MM-HH:MM Activity per line)</label>
+            <textarea id="persona-schedule"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-playbook">Event playbook (JSON object)</label>
+            <textarea id="persona-playbook"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-statuses">Statuses (one per line)</label>
+            <textarea id="persona-statuses"></textarea>
+          </div>
+          <div class="toolbar">
+            <button id="persona-create-btn">Create Persona</button>
+            <button id="persona-clear-btn" class="secondary">Clear</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="plans-section">
+      <h2>Plans & Reports</h2>
+      <div id="plans-container"></div>
+    </section>
+
+    <section id="metrics-section">
+      <h2>Planner Metrics</h2>
+      <div style="overflow-x: auto;">
+        <table id="planner-table">
+          <thead>
+            <tr>
+              <th>Time (UTC)</th>
+              <th>Method</th>
+              <th>Planner</th>
+              <th>Model</th>
+              <th>Duration (ms)</th>
+              <th>Fallback</th>
+              <th>Context</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="token-section">
+      <h2>Token Usage</h2>
+      <div style="overflow-x: auto;">
+        <table id="token-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Tokens</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="events-section">
+      <h2>Recent Events</h2>
+      <ul id="events-list"></ul>
+    </section>
+  </main>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
