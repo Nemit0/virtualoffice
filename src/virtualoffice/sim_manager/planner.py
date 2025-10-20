@@ -316,6 +316,24 @@ class GPTPlanner:
                 "Chat format:",
                 "- Chat at HH:MM with TARGET: message text",
                 "",
+                "EMAIL CONTENT GUIDELINES (IMPORTANT):",
+                "1. EMAIL LENGTH: Write substantive email bodies with 3-5 sentences minimum",
+                "   - Include specific details, context, and clear action items",
+                "   - Good example: 'Working on the login API integration. Completed the OAuth flow and user session management. Need to discuss error handling strategies with the team. Can we sync tomorrow at 2pm? Also, should we implement rate limiting now or in v2?'",
+                "   - Bad example: 'Update on API work. Making progress.'",
+                "",
+                "2. PROJECT CONTEXT IN SUBJECTS: When working on multiple projects, include project tag in subject",
+                "   - Format: '[ProjectName] actual subject'",
+                "   - Example: '[Mobile App MVP] API integration status update'",
+                "   - Example: '[웹 대시보드] 디자인 리뷰 요청'",
+                "   - Use this for about 60-70% of work-related emails",
+                "",
+                "3. EMAIL REALISM: Make emails sound natural and professional",
+                "   - Start with context or greeting when appropriate",
+                "   - Include specific technical details or business context",
+                "   - End with clear next steps or questions",
+                "   - Vary your communication style (not all emails need to be formal)",
+                "",
                 "EMAIL RULES (VERY IMPORTANT):",
                 "1. ONLY use email addresses EXACTLY as shown in the Team Roster above",
                 "2. NEVER create new email addresses, distribution lists, or group aliases",
@@ -353,7 +371,10 @@ class GPTPlanner:
                     "CRITICAL EMAIL ADDRESS RULE: You MUST use ONLY the exact email addresses provided in the 'VALID EMAIL ADDRESSES' list. "
                     "NEVER create email addresses, distribution lists (like team@, all@, manager@), or use chat handles in email fields. "
                     "When writing email lines with cc/bcc, use ONLY the full email addresses from the valid list. "
-                    "Follow the format exactly: 'Email at HH:MM to user.1@domain.dev cc user.2@domain.dev: Subject | Body'"
+                    "Follow the format exactly: 'Email at HH:MM to user.1@domain.dev cc user.2@domain.dev: Subject | Body' "
+                    "IMPORTANT: Write substantive email bodies with 3-5 sentences minimum, including specific details and context. "
+                    "Include project tags in subjects when working on multiple projects (e.g., '[Mobile App] API status'). "
+                    "Make emails realistic and professional with clear action items or questions."
                 ),
             },
             {"role": "user", "content": user_content},
