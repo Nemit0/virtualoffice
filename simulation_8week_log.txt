@@ -1,0 +1,32 @@
+Slow GPT API call: 13.1s for gpt-4o-mini (openai_key2)
+[14:35:32] 한국어 다중 프로젝트 8주 시뮬레이션 시작…
+[14:35:32] 이메일 서버 시작: 127.0.0.1:53860…
+[14:35:32] 채팅 서버 시작: 127.0.0.1:53861…
+[14:35:33] 시뮬레이션 매니저 시작: 127.0.0.1:53862…
+[14:35:33] 🧹 전체 초기화…
+[14:35:47]    상태: tick=0, 인원수=0
+[14:35:47] 🎭 팀 생성 (PM, 디자이너, 개발자, 데보옵스)…
+[14:35:47]    → POST /personas/generate (pm) [attempt 1]
+[14:35:51]    → POST /people (pm.1@multiproject.dev)
+[14:35:53]    ✅ 이민수 (Project Manager)
+[14:35:53]    → POST /personas/generate (designer) [attempt 1]
+[14:35:57]    → POST /people (designer.1@multiproject.dev)
+[14:35:58]    ✅ 윤지수 (모바일/웹 UI/UX 디자이너)
+[14:35:58]    → POST /personas/generate (dev) [attempt 1]
+[14:36:03]    → POST /people (dev.1@multiproject.dev)
+[14:36:03]    ✅ 이민준 (풀스택 개발자)
+[14:36:03]    → POST /personas/generate (devops) [attempt 1]
+[14:36:09]    → POST /people (devops.1@multiproject.dev)
+[14:36:09]    ✅ 김민수 (데보Ops 엔지니어)
+[14:36:09] Saved: multi_project_8week_ko/team_personas.json
+[14:36:09] 🚀 다중 프로젝트 시뮬레이션 시작 (8주, 3개 프로젝트)…
+[14:36:09]    → POST /simulation/start (with 3 retry attempts)…
+⚠️  Attempt 1/3 failed: FOREIGN KEY constraint failed
+   Retrying in 5s...
+⚠️  Attempt 2/3 failed: Requested personas not found: ids 2, 3, 4
+   Retrying in 10s...
+⚠️  Attempt 3/3 failed: Requested personas not found: ids 3, 4
+❌ Simulation initialization failed after 3 attempts
+[14:36:50] API Error: 400 Client Error: Bad Request for url: http://127.0.0.1:53862/api/v1/simulation/start (POST http://127.0.0.1:53862/api/v1/simulation/start)
+[14:36:50] ❌ 시뮬레이션 시작 실패 (3회 재시도 후)
+[14:36:50] ❌ 시뮬레이션 실패

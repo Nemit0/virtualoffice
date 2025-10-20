@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import hashlib
 import logging
 import random
@@ -8,7 +9,8 @@ import time
 import threading
 import math
 from collections import deque
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone, timedelta
 import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Sequence, Tuple
@@ -125,10 +127,21 @@ CREATE TABLE IF NOT EXISTS project_plans (
     plan TEXT NOT NULL,
     generated_by INTEGER,
     duration_weeks INTEGER NOT NULL,
+    start_week INTEGER NOT NULL DEFAULT 1,
     model_used TEXT NOT NULL,
     tokens_used INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(generated_by) REFERENCES people(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    person_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES project_plans(id) ON DELETE CASCADE,
+    FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE,
+    UNIQUE(project_id, person_id)
 );
 
 CREATE TABLE IF NOT EXISTS worker_plans (
@@ -216,6 +229,7 @@ class SimulationEngine:
         planner: Planner | None = None,
         hours_per_day: int = 8,
         tick_interval_seconds: float = 1.0,
+        planner_strict: bool | None = None,
     ) -> None:
         self.email_gateway = email_gateway
         self.chat_gateway = chat_gateway
@@ -237,13 +251,285 @@ class SimulationEngine:
         self._work_hours_ticks: dict[int, tuple[int, int]] = {}
         self._random = random.Random()
         self._planner_metrics: deque[dict[str, Any]] = deque(maxlen=200)
+        # Locale (simple toggle for certain strings)
+        self._locale = (os.getenv("VDOS_LOCALE", "en").strip().lower() or "en")
         self._planner_metrics_lock = threading.Lock()
+        # Planner strict mode: if True, do not fall back to stub on GPT failures
+        if planner_strict is None:
+            env = os.getenv("VDOS_PLANNER_STRICT", "0").strip().lower()
+            self._planner_strict = env in {"1", "true", "yes", "on"}
+        else:
+            self._planner_strict = bool(planner_strict)
+        # Message throttling / deduplication
+        self._sent_dedup: set[tuple] = set()
+        try:
+            # Default cooldown prevents spammy repeats; override via env
+            self._contact_cooldown_ticks = int(os.getenv("VDOS_CONTACT_COOLDOWN_TICKS", "10"))
+        except ValueError:
+            self._contact_cooldown_ticks = 0
+        # Hourly planning limiter to prevent endless replanning within the same minute
+        try:
+            self._max_hourly_plans_per_minute = int(os.getenv("VDOS_MAX_HOURLY_PLANS_PER_MINUTE", "10"))
+        except ValueError:
+            self._max_hourly_plans_per_minute = 10
+        # (person_id, day_index, tick_of_day) -> attempts
+        self._hourly_plan_attempts: dict[tuple[int, int, int], int] = {}
+        # Scheduled comms: person_id -> { tick -> [action dicts] }
+        self._scheduled_comms: dict[int, dict[int, list[dict[str, Any]]]] = {}
+        self._last_contact: dict[tuple, int] = {}
+        self._sim_base_dt: datetime | None = None
+        # Parallel planning configuration
+        try:
+            self._max_planning_workers = int(os.getenv("VDOS_MAX_PLANNING_WORKERS", "4"))
+        except ValueError:
+            self._max_planning_workers = 4
+        self._planning_executor: ThreadPoolExecutor | None = None
+        if self._max_planning_workers > 1:
+            self._planning_executor = ThreadPoolExecutor(max_workers=self._max_planning_workers, thread_name_prefix="planner")
+        # Initialise DB and runtime state
         execute_script(SIM_SCHEMA)
         self._apply_migrations()
         self._ensure_state_row()
         self._bootstrap_channels()
         self._load_status_overrides()
         self._sync_worker_runtimes(self.list_people())
+
+    def _reset_tick_sends(self) -> None:
+        self._sent_dedup.clear()
+
+    def _can_send(self, *, tick: int, channel: str, sender: str, recipient_key: tuple, subject: str | None, body: str) -> bool:
+        body_key = body.strip()
+        dedup = (tick, channel, sender, recipient_key, subject or "", body_key)
+        if dedup in self._sent_dedup:
+            return False
+        cooldown_key = (channel, sender, recipient_key)
+        last = self._last_contact.get(cooldown_key)
+        if last is not None and tick - last < self._contact_cooldown_ticks:
+            return False
+        self._sent_dedup.add(dedup)
+        self._last_contact[cooldown_key] = tick
+        return True
+    
+    # --- Scheduled comms parsing/dispatch ---
+    def _schedule_from_hourly_plan(self, person: PersonRead, plan_text: str, current_tick: int) -> None:
+        import re
+        ticks_per_day = max(1, self.hours_per_day)
+        day_index = (current_tick - 1) // ticks_per_day
+        tick_of_day = (current_tick - 1) % ticks_per_day
+        base_tick = day_index * ticks_per_day + 1
+        lines = [ln.strip() for ln in plan_text.splitlines() if ln.strip()]
+        if not lines:
+            return
+        sched = self._scheduled_comms.setdefault(person.id, {})
+        # Accept optional cc/bcc prior to ':'
+        email_re = re.compile(
+            r"^Email\s+at\s+(\d{2}:\d{2})\s+to\s+([^:]+?)"
+            r"(?:\s+cc\s+([^:]+?))?"
+            r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
+            re.I,
+        )
+        chat_re = re.compile(r"^Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
+        for ln in lines:
+            m = email_re.match(ln)
+            channel = None
+            when = None
+            target = None
+            payload = ""
+            cc_raw = None
+            bcc_raw = None
+            if m:
+                channel = 'email'
+                when = m.group(1)
+                target = (m.group(2) or '').strip()
+                cc_raw = (m.group(3) or '').strip()
+                bcc_raw = (m.group(4) or '').strip()
+                payload = (m.group(5) or '').strip()
+            else:
+                m = chat_re.match(ln)
+                if m:
+                    channel = 'chat'
+                    when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+            if not channel:
+                continue
+            try:
+                hh, mm = [int(x) for x in when.split(":", 1)]
+                minutes = hh * 60 + mm
+                scheduled_tick_of_day = int(round(minutes * ticks_per_day / 1440))
+            except Exception:
+                continue
+            if scheduled_tick_of_day <= tick_of_day:
+                continue
+            t = base_tick + scheduled_tick_of_day
+            entry = {'channel': channel, 'target': target, 'payload': payload}
+            if cc_raw:
+                entry['cc'] = [x.strip() for x in cc_raw.split(',') if x.strip()]
+            if bcc_raw:
+                entry['bcc'] = [x.strip() for x in bcc_raw.split(',') if x.strip()]
+            sched.setdefault(t, []).append(entry)
+
+    def _dispatch_scheduled(self, person: PersonRead, current_tick: int, people_by_id: dict[int, PersonRead]) -> tuple[int, int]:
+        emails = chats = 0
+        by_tick = self._scheduled_comms.get(person.id) or {}
+        actions = by_tick.pop(current_tick, [])
+        if not actions:
+            return 0, 0
+        # Helper to avoid simultaneous mirrored DMs: if both sides scheduled the same message
+        # at the same minute, only the lower-id sender will fire.
+        handle_index = {p.chat_handle.lower(): p for p in people_by_id.values()}
+        # Email index for quick lookups when suggesting CCs
+        email_index = {p.email_address.lower(): p for p in people_by_id.values()}
+        # Build valid email set from team roster + external stakeholders
+        valid_emails = {p.email_address.lower() for p in people_by_id.values()}
+        # Get external stakeholders from environment (comma-separated list)
+        external_stakeholders = set()
+        external_env = os.getenv("VDOS_EXTERNAL_STAKEHOLDERS", "")
+        if external_env.strip():
+            external_stakeholders = {addr.strip().lower() for addr in external_env.split(",") if addr.strip()}
+        all_valid_emails = valid_emails | external_stakeholders
+
+        def _match_target(raw: str) -> tuple[str | None, str | None]:
+            val = raw.strip().lower()
+            # Check team roster email addresses
+            for p in people_by_id.values():
+                if p.email_address.lower() == val:
+                    return p.email_address, None
+            # Check chat handles
+            for p in people_by_id.values():
+                if p.chat_handle.lower() == val or f"@{p.chat_handle.lower()}" == val:
+                    return None, p.chat_handle
+            # Check names
+            for p in people_by_id.values():
+                if p.name.lower() == val:
+                    return p.email_address, p.chat_handle
+            # Check if looks like email - validate against allowed list
+            if "@" in val:
+                normalized = val.strip()
+                if normalized in all_valid_emails:
+                    # Return original casing from team roster or external list
+                    for p in people_by_id.values():
+                        if p.email_address.lower() == normalized:
+                            return p.email_address, None
+                    # External stakeholder - return normalized
+                    return normalized, None
+                else:
+                    # REJECT hallucinated email addresses
+                    logger.warning(f"Rejecting hallucinated email address: {raw}")
+                    return None, None
+            return None, raw.strip()
+        dt = self._sim_datetime_for_tick(current_tick)
+        dt_iso = dt.isoformat() if dt else None
+        # Heuristic: when no CC explicitly provided, suggest dept head and one relevant peer
+        def _suggest_cc(primary_to_email: str) -> list[str]:
+            cc_list: list[str] = []
+            primary = email_index.get((primary_to_email or "").lower())
+            # Department head first
+            dept_head = None
+            for p in people_by_id.values():
+                if getattr(p, "is_department_head", False):
+                    dept_head = p
+                    break
+            if dept_head and dept_head.email_address.lower() not in {
+                person.email_address.lower(),
+                (primary_to_email or "").lower(),
+            }:
+                cc_list.append(dept_head.email_address)
+
+            # Pick one relevant peer based on roles
+            def _role(s: str | None) -> str:
+                return (s or "").strip().lower()
+            s_role = _role(getattr(person, "role", None))
+            p_role = _role(getattr(primary, "role", None)) if primary else ""
+            want_peer = None
+            for r in (s_role, p_role):
+                if not r:
+                    continue
+                if "devops" in r or "site reliability" in r:
+                    want_peer = "dev"
+                    break
+                if "developer" in r or "engineer" in r or "dev" in r:
+                    want_peer = "designer"
+                    break
+                if "design" in r or "designer" in r:
+                    want_peer = "dev"
+                    break
+                if "product" in r or "pm" in r or "manager" in r:
+                    want_peer = "dev"
+                    break
+            if want_peer:
+                for p in people_by_id.values():
+                    if p.id == person.id:
+                        continue
+                    if primary and p.id == primary.id:
+                        continue
+                    if want_peer in _role(getattr(p, "role", None)):
+                        email = p.email_address
+                        if email and email.lower() not in {
+                            person.email_address.lower(),
+                            (primary_to_email or "").lower(),
+                        }:
+                            cc_list.append(email)
+                            break
+            # Dedupe preserving order
+            seen: set[str] = set()
+            out: list[str] = []
+            for em in cc_list:
+                low = em.lower()
+                if low not in seen:
+                    seen.add(low)
+                    out.append(em)
+            return out
+        for act in actions:
+            channel = act.get('channel')
+            target = act.get('target') or ""
+            payload = act.get('payload') or ""
+            email_to, chat_to = _match_target(target)
+            if channel == 'email' and email_to:
+                subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name}"
+                cc_raw = act.get('cc') or []
+                bcc_raw = act.get('bcc') or []
+                def _resolve_emails(raw_list: list[str]) -> list[str]:
+                    out: list[str] = []
+                    for tok in raw_list:
+                        # Clean parsing artifacts like "bcc", "cc" from address
+                        cleaned_tok = tok.strip()
+                        # Remove "bcc" or "cc" suffix/prefix and other parsing artifacts
+                        for keyword in [' bcc', ' cc', 'bcc ', 'cc ', 'bcc', 'cc']:
+                            cleaned_tok = cleaned_tok.replace(keyword, '').strip()
+                        # Skip empty strings after cleaning
+                        if not cleaned_tok:
+                            continue
+                        em, _ = _match_target(cleaned_tok)
+                        if em:
+                            out.append(em)
+                    # dedupe preserving order
+                    seen = set()
+                    uniq = []
+                    for em in out:
+                        if em not in seen:
+                            seen.add(em)
+                            uniq.append(em)
+                    return uniq
+                cc_emails = _resolve_emails(list(cc_raw))
+                if not cc_emails:
+                    cc_emails = _suggest_cc(email_to)
+                bcc_emails = _resolve_emails(list(bcc_raw))
+                recipients_key = tuple(sorted({email_to, *cc_emails, *bcc_emails}))
+                if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=payload):
+                    self.email_gateway.send_email(sender=person.email_address, to=[email_to], subject=subject, body=payload, cc=cc_emails, bcc=bcc_emails, sent_at_iso=dt_iso)
+                    emails += 1
+            elif channel == 'chat' and chat_to:
+                # Deterministic guard: only the lexicographically smaller handle sends to avoid mirrored DMs.
+                s_handle = person.chat_handle.lower()
+                r_handle = chat_to.lower()
+                if s_handle > r_handle:
+                    continue
+                if self._can_send(tick=current_tick, channel='chat', sender=person.chat_handle, recipient_key=(chat_to,), subject=None, body=payload):
+                    self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso)
+                    chats += 1
+        return emails, chats
+    def _schedule_direct_comm(self, person_id: int, tick: int, channel: str, target: str, payload: str) -> None:
+        by_tick = self._scheduled_comms.setdefault(person_id, {})
+        by_tick.setdefault(tick, []).append({'channel': channel, 'target': target, 'payload': payload})
 
     def _apply_migrations(self) -> None:
         with get_connection() as conn:
@@ -253,6 +539,10 @@ class SimulationEngine:
             state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(simulation_state)")}
             if "auto_tick" not in state_columns:
                 conn.execute("ALTER TABLE simulation_state ADD COLUMN auto_tick INTEGER NOT NULL DEFAULT 0")
+            # Multi-project support migrations
+            project_columns = {row["name"] for row in conn.execute("PRAGMA table_info(project_plans)")}
+            if "start_week" not in project_columns:
+                conn.execute("ALTER TABLE project_plans ADD COLUMN start_week INTEGER NOT NULL DEFAULT 1")
 
     def _parse_time_to_tick(self, time_str: str, *, round_up: bool = False) -> int:
         try:
@@ -313,6 +603,16 @@ class SimulationEngine:
         minute = minutes % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
+    def _sim_datetime_for_tick(self, tick: int) -> datetime | None:
+        base = self._sim_base_dt
+        if not base:
+            return None
+        ticks_per_day = max(1, self.hours_per_day)
+        day_index = (tick - 1) // ticks_per_day
+        tick_of_day = (tick - 1) % ticks_per_day
+        minutes = int((tick_of_day / ticks_per_day) * 1440)
+        return base + timedelta(days=day_index, minutes=minutes)
+
 
     def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         summary: dict[str, Any] = {}
@@ -343,18 +643,31 @@ class SimulationEngine:
             return data
         return data[-limit:]
 
-        with get_connection() as conn:
-            people_columns = {row["name"] for row in conn.execute("PRAGMA table_info(people)")}
-            if "is_department_head" not in people_columns:
-                conn.execute("ALTER TABLE people ADD COLUMN is_department_head INTEGER NOT NULL DEFAULT 0")
-            state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(simulation_state)")}
-            if "auto_tick" not in state_columns:
-                conn.execute("ALTER TABLE simulation_state ADD COLUMN auto_tick INTEGER NOT NULL DEFAULT 0")
-
     # ------------------------------------------------------------------
     # People management
     # ------------------------------------------------------------------
     def create_person(self, payload: PersonCreate) -> PersonRead:
+        # Validate name uniqueness
+        existing_people = self.list_people()
+        for person in existing_people:
+            if person.name.strip().lower() == payload.name.strip().lower():
+                raise ValueError(
+                    f"Duplicate name '{payload.name}'. "
+                    f"A person with this name already exists (ID: {person.id}, Role: {person.role}). "
+                    "Please use a unique name to avoid confusion in team communications."
+                )
+
+        # Validate Korean names for Korean locale
+        locale = os.getenv("VDOS_LOCALE", "en").strip().lower()
+        if locale == "ko":
+            import re
+            # Check if name contains Korean characters (Hangul)
+            if not re.search(r'[\uac00-\ud7af]', payload.name):
+                raise ValueError(
+                    f"Korean locale requires Korean name, but got: '{payload.name}'. "
+                    "Please use a Korean name (e.g., '김지훈' instead of 'Kim Jihoon')."
+                )
+
         persona = self._to_persona(payload)
         schedule = [
             ScheduleBlock(block.start, block.end, block.activity)
@@ -460,6 +773,9 @@ class SimulationEngine:
             if isinstance(planner, StubPlanner):
                 logger.error("Stub planner %s failed after %.2fs: %s", method_name, duration, exc)
                 raise
+            if self._planner_strict:
+                logger.error("Planner %s using %s failed after %.2fs and strict mode is enabled: %s", method_name, planner_name, duration, exc)
+                raise RuntimeError(f"Planning failed ({method_name}): {exc}") from exc
             logger.warning("Planner %s using %s failed after %.2fs: %s. Falling back to stub planner.", method_name, planner_name, duration, exc)
             fallback_method = getattr(self._stub_planner, method_name)
             fallback_start = time.perf_counter()
@@ -569,34 +885,139 @@ class SimulationEngine:
             raise RuntimeError("Cannot initialise project plan without any personas")
         self._sync_worker_runtimes(team)
         department_head = self._resolve_department_head(team, request.department_head_name)
-        try:
-            plan_result = self._call_planner(
-                'generate_project_plan',
-                department_head=department_head,
+
+        # Multi-project mode
+        if request.projects:
+            team_by_id = {p.id: p for p in team}
+            for proj_timeline in request.projects:
+                # Determine team for this project
+                if proj_timeline.assigned_person_ids:
+                    proj_team = [team_by_id[pid] for pid in proj_timeline.assigned_person_ids if pid in team_by_id]
+                else:
+                    proj_team = list(team)  # All team members by default
+
+                if not proj_team:
+                    continue
+
+                try:
+                    plan_result = self._call_planner(
+                        'generate_project_plan',
+                        department_head=department_head,
+                        project_name=proj_timeline.project_name,
+                        project_summary=proj_timeline.project_summary,
+                        duration_weeks=proj_timeline.duration_weeks,
+                        team=proj_team,
+                        model_hint=request.model_hint,
+                    )
+                except PlanningError as exc:
+                    raise RuntimeError(f"Unable to generate project plan for '{proj_timeline.project_name}': {exc}") from exc
+
+                self._store_project_plan(
+                    project_name=proj_timeline.project_name,
+                    project_summary=proj_timeline.project_summary,
+                    plan_result=plan_result,
+                    generated_by=department_head.id if department_head else None,
+                    duration_weeks=proj_timeline.duration_weeks,
+                    start_week=proj_timeline.start_week,
+                    assigned_person_ids=proj_timeline.assigned_person_ids,
+                )
+
+            # For multi-project mode, skip ALL initial person planning to avoid timeout
+            # All daily/hourly plans will be generated lazily on first advance()
+            # This makes initialization instant by only generating project plans (2-3 GPT calls)
+            pass
+        else:
+            # Single-project mode (backward compatible)
+            try:
+                plan_result = self._call_planner(
+                    'generate_project_plan',
+                    department_head=department_head,
+                    project_name=request.project_name,
+                    project_summary=request.project_summary,
+                    duration_weeks=request.duration_weeks,
+                    team=team,
+                    model_hint=request.model_hint,
+                )
+            except PlanningError as exc:
+                raise RuntimeError(f"Unable to generate project plan: {exc}") from exc
+            plan_record = self._store_project_plan(
                 project_name=request.project_name,
                 project_summary=request.project_summary,
+                plan_result=plan_result,
+                generated_by=department_head.id if department_head else None,
                 duration_weeks=request.duration_weeks,
-                team=team,
-                model_hint=request.model_hint,
             )
-        except PlanningError as exc:
-            raise RuntimeError(f"Unable to generate project plan: {exc}") from exc
-        plan_record = self._store_project_plan(
-            project_name=request.project_name,
-            project_summary=request.project_summary,
-            plan_result=plan_result,
-            generated_by=department_head.id if department_head else None,
-            duration_weeks=request.duration_weeks,
-        )
-        for person in team:
-            daily_result = self._generate_daily_plan(person, plan_record, day_index=0)
-            self._generate_hourly_plan(
-                person,
-                plan_record,
-                daily_result.content,
-                tick=0,
-                reason="initialisation",
-            )
+            for person in team:
+                daily_result = self._generate_daily_plan(person, plan_record, day_index=0)
+                self._generate_hourly_plan(
+                    person,
+                    plan_record,
+                    daily_result.content,
+                    tick=0,
+                    reason="initialisation",
+                )
+
+    def _get_active_project_for_person(self, person_id: int, week: int) -> dict[str, Any] | None:
+        """Get the active project for a person at a given week, considering project timelines."""
+        with get_connection() as conn:
+            # First check if person is assigned to specific projects
+            rows = conn.execute(
+                """
+                SELECT pp.* FROM project_plans pp
+                INNER JOIN project_assignments pa ON pp.id = pa.project_id
+                WHERE pa.person_id = ? AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                ORDER BY pp.start_week ASC
+                LIMIT 1
+                """,
+                (person_id, week, week),
+            ).fetchall()
+
+            if not rows:
+                # No specific assignment, check for projects without assignments (default: everyone)
+                rows = conn.execute(
+                    """
+                    SELECT pp.* FROM project_plans pp
+                    WHERE pp.id NOT IN (SELECT DISTINCT project_id FROM project_assignments)
+                    AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                    ORDER BY pp.start_week ASC
+                    LIMIT 1
+                    """,
+                    (week, week),
+                ).fetchall()
+
+            if rows:
+                return self._row_to_project_plan(rows[0])
+            return None
+
+    def _get_all_active_projects_for_person(self, person_id: int, week: int) -> list[dict[str, Any]]:
+        """Get ALL active projects for a person at a given week."""
+        with get_connection() as conn:
+            # Get assigned projects
+            rows = conn.execute(
+                """
+                SELECT pp.* FROM project_plans pp
+                INNER JOIN project_assignments pa ON pp.id = pa.project_id
+                WHERE pa.person_id = ? AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                ORDER BY pp.start_week ASC
+                """,
+                (person_id, week, week),
+            ).fetchall()
+
+            assigned_ids = {row["id"] for row in rows}
+
+            # Get projects without assignments (everyone works on them)
+            unassigned_rows = conn.execute(
+                """
+                SELECT pp.* FROM project_plans pp
+                WHERE pp.id NOT IN (SELECT DISTINCT project_id FROM project_assignments)
+                AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                ORDER BY pp.start_week ASC
+                """,
+                (week, week),
+            ).fetchall()
+
+            all_rows = list(rows) + [r for r in unassigned_rows if r["id"] not in assigned_ids]
+            return [self._row_to_project_plan(row) for row in all_rows]
 
     def _resolve_department_head(
         self, people: Sequence[PersonRead], requested_name: str | None
@@ -621,22 +1042,33 @@ class SimulationEngine:
         plan_result: PlanResult,
         generated_by: int | None,
         duration_weeks: int,
+        start_week: int = 1,
+        assigned_person_ids: Sequence[int] | None = None,
     ) -> dict[str, Any]:
         with get_connection() as conn:
             cursor = conn.execute(
-                "INSERT INTO project_plans(project_name, project_summary, plan, generated_by, duration_weeks, model_used, tokens_used) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO project_plans(project_name, project_summary, plan, generated_by, duration_weeks, start_week, model_used, tokens_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     project_name,
                     project_summary,
                     plan_result.content,
                     generated_by,
                     duration_weeks,
+                    start_week,
                     plan_result.model_used,
                     plan_result.tokens_used,
                 ),
             )
+            project_id = cursor.lastrowid
+            # Store project assignments if provided
+            if assigned_person_ids:
+                for person_id in assigned_person_ids:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO project_assignments(project_id, person_id) VALUES (?, ?)",
+                        (project_id, person_id),
+                    )
             row = conn.execute(
-                "SELECT * FROM project_plans WHERE id = ?", (cursor.lastrowid,)
+                "SELECT * FROM project_plans WHERE id = ?", (project_id,)
             ).fetchone()
         plan = self._row_to_project_plan(row)
         self._project_plan_cache = plan
@@ -644,6 +1076,13 @@ class SimulationEngine:
         return plan
 
     def _row_to_project_plan(self, row) -> dict[str, Any]:
+        # Get start_week with fallback to 1 for older records
+        start_week = 1
+        try:
+            start_week = row["start_week"]
+        except (KeyError, IndexError):
+            pass
+
         return {
             "id": row["id"],
             "project_name": row["project_name"],
@@ -651,6 +1090,7 @@ class SimulationEngine:
             "plan": row["plan"],
             "generated_by": row["generated_by"],
             "duration_weeks": row["duration_weeks"],
+            "start_week": start_week,
             "model_used": row["model_used"],
             "tokens_used": row["tokens_used"],
             "created_at": row["created_at"],
@@ -659,6 +1099,9 @@ class SimulationEngine:
     def _generate_daily_plan(
         self, person: PersonRead, project_plan: dict[str, Any], day_index: int
     ) -> PlanResult:
+        # Get all active people for team roster
+        team = self._get_active_people()
+
         try:
             result = self._call_planner(
                 'generate_daily_plan',
@@ -666,6 +1109,7 @@ class SimulationEngine:
                 project_plan=project_plan['plan'],
                 day_index=day_index,
                 duration_weeks=self.project_duration_weeks,
+                team=team,
                 model_hint=self._planner_model_hint,
             )
         except PlanningError as exc:
@@ -679,6 +1123,57 @@ class SimulationEngine:
         )
         return result
 
+    def _generate_hourly_plans_parallel(
+        self,
+        planning_tasks: list[tuple[PersonRead, dict[str, Any], str, int, str, list[str] | None, list[dict[str, Any]] | None]],
+    ) -> list[tuple[PersonRead, PlanResult]]:
+        """
+        Generate hourly plans for multiple workers in parallel.
+
+        Args:
+            planning_tasks: List of (person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects)
+
+        Returns:
+            List of (person, PlanResult) tuples in same order as input
+        """
+        if not self._planning_executor or len(planning_tasks) <= 1:
+            # Fall back to sequential planning
+            results = []
+            for task in planning_tasks:
+                person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects = task
+                try:
+                    result = self._generate_hourly_plan(
+                        person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects
+                    )
+                    results.append((person, result))
+                except Exception as exc:
+                    logger.error(f"Sequential planning failed for {person.name}: {exc}")
+                    results.append((person, PlanResult(content="", model_used="error", tokens_used=0)))
+            return results
+
+        # Submit all planning tasks in parallel
+        futures = []
+        for task in planning_tasks:
+            person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects = task
+            future = self._planning_executor.submit(
+                self._generate_hourly_plan,
+                person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects
+            )
+            futures.append((person, future))
+
+        # Collect results in order
+        results = []
+        for person, future in futures:
+            try:
+                result = future.result(timeout=240)  # 4 minute timeout per plan
+                results.append((person, result))
+            except Exception as exc:
+                logger.error(f"Parallel planning failed for {person.name}: {exc}")
+                # Return empty plan to maintain order
+                results.append((person, PlanResult(content="", model_used="error", tokens_used=0)))
+
+        return results
+
     def _generate_hourly_plan(
         self,
         person: PersonRead,
@@ -687,7 +1182,11 @@ class SimulationEngine:
         tick: int,
         reason: str,
         adjustments: list[str] | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
+        # Get all active people for team roster
+        team = self._get_active_people()
+
         try:
             result = self._call_planner(
                 'generate_hourly_plan',
@@ -696,7 +1195,9 @@ class SimulationEngine:
                 daily_plan=daily_plan_text,
                 tick=tick,
                 context_reason=reason,
+                team=team,
                 model_hint=self._planner_model_hint,
+                all_active_projects=all_active_projects,
             )
         except PlanningError as exc:
             raise RuntimeError(f"Unable to generate hourly plan for {person.name}: {exc}") from exc
@@ -790,7 +1291,17 @@ class SimulationEngine:
         lines = [line.strip() for line in plan_text.splitlines() if line.strip()]
         if not lines:
             return "No plan provided yet."
-        return "\n".join(lines[:max_lines])
+        # Drop placeholder headers and meta lines
+        filtered: list[str] = []
+        for line in lines:
+            if (line.startswith("[") and line.endswith("]")) or line.startswith("#") or line.startswith("```"):
+                continue
+            if line.startswith(("Tick:", "Worker:", "Reason:", "Outline:")):
+                continue
+            filtered.append(line)
+        if not filtered:
+            filtered = lines
+        return "\n".join(filtered[:max_lines])
 
     def _fetch_daily_report(self, person_id: int, day_index: int) -> dict[str, Any] | None:
         with get_connection() as conn:
@@ -992,11 +1503,39 @@ class SimulationEngine:
         active_people = self._resolve_active_people(request, all_people)
         self._active_person_ids = [person.id for person in active_people]
         if request is not None:
-            self.project_duration_weeks = request.duration_weeks
+            # Multi-project mode uses total_duration_weeks if provided
+            if request.total_duration_weeks:
+                self.project_duration_weeks = request.total_duration_weeks
+            else:
+                self.project_duration_weeks = request.duration_weeks
             self._planner_model_hint = request.model_hint
             self._initialise_project_plan(request, active_people)
         self._set_running(True)
+        try:
+            self._sim_base_dt = datetime.now(timezone.utc)
+        except Exception:
+            self._sim_base_dt = None
         self._sync_worker_runtimes(active_people)
+        # Schedule a kickoff chat/email at the first working minute for each worker
+        try:
+            ticks_per_day = max(1, self.hours_per_day)
+            for person in active_people:
+                start_end = self._work_hours_ticks.get(person.id, (0, ticks_per_day))
+                start_tick_of_day = start_end[0]
+                base_tick = 1  # day 1 start
+                kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes
+                # pick a collaborator to target
+                recipients = self._select_collaborators(person, active_people)
+                target = recipients[0] if recipients else None
+                if target:
+                    if self._locale == 'ko':
+                        self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?")
+                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "제목: 킥오프\n본문: 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
+                    else:
+                        self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, f"Morning! Quick sync on priorities?")
+                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Subject: Quick kickoff\nBody: Lining up tasks for today — ping me with blockers.")
+        except Exception:
+            pass
         status = self._fetch_state()
         return SimulationState(
             current_tick=status.current_tick,
@@ -1097,15 +1636,32 @@ class SimulationEngine:
             self._sync_worker_runtimes(people)
             people_by_id = {person.id: person for person in people}
 
+            # Calculate current week for multi-project support
+            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            current_week = (current_day // 5) + 1  # 1-indexed weeks, assuming 5-day work weeks
+
             emails_sent = 0
             chats_sent = 0
 
             for _ in range(ticks):
                 status.current_tick += 1
+                self._reset_tick_sends()
                 self._update_tick(status.current_tick, reason)
                 self._refresh_status_overrides(status.current_tick)
                 event_adjustments, _ = self._maybe_generate_events(people, status.current_tick, project_plan)
                 day_index = (status.current_tick - 1) // self.hours_per_day
+                tick_of_day = (status.current_tick - 1) % self.hours_per_day if self.hours_per_day > 0 else 0
+                # Prune stale plan-attempt counters (keep only this minute)
+                if self._hourly_plan_attempts:
+                    keys = list(self._hourly_plan_attempts.keys())
+                    for key in keys:
+                        if key[1] != day_index or key[2] != tick_of_day:
+                            self._hourly_plan_attempts.pop(key, None)
+
+                # PHASE 1: Collect planning tasks and prepare context
+                planning_tasks = []
+                person_contexts = {}
+
                 for person in people:
                     runtime = self._get_worker_runtime(person)
                     incoming = runtime.drain()
@@ -1133,9 +1689,29 @@ class SimulationEngine:
                             runtime.queue(reminder)
                         logger.info("Skipping planning for %s at tick %s (off hours)", person.name, status.current_tick)
                         continue
-                    should_plan = bool(incoming) or bool(adjustments) or reason != 'auto' or (((status.current_tick - 1) % self.hours_per_day) == 0)
+                    # Dispatch any scheduled comms for this tick before planning/fallback
+                    se_pre, sc_pre = self._dispatch_scheduled(person, status.current_tick, people_by_id)
+                    emails_sent += se_pre
+                    chats_sent += sc_pre
+                    if se_pre or sc_pre:
+                        # If we sent scheduled comms at this minute, skip fallback sending to avoid duplication
+                        continue
+                    should_plan = bool(incoming) or bool(adjustments) or reason != 'auto' or (tick_of_day == 0)
                     if not should_plan:
                         continue
+                    # Hourly planning limiter per minute
+                    key = (person.id, day_index, tick_of_day)
+                    attempts = self._hourly_plan_attempts.get(key, 0)
+                    if attempts >= self._max_hourly_plans_per_minute:
+                        logger.warning(
+                            "Skipping hourly planning for %s at tick %s (minute cap %s reached)",
+                            person.name,
+                            status.current_tick,
+                            self._max_hourly_plans_per_minute,
+                        )
+                        continue
+                    # record attempt before planning to avoid re-entry storms
+                    self._hourly_plan_attempts[key] = attempts + 1
                     self._remove_runtime_messages([msg.message_id for msg in incoming if msg.message_id is not None])
                     for message in incoming:
                         sender_person = people_by_id.get(message.sender_id)
@@ -1146,14 +1722,27 @@ class SimulationEngine:
                             adjustments.append(f"Handle request from {message.sender_name}: {message.action_item}")
                         if sender_person is None:
                             continue
-                        ack_phrase = (message.action_item or message.summary or "your latest update").rstrip('.')
-                        ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
-                        self.chat_gateway.send_dm(
+                        ack_phrase = (message.action_item or message.summary or ("요청하신 내용" if self._locale == 'ko' else "your latest update")).rstrip('.')
+                        if self._locale == 'ko':
+                            ack_body = f"{sender_person.name.split()[0]}님, {ack_phrase} 진행 중입니다."
+                        else:
+                            ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
+                        if self._can_send(
+                            tick=status.current_tick,
+                            channel='chat',
                             sender=person.chat_handle,
-                            recipient=sender_person.chat_handle,
+                            recipient_key=(sender_person.chat_handle,),
+                            subject=None,
                             body=ack_body,
-                        )
-                        chats_sent += 1
+                        ):
+                            dt = self._sim_datetime_for_tick(status.current_tick)
+                            self.chat_gateway.send_dm(
+                                sender=person.chat_handle,
+                                recipient=sender_person.chat_handle,
+                                body=ack_body,
+                                sent_at_iso=(dt.isoformat() if dt else None),
+                            )
+                            chats_sent += 1
                         self._log_exchange(status.current_tick, person.id, sender_person.id, 'chat', None, ack_body)
                         ack_message = _InboundMessage(
                             sender_id=person.id,
@@ -1167,24 +1756,84 @@ class SimulationEngine:
                         )
                         self._queue_runtime_message(sender_person, ack_message)
 
-                    daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
-                    hourly_result = self._generate_hourly_plan(
+                    # Get ALL active projects for this person at current week (concurrent multi-project support)
+                    active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+                    if not active_projects:
+                        active_projects = [project_plan] if project_plan else []
+
+                    # Use first project for daily plan, but pass all projects to hourly planner
+                    primary_project = active_projects[0] if active_projects else project_plan
+
+                    daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project)
+
+                    # Collect planning task for parallel execution
+                    planning_task = (
                         person,
-                        project_plan,
+                        primary_project,
                         daily_plan_text,
-                        tick=status.current_tick,
-                        reason=reason,
-                        adjustments=adjustments or None,
+                        status.current_tick,
+                        reason,
+                        adjustments or None,
+                        active_projects if len(active_projects) > 1 else None,
                     )
+                    planning_tasks.append(planning_task)
+
+                    # Store context needed for post-processing
+                    person_contexts[person.id] = {
+                        'incoming': incoming,
+                        'adjustments': adjustments,
+                        'override': override,
+                        'primary_project': primary_project,
+                        'daily_plan_text': daily_plan_text,
+                        'active_projects': active_projects,
+                    }
+
+                # PHASE 2: Execute planning in parallel (or sequential if disabled)
+                if planning_tasks:
+                    plan_results = self._generate_hourly_plans_parallel(planning_tasks)
+                else:
+                    plan_results = []
+
+                # PHASE 3: Process results and send communications
+                for person, hourly_result in plan_results:
+                    context = person_contexts[person.id]
+                    override = context['override']
+                    daily_plan_text = context['daily_plan_text']
+                    primary_project = context['primary_project']
+                    # person_project is the dict with project details
+                    person_project = primary_project if isinstance(primary_project, dict) else {'project_name': 'Unknown Project'}
+
                     daily_summary = self._summarise_plan(daily_plan_text, max_lines=3)
                     hourly_summary = self._summarise_plan(hourly_result.content)
+
+                    # Store the hourly plan
+                    self._store_worker_plan(
+                        person_id=person.id,
+                        tick=status.current_tick,
+                        plan_type="hourly",
+                        result=hourly_result,
+                        context=None,
+                    )
+
+                    # Schedule any explicitly timed comms from the hourly plan
+                    try:
+                        self._schedule_from_hourly_plan(person, hourly_result.content, status.current_tick)
+                    except Exception:
+                        pass
                     if override and override[0] == 'SickLeave':
                         continue
+
                     recipients = self._select_collaborators(person, people)
+                    # Dispatch scheduled comms for this tick before any fallback sends
+                    se, sc = self._dispatch_scheduled(person, status.current_tick, people_by_id)
+                    emails_sent += se
+                    chats_sent += sc
+                    if se or sc:
+                        continue
                     if not recipients:
-                        subject = f"[Tick {status.current_tick}] {reason.title()} update for {person.name}"
+                        subject = f"Update for {person.name}"
                         body_lines = [
-                            f"Project: {project_plan['project_name']}",
+                            f"Project: {person_project['project_name']}",
                             f"Daily focus:\n{daily_summary}",
                             "",
                             f"Hourly plan:\n{hourly_summary}",
@@ -1192,52 +1841,136 @@ class SimulationEngine:
                             "Keep the runway clear for surprises.",
                         ]
                         body_text = "\n".join(body_lines)
-                        self.email_gateway.send_email(
+                        if self._can_send(
+                            tick=status.current_tick,
+                            channel='email',
                             sender=self.sim_manager_email,
-                            to=[person.email_address],
+                            recipient_key=(person.email_address,),
                             subject=subject,
                             body=body_text,
-                        )
-                        emails_sent += 1
+                        ):
+                            dt = self._sim_datetime_for_tick(status.current_tick)
+                            self.email_gateway.send_email(
+                                sender=self.sim_manager_email,
+                                to=[person.email_address],
+                                subject=subject,
+                                body=body_text,
+                                sent_at_iso=(dt.isoformat() if dt else None),
+                            )
+                            emails_sent += 1
                         self._log_exchange(status.current_tick, None, person.id, "email", subject, body_text)
-                        chat_body = f"Tick {status.current_tick}: {hourly_summary.replace('\n', ' / ')}\nLet me know if you need support."
-                        self.chat_gateway.send_dm(
+                        chat_body = f"Quick update: {hourly_summary.replace('\n', ' / ')}\nLet me know if you need support."
+                        if self._can_send(
+                            tick=status.current_tick,
+                            channel='chat',
                             sender=self.sim_manager_handle,
-                            recipient=person.chat_handle,
+                            recipient_key=(person.chat_handle,),
+                            subject=None,
                             body=chat_body,
-                        )
-                        chats_sent += 1
+                        ):
+                            dt = self._sim_datetime_for_tick(status.current_tick)
+                            self.chat_gateway.send_dm(
+                                sender=self.sim_manager_handle,
+                                recipient=person.chat_handle,
+                                body=chat_body,
+                                sent_at_iso=(dt.isoformat() if dt else None),
+                            )
+                            chats_sent += 1
                         self._log_exchange(status.current_tick, None, person.id, "chat", None, chat_body)
                         continue
                     action_item = self._derive_action_item(hourly_summary, daily_summary)
-                    for recipient in recipients:
-                        subject = f"[Tick {status.current_tick}] {person.name} -> {recipient.name}: {reason.title()} focus"
-                        body_lines = [
-                            f"Hey {recipient.name.split()[0]},",
-                            "",
-                            "Current focus:",
-                            hourly_summary or daily_summary or "Heads down on deliverables.",
-                            "",
-                            f"Request: {action_item}",
-                            "Ping me if you need anything shifted.",
-                        ]
+                    for i, recipient in enumerate(recipients):
+                        subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name} → {recipient.name}"
+                        if self._locale == 'ko':
+                            body_lines = [
+                                f"{recipient.name.split()[0]}님 안녕하세요,",
+                                "",
+                                "현재 집중 작업:",
+                                hourly_summary or daily_summary or "주요 작업에 집중하고 있습니다.",
+                                "",
+                                f"요청: {action_item}",
+                                "필요하시면 언제든 말씀해 주세요.",
+                            ]
+                        else:
+                            body_lines = [
+                                f"Hey {recipient.name.split()[0]},",
+                                "",
+                                "Current focus:",
+                                hourly_summary or daily_summary or "Heads down on deliverables.",
+                                "",
+                                f"Request: {action_item}",
+                                "Ping me if you need anything shifted.",
+                            ]
                         body = "\n".join(body_lines)
-                        self.email_gateway.send_email(
+                        # Suggest CCs for fallback emails (dept head + one relevant peer)
+                        cc_suggest: list[str] = []
+                        try:
+                            head = next((p for p in people if getattr(p, 'is_department_head', False)), None)
+                        except Exception:
+                            head = None
+                        if head and head.id not in {person.id, recipient.id}:
+                            cc_email = getattr(head, 'email_address', None)
+                            if cc_email:
+                                cc_suggest.append(cc_email)
+                        def _role(s: str | None) -> str:
+                            return (s or '').strip().lower()
+                        s_role = _role(getattr(person, 'role', None))
+                        want_peer = None
+                        if any(k in s_role for k in ("devops", "site reliability")):
+                            want_peer = "dev"
+                        elif any(k in s_role for k in ("developer", "engineer", "dev")):
+                            want_peer = "designer"
+                        elif any(k in s_role for k in ("design", "designer")):
+                            want_peer = "dev"
+                        elif any(k in s_role for k in ("product", "pm", "manager")):
+                            want_peer = "dev"
+                        if want_peer:
+                            for p in people:
+                                if p.id in {person.id, recipient.id}:
+                                    continue
+                                if want_peer in _role(getattr(p, 'role', None)):
+                                    peer_email = getattr(p, 'email_address', None)
+                                    if peer_email:
+                                        cc_suggest.append(peer_email)
+                                        break
+                        if self._can_send(
+                            tick=status.current_tick,
+                            channel='email',
                             sender=person.email_address,
-                            to=[recipient.email_address],
+                            recipient_key=(recipient.email_address,),
                             subject=subject,
                             body=body,
-                        )
-                        emails_sent += 1
+                        ):
+                            dt = self._sim_datetime_for_tick(status.current_tick)
+                            self.email_gateway.send_email(
+                                sender=person.email_address,
+                                to=[recipient.email_address],
+                                subject=subject,
+                                body=body,
+                                cc=cc_suggest,
+                                sent_at_iso=(dt.isoformat() if dt else None),
+                            )
+                            emails_sent += 1
                         self._log_exchange(status.current_tick, person.id, recipient.id, "email", subject, body)
 
-                        chat_body = f"Tick {status.current_tick}: {action_item}"
-                        self.chat_gateway.send_dm(
-                            sender=person.chat_handle,
-                            recipient=recipient.chat_handle,
-                            body=chat_body,
-                        )
-                        chats_sent += 1
+                        if i == 0:
+                            chat_body = (f"간단 업데이트: {action_item}" if self._locale == 'ko' else f"Quick update: {action_item}")
+                            if self._can_send(
+                                tick=status.current_tick,
+                                channel='chat',
+                                sender=person.chat_handle,
+                                recipient_key=(recipient.chat_handle,),
+                                subject=None,
+                                body=chat_body,
+                            ):
+                                dt = self._sim_datetime_for_tick(status.current_tick)
+                                self.chat_gateway.send_dm(
+                                    sender=person.chat_handle,
+                                    recipient=recipient.chat_handle,
+                                    body=chat_body,
+                                    sent_at_iso=(dt.isoformat() if dt else None),
+                                )
+                                chats_sent += 1
                         self._log_exchange(status.current_tick, person.id, recipient.id, "chat", None, chat_body)
 
                         inbound = _InboundMessage(
@@ -1491,6 +2224,8 @@ class SimulationEngine:
                 continue
             for line in source.splitlines():
                 cleaned = line.strip().lstrip('-•').strip()
+                if cleaned.startswith(("Tick:", "Worker:", "Reason:", "Outline:")):
+                    continue
                 if cleaned:
                     return cleaned
         return "Keep momentum on the current deliverables"
@@ -1558,13 +2293,17 @@ class SimulationEngine:
         if not people:
             return adjustments, immediate
         rng = self._random
+        # Gate event generation to humane frequencies to avoid per-minute GPT replanning.
+        tick_of_day = (tick - 1) % max(1, self.hours_per_day)
 
-        # Sick leave event
-        if rng.random() < 0.25:
-            active_people = [p for p in people if self._status_overrides.get(p.id, (None, 0))[0] != 'SickLeave']
-            if active_people:
-                target = rng.choice(active_people)
-                until_tick = tick + self.hours_per_day
+        # Sick leave event: consider once per day around mid-morning.
+        if tick_of_day == int(60 * max(1, self.hours_per_day) / 480):  # ~10:00
+            # Roughly 5% daily chance across the team
+            if rng.random() < 0.05:
+                active_people = [p for p in people if self._status_overrides.get(p.id, (None, 0))[0] != 'SickLeave']
+                if active_people:
+                    target = rng.choice(active_people)
+                    until_tick = tick + self.hours_per_day
                 self._set_status_override(target.id, 'SickLeave', until_tick, f'Sick leave triggered at tick {tick}')
                 rest_message = _InboundMessage(
                     sender_id=0,
@@ -1607,8 +2346,8 @@ class SimulationEngine:
 
                 self._record_event('sick_leave', [target.id], tick, {'until_tick': until_tick})
 
-        # Client feature request
-        if rng.random() < 0.3:
+        # Client feature request: at most a few times per day (every ~2 hours), low probability.
+        if (tick_of_day % int(120 * max(1, self.hours_per_day) / 480) == 0) and (rng.random() < 0.10):
             head = next((p for p in people if getattr(p, 'is_department_head', False)), people[0])
             feature = rng.choice([
                 'refresh hero messaging',
@@ -1617,14 +2356,7 @@ class SimulationEngine:
                 'deliver onboarding walkthrough',
             ])
             subject = f'Client request: {feature}'
-            body = f"Client requested {feature} at tick {tick}. Align on next steps within this cycle."
-            self.email_gateway.send_email(
-                sender=self.sim_manager_email,
-                to=[head.email_address],
-                subject=subject,
-                body=body,
-            )
-            self._log_exchange(tick, None, head.id, 'email', subject, body)
+            body = f"Client requested {feature}. Align on next steps within this cycle."
             head_message = _InboundMessage(
                 sender_id=0,
                 sender_name='Simulation Manager',
@@ -1656,12 +2388,6 @@ class SimulationEngine:
                 immediate.setdefault(partner.id, []).append(partner_message)
                 adjustments.setdefault(partner.id, []).append(f'Partner with {head.name} on client request: {feature}.')
                 chat_body = f"Client request: {feature}. Let's sync on next steps."
-                self.chat_gateway.send_dm(
-                    sender=head.chat_handle,
-                    recipient=partner.chat_handle,
-                    body=chat_body,
-                )
-                self._log_exchange(tick, head.id, partner.id, 'chat', None, chat_body)
                 targets = [head.id, partner.id]
             else:
                 targets = [head.id]
@@ -1781,6 +2507,9 @@ class SimulationEngine:
         close_chat = getattr(self.chat_gateway, "close", None)
         if callable(close_chat):
             close_chat()
+
+
+
 
 
 

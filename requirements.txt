@@ -1,10 +1,12 @@
+PySide6-Essentials~=6.8
+fastapi~=0.117
+uvicorn~=0.36
+email-validator~=2.3
+httpx~=0.28
 openai
-fastapi
-uvicorn
-email-validator
-httpx
-briefcase
 python-dotenv
+briefcase
 PyQT6playwright
 markitdown
 markitdown[all]
+pytest

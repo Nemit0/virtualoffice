@@ -78,6 +78,20 @@ class EventCreate(BaseModel):
 class EventRead(EventCreate):
     id: int
 
+class ProjectTimelineIn(BaseModel):
+    """Defines when a project is active within the simulation"""
+    project_name: str
+    project_summary: str
+    start_week: int = Field(default=1, ge=1, description="Week when project starts (1-indexed)")
+    duration_weeks: int = Field(default=4, ge=1, le=52, description="How many weeks the project lasts")
+    assigned_person_ids: Sequence[int] | None = Field(default=None, description="Optional: specific people assigned to this project")
+
+    @property
+    def end_week(self) -> int:
+        """Calculate the end week (inclusive)"""
+        return self.start_week + self.duration_weeks - 1
+
+
 class SimulationStartRequest(BaseModel):
     project_name: str
     project_summary: str
@@ -89,6 +103,9 @@ class SimulationStartRequest(BaseModel):
     include_person_names: Sequence[str] | None = Field(default=None, description="Limit the run to personas matching these names")
     exclude_person_ids: Sequence[int] | None = Field(default=None, description="Remove these persona IDs from the run")
     exclude_person_names: Sequence[str] | None = Field(default=None, description="Remove personas whose names match these values")
+    # Multi-project support
+    projects: Sequence[ProjectTimelineIn] | None = Field(default=None, description="Optional: define multiple overlapping projects")
+    total_duration_weeks: int | None = Field(default=None, ge=1, le=52, description="Total simulation duration when using multiple projects")
 
 
 class ProjectPlanRead(BaseModel):
@@ -149,5 +166,33 @@ class TokenUsageSummary(BaseModel):
 class PersonaGenerateRequest(BaseModel):
     prompt: str
     model_hint: str | None = Field(default=None, description="Optional model name, e.g. gpt-4o-mini")
+
+
+# --- Status override (external integration) ---
+class StatusOverrideRequest(BaseModel):
+    person_id: int | None = Field(default=None, description="Person ID to override")
+    person_name: str | None = Field(default=None, description="Person name to override (alternative to person_id)")
+    status: Literal["Absent", "Offline", "SickLeave", "OnLeave"] = Field(..., description="Status to set")
+    duration_ticks: int | None = Field(default=None, ge=1, description="How many ticks the status lasts (optional, defaults to current day)")
+    reason: str = Field(default="External trigger", max_length=256)
+
+    @field_validator("person_id", "person_name")
+    @classmethod
+    def _at_least_one_identifier(cls, value, info):
+        if info.field_name == "person_name":
+            # Check if both are None
+            person_id = info.data.get("person_id")
+            if person_id is None and value is None:
+                raise ValueError("Either person_id or person_name must be provided")
+        return value
+
+
+class StatusOverrideResponse(BaseModel):
+    person_id: int
+    person_name: str
+    status: str
+    until_tick: int
+    reason: str
+    message: str
 
 

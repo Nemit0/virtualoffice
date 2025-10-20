@@ -191,20 +191,55 @@ def post_message(slug: str, payload: MessagePost, conn=Depends(db_dependency)):
     if not membership:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sender not in room")
 
-    cursor = conn.execute(
-        "INSERT INTO chat_messages(room_id, sender, body) VALUES (?, ?, ?)",
-        (room["id"], sender, payload.body),
-    )
+    if getattr(payload, "sent_at_iso", None):
+        cursor = conn.execute(
+            "INSERT INTO chat_messages(room_id, sender, body, sent_at) VALUES (?, ?, ?, ?)",
+            (room["id"], sender, payload.body, payload.sent_at_iso),
+        )
+    else:
+        cursor = conn.execute(
+            "INSERT INTO chat_messages(room_id, sender, body) VALUES (?, ?, ?)",
+            (room["id"], sender, payload.body),
+        )
     return _message_to_record(conn, cursor.lastrowid)
 
 
 @app.get("/rooms/{slug}/messages", response_model=List[MessageRecord])
-def list_messages(slug: str, conn=Depends(db_dependency)):
+def list_messages(
+    slug: str,
+    since_id: int | None = None,
+    since_timestamp: str | None = None,
+    limit: int | None = None,
+    conn=Depends(db_dependency)
+):
+    """Get messages in a room, optionally filtered by ID or timestamp.
+
+    Args:
+        slug: Room slug
+        since_id: Only return messages with ID greater than this (for polling new messages)
+        since_timestamp: Only return messages sent after this ISO timestamp
+        limit: Maximum number of messages to return (chronological order)
+    """
     room = _room_by_slug(conn, slug)
-    messages = conn.execute(
-        "SELECT id FROM chat_messages WHERE room_id = ? ORDER BY sent_at",
-        (room["id"],),
-    )
+
+    query = "SELECT id FROM chat_messages WHERE room_id = ?"
+    params = [room["id"]]
+
+    if since_id is not None:
+        query += " AND id > ?"
+        params.append(since_id)
+
+    if since_timestamp is not None:
+        query += " AND sent_at > ?"
+        params.append(since_timestamp)
+
+    query += " ORDER BY sent_at"
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    messages = conn.execute(query, params)
     return [_message_to_record(conn, row["id"]) for row in messages]
 
 
@@ -226,7 +261,9 @@ def send_dm(payload: DMPost, conn=Depends(db_dependency)):
 
     if not room_row:
         sorted_handles = sorted(handles)
-        display_name = f"DM {sorted_handles[0]}<->{sorted_handles[1]}"
+        display_name = (
+            f"DM {sorted_handles[0]}<->{sorted_handles[1]}" if len(sorted_handles) > 1 else f"DM {sorted_handles[0]}"
+        )
         cursor = conn.execute(
             "INSERT INTO chat_rooms(slug, name, is_dm) VALUES (?, ?, 1)",
             (slug, display_name),
@@ -240,4 +277,64 @@ def send_dm(payload: DMPost, conn=Depends(db_dependency)):
     else:
         room_id = room_row["id"]
 
-    return post_message(slug, MessagePost(sender=payload.sender, body=payload.body), conn)
+    # Preserve provided sent_at if present
+    post_payload = MessagePost(sender=payload.sender, body=payload.body, sent_at_iso=getattr(payload, "sent_at_iso", None))
+    return post_message(slug, post_payload, conn)
+
+
+@app.get("/users/{handle}/dms", response_model=List[MessageRecord])
+def list_user_dms(
+    handle: str,
+    since_id: int | None = None,
+    since_timestamp: str | None = None,
+    limit: int | None = None,
+    conn=Depends(db_dependency)
+):
+    """Get all DM messages for a user across all DM conversations.
+
+    Args:
+        handle: User's chat handle
+        since_id: Only return messages with ID greater than this
+        since_timestamp: Only return messages sent after this ISO timestamp
+        limit: Maximum number of messages to return
+    """
+    normalised = _normalise_handle(handle)
+
+    # Find all DM rooms the user is a member of
+    room_ids = [
+        row["room_id"]
+        for row in conn.execute(
+            """
+            SELECT DISTINCT cm.room_id
+            FROM chat_members cm
+            JOIN chat_rooms cr ON cm.room_id = cr.id
+            WHERE cm.handle = ? AND cr.is_dm = 1
+            """,
+            (normalised,),
+        )
+    ]
+
+    if not room_ids:
+        return []
+
+    # Build query for messages in those rooms
+    placeholders = ",".join("?" * len(room_ids))
+    query = f"SELECT id FROM chat_messages WHERE room_id IN ({placeholders})"
+    params = list(room_ids)
+
+    if since_id is not None:
+        query += " AND id > ?"
+        params.append(since_id)
+
+    if since_timestamp is not None:
+        query += " AND sent_at > ?"
+        params.append(since_timestamp)
+
+    query += " ORDER BY sent_at"
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    messages = conn.execute(query, params)
+    return [_message_to_record(conn, row["id"]) for row in messages]

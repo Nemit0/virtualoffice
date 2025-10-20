@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Callable, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 try:
     from virtualoffice.utils.completion_util import generate_text
@@ -55,6 +55,7 @@ class Planner(Protocol):
         project_plan: str,
         day_index: int,
         duration_weeks: int,
+        team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
     ) -> PlanResult:
         ...
@@ -67,7 +68,9 @@ class Planner(Protocol):
         daily_plan: str,
         tick: int,
         context_reason: str,
+        team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         ...
 
@@ -122,6 +125,7 @@ class GPTPlanner:
         self.hourly_model = hourly_model
         self.daily_report_model = daily_report_model or daily_model
         self.simulation_report_model = simulation_report_model or project_model
+        self._locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
 
     def generate_project_plan(
         self,
@@ -150,12 +154,20 @@ class GPTPlanner:
                 "role": "system",
                 "content": (
                     "You are a meticulous department head responsible for designing cross-disciplinary project roadmaps. "
-                    "Ensure the plan keeps teams finishing ahead of schedule with documented buffers."
+                    "Ensure the plan keeps teams finishing ahead of schedule with documented buffers. "
+                    "Write as a human colleague; stay in character. Do not mention being an AI or a simulation. "
+                    "Keep language natural and professional. Do not include model names, tokens, or implementation meta."
                 ),
             },
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.project_model
+        # Language enforcement
+        if self._locale == "ko":
+            messages = [
+                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                *messages,
+            ]
         return self._invoke(messages, model)
 
     def generate_daily_plan(
@@ -165,11 +177,25 @@ class GPTPlanner:
         project_plan: str,
         day_index: int,
         duration_weeks: int,
+        team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
     ) -> PlanResult:
+        # Build team roster
+        team_roster_lines = []
+        if team:
+            team_roster_lines.append("Team Roster:")
+            for member in team:
+                if member.id == worker.id:
+                    continue  # Skip self
+                team_roster_lines.append(
+                    f"- {member.name} ({member.role}) - Email: {member.email_address}, Chat: @{member.chat_handle}"
+                )
+            team_roster_lines.append("")  # Add blank line
+
         user_content = "\n".join(
             [
                 f"Worker: {worker.name} ({worker.role}) in {worker.timezone}.",
+                *team_roster_lines,
                 f"Project duration: {duration_weeks} weeks. Today is day {day_index + 1}.",
                 "Project plan excerpt:",
                 project_plan,
@@ -181,12 +207,18 @@ class GPTPlanner:
             {
                 "role": "system",
                 "content": (
-                    "You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early."
+                    "You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early. "
+                    "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
                 ),
             },
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.daily_model
+        if self._locale == "ko":
+            messages = [
+                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                *messages,
+            ]
         return self._invoke(messages, model)
 
     def generate_hourly_plan(
@@ -197,31 +229,114 @@ class GPTPlanner:
         daily_plan: str,
         tick: int,
         context_reason: str,
+        team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
+        # Encourage explicit, machine-parseable scheduled comm lines for the engine.
+        wh = getattr(worker, "work_hours", "09:00-17:00") or "09:00-17:00"
+
+        # Build team roster with explicit email addresses
+        team_roster_lines = []
+        valid_emails = []
+        if team:
+            team_roster_lines.append("Team Roster:")
+            for member in team:
+                if member.id == worker.id:
+                    continue  # Skip self
+                team_roster_lines.append(
+                    f"- {member.name} ({member.role}) - Email: {member.email_address}, Chat: @{member.chat_handle}"
+                )
+                valid_emails.append(member.email_address)
+            team_roster_lines.append("")  # Add blank line
+        else:
+            team_roster_lines.append(f"Known handles: {worker.chat_handle}.")
+
+        # Handle multiple concurrent projects
+        project_context_lines = []
+        if all_active_projects and len(all_active_projects) > 1:
+            project_context_lines.append("IMPORTANT: You are currently working on MULTIPLE projects concurrently:")
+            for i, proj in enumerate(all_active_projects, 1):
+                project_context_lines.append(f"\nProject {i}: {proj['project_name']}")
+                project_context_lines.append(proj['plan'][:500] + "...")  # Truncate for brevity
+            project_context_lines.append("\nYou should naturally switch between these projects throughout your day.")
+            project_context_lines.append("When writing emails/chats, specify which project each communication relates to in the subject/message.")
+            project_context_lines.append("Example: 'Email at 10:00 to dev cc pm: [Mobile App MVP] API integration status | ...'")
+            project_reference = "\n".join(project_context_lines)
+        else:
+            project_reference = f"Project reference:\n{project_plan}"
+
         user_content = "\n".join(
             [
                 f"Worker: {worker.name} ({worker.role}) at tick {tick}.",
                 f"Trigger: {context_reason}.",
-                "Project reference:",
-                project_plan,
+                f"Work hours today: {wh} (only schedule inside these).",
+                "",
+                *team_roster_lines,
+                project_reference,
                 "",
                 "Daily focus:",
                 daily_plan,
                 "",
-                "Replan the next few hours, mark email/chat touchpoints, and finish early with contingency time.",
+                "Plan the next few hours with realistic tasking and 10–15m buffers.",
+                "",
+                "CRITICAL: At the end, add a block titled 'Scheduled Communications' with 3–5 communication lines.",
+                "You MUST use these EXACT formats:",
+                "",
+                "Email format (you MUST include cc or bcc in most emails for transparency):",
+                "- Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: Subject | Body text",
+                "",
+                "Chat format:",
+                "- Chat at HH:MM with TARGET: message text",
+                "",
+                "EMAIL RULES (VERY IMPORTANT):",
+                "1. ONLY use email addresses EXACTLY as shown in the Team Roster above",
+                "2. NEVER create new email addresses, distribution lists, or group aliases",
+                "3. NEVER use chat handles in email fields - use ONLY the full email addresses",
+                "4. For project updates: cc the department head by their EXACT email address",
+                "5. For technical decisions: cc relevant peers by their EXACT email addresses",
+                "6. For status reports: cc team members by their EXACT email addresses",
+                "7. Use 'cc' when recipients should know about each other",
+                "8. Use 'bcc' when you want to privately loop someone in",
+                "",
+                "VALID EMAIL ADDRESSES (use ONLY these):",
+                *(f"  - {email}" for email in valid_emails),
+                "",
+                "CORRECT EXAMPLES:",
+                f"- Email at 10:30 to {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} cc {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: Sprint update | Completed auth module",
+                f"- Chat at 11:00 with {team[0].chat_handle if team else 'colleague'}: Quick question about the API endpoint",
+                "",
+                "WRONG EXAMPLES (DO NOT DO THIS):",
+                "- Email at 10:30 to dev cc pm: ... (WRONG - use full email addresses!)",
+                "- Email at 10:30 to team@company.dev: ... (WRONG - no distribution lists!)",
+                "- Email at 10:30 to all: ... (WRONG - specify exact recipients!)",
+                "",
+                "Do not add bracketed headers or meta text besides 'Scheduled Communications'.",
             ]
         )
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You act as an operations coach who reshapes hourly schedules. Keep outputs concise, actionable, and include buffers."
+                    "You act as an operations coach who reshapes hourly schedules. Keep outputs concise, actionable, and include buffers. "
+                    "Use natural phrasing; for chat moments be conversational, for email be slightly more formal. "
+                    "Adopt the worker's tone/personality for phrasing and word choice. "
+                    "Never mention being an AI, a simulation, or the generation process. "
+                    "At the end, you MUST output a 'Scheduled Communications' block with lines starting EXACTLY with 'Email at' or 'Chat at' as specified. "
+                    "CRITICAL EMAIL ADDRESS RULE: You MUST use ONLY the exact email addresses provided in the 'VALID EMAIL ADDRESSES' list. "
+                    "NEVER create email addresses, distribution lists (like team@, all@, manager@), or use chat handles in email fields. "
+                    "When writing email lines with cc/bcc, use ONLY the full email addresses from the valid list. "
+                    "Follow the format exactly: 'Email at HH:MM to user.1@domain.dev cc user.2@domain.dev: Subject | Body'"
                 ),
             },
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.hourly_model
+        if self._locale == "ko":
+            messages = [
+                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                *messages,
+            ]
         return self._invoke(messages, model)
 
     def generate_daily_report(
@@ -255,12 +370,18 @@ class GPTPlanner:
                 "role": "system",
                 "content": (
                     "You are an operations chief of staff producing detailed daily reports. "
-                    "Capture minute-level timeline, decisions, escalations, and buffer usage."
+                    "Capture minute-level timeline, decisions, escalations, and buffer usage. "
+                    "Write as a human; avoid references to AI, simulation, prompts, or models."
                 ),
             },
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.daily_report_model
+        if self._locale == "ko":
+            messages = [
+                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                *messages,
+            ]
         return self._invoke(messages, model)
 
     def generate_simulation_report(
@@ -301,12 +422,18 @@ class GPTPlanner:
                 "role": "system",
                 "content": (
                     "You are the department head preparing an end-of-run retrospective. "
-                    "Highlight cross-team coordination, risks, and readiness for the next cycle."
+                    "Highlight cross-team coordination, risks, and readiness for the next cycle. "
+                    "Produce a natural, human summary with clear bullets and executive tone. No meta or AI references."
                 ),
             },
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.simulation_report_model
+        if self._locale == "ko":
+            messages = [
+                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                *messages,
+            ]
         return self._invoke(messages, model)
 
     def _invoke(self, messages: list[dict[str, str]], model: str) -> PlanResult:
@@ -321,7 +448,8 @@ class StubPlanner:
     """Fallback planner that produces deterministic text without external calls."""
 
     def _result(self, label: str, body: str, model: str) -> PlanResult:
-        content = f"[{label}]\n{body}"
+        # Return plain natural text to avoid placeholder headers like [Hourly Plan].
+        content = body
         return PlanResult(content=content, model_used=model, tokens_used=0)
 
     def generate_project_plan(
@@ -354,6 +482,7 @@ class StubPlanner:
         project_plan: str,
         day_index: int,
         duration_weeks: int,
+        team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
     ) -> PlanResult:
         total_days = max(duration_weeks, 1) * 5
@@ -376,18 +505,42 @@ class StubPlanner:
         daily_plan: str,
         tick: int,
         context_reason: str,
+        team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
+        # Deterministic, human-like plan with explicit scheduled comms later in the workday
+        start, end = ("09:00", "17:00")
+        if getattr(worker, "work_hours", None) and "-" in worker.work_hours:
+            try:
+                parts = [p.strip() for p in worker.work_hours.split("-", 1)]
+                if len(parts) == 2:
+                    start, end = parts
+            except Exception:
+                pass
+        # Pick sensible default contacts for a 2-person run: designer <-> dev
+        me = (worker.chat_handle or worker.name or "worker").lower()
+        other = "designer" if "dev" in me or "full" in (worker.role or "").lower() else "dev"
+        # A couple of realistic touchpoints
+        sched = [
+            f"Chat at 09:10 with {other}: Morning! Quick sync on priorities?",
+            f"Email at 09:35 to {other}: Subject: Kickoff | Body: Plan for the morning and any blockers",
+            f"Chat at 14:20 with {other}: Checking in on progress, anything I can unblock?",
+        ]
         hour = tick % 60 or 60
-        body = "\n".join([
+        lines = [
             f"Worker: {worker.name}",
             f"Tick: {tick} (minute {hour})",
             f"Reason: {context_reason}",
-            "Outline:",
+            "Focus for the next hours:",
             "- Review priorities",
             "- Heads-down execution",
-            "- Share update with team",
-        ])
+            "- Share update with teammate",
+            "",
+            "Scheduled Communications:",
+            *sched,
+        ]
+        body = "\n".join(lines)
         model = model_hint or "vdos-stub-hourly"
         return self._result("Hourly Plan", body, model)
 

@@ -29,6 +29,7 @@ class RoomRecord(BaseModel):
 class MessagePost(BaseModel):
     sender: str
     body: str = Field(..., max_length=4096)
+    sent_at_iso: Optional[str] = None
 
 
 class MessageRecord(BaseModel):
@@ -43,3 +44,4 @@ class DMPost(BaseModel):
     sender: str
     recipient: str
     body: str = Field(..., max_length=4096)
+    sent_at_iso: Optional[str] = None

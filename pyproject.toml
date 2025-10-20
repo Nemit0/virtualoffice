@@ -26,6 +26,11 @@ requires = [
     "uvicorn~=0.36",
     "email-validator~=2.3",
     "httpx~=0.28",
+    "openai",
+    "python-dotenv",
+    "briefcase",
+    "PyQT6playwright",
+    "markitdown",
     # "PySide6-Addons~=6.8",
 ]
 test_requires = [

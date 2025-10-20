@@ -1,0 +1,2189 @@
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 127.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 126.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 20.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 17.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.5s for gpt-4o-mini (openai_key1)
+[21:58:29] 한국어 다중 프로젝트 8주 시뮬레이션 시작…
+[21:58:29] 이메일 서버 시작: 127.0.0.1:62816…
+[21:58:29] 채팅 서버 시작: 127.0.0.1:62817…
+[21:58:29] 시뮬레이션 매니저 시작: 127.0.0.1:62818…
+[21:58:30] 🧹 전체 초기화…
+[21:58:31]    상태: tick=0, 인원수=0
+[21:58:31] 🎭 팀 생성 (PM, 디자이너, 개발자, 데보옵스)…
+[21:58:31]    → POST /personas/generate (pm) [attempt 1]
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[21:58:38]    → POST /people (pm.1@multiproject.dev)
+[21:58:38]    ✅ 이민주 (프로젝트 매니저)
+[21:58:38]    → POST /personas/generate (designer) [attempt 1]
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[21:58:44]    → POST /people (designer.1@multiproject.dev)
+[21:58:44]    ✅ 김민준 (모바일/웹 UI/UX 디자이너)
+[21:58:44]    → POST /personas/generate (dev) [attempt 1]
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[21:58:50]    → POST /people (dev.1@multiproject.dev)
+[21:58:50]    ✅ 이준호 (풀스택 개발자)
+[21:58:50]    → POST /personas/generate (devops) [attempt 1]
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[21:58:55]    → POST /people (devops.1@multiproject.dev)
+[21:58:55]    ✅ 이정현 (데보옵스 엔지니어)
+[21:58:55] Saved: multi_project_8week_ko/team_personas.json
+[21:58:55] 🚀 다중 프로젝트 시뮬레이션 시작 (8주, 3개 프로젝트)…
+[21:58:55]    → POST /simulation/start (with 3 retry attempts)…
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+✅ Simulation initialized successfully on attempt 1
+[21:59:27] ✅ 초기화 완료
+[21:59:27]    → Advancing 60 ticks; progressed=1/19200
+[21:59:27]    → Advancing 60 ticks; progressed=61/19200
+[21:59:28]    → Advancing 60 ticks; progressed=121/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[21:59:45]    → Advancing 60 ticks; progressed=181/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Planner generate_daily_report using GPTPlanner failed after 1.55s: OpenAI completion failed: Error code: 400 - {'error': {'message': "This model's maximum context length is 128000 tokens. However, your messages resulted in 163249 tokens. Please reduce the length of the messages.", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}. Falling back to stub planner.
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:09:45] API Error: HTTPConnectionPool(host='127.0.0.1', port=62818): Read timed out. (read timeout=600) (POST http://127.0.0.1:62818/api/v1/simulation/advance)
+[22:09:45]    ! advance 실패 (시도 1/3)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:17:03]    → Advancing 60 ticks; progressed=241/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:22:59]    → Advancing 60 ticks; progressed=301/19200
+[22:22:59]    → Advancing 60 ticks; progressed=361/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:23:32]    → Advancing 60 ticks; progressed=421/19200
+[22:23:32]    → Advancing 60 ticks; progressed=481/19200
+[22:23:32]    → Advancing 60 ticks; progressed=541/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:23:45]    → Advancing 60 ticks; progressed=601/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.2s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:26:37]    → Advancing 60 ticks; progressed=661/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 13.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Rejecting hallucinated email address: pm.1@multiproject.dev devops.1@multiproject.dev
+Rejecting hallucinated email address: dev.ops.1@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Slow GPT API call: 12.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.9s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:34:21]    → Advancing 60 ticks; progressed=721/19200
+[22:34:22]    → Advancing 60 ticks; progressed=781/19200
+[22:34:22]    → Advancing 60 ticks; progressed=841/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:35:15]    → Advancing 60 ticks; progressed=901/19200
+[22:35:16]    → Advancing 60 ticks; progressed=961/19200
+[22:35:16]    → Advancing 60 ticks; progressed=1021/19200
+[22:35:17]    → Advancing 60 ticks; progressed=1081/19200
+[22:35:17]    → Advancing 60 ticks; progressed=1141/19200
+[22:35:17]    → Advancing 60 ticks; progressed=1201/19200
+[22:35:18]    → Advancing 60 ticks; progressed=1261/19200
+[22:35:18]    → Advancing 60 ticks; progressed=1321/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:36:05]    → Advancing 60 ticks; progressed=1381/19200
+[22:36:05]    → Advancing 60 ticks; progressed=1441/19200
+[22:36:05]    → Advancing 60 ticks; progressed=1501/19200
+[22:36:06]    → Advancing 60 ticks; progressed=1561/19200
+[22:36:06]    → Advancing 60 ticks; progressed=1621/19200
+[22:36:06]    → Advancing 60 ticks; progressed=1681/19200
+[22:36:07]    → Advancing 60 ticks; progressed=1741/19200
+[22:36:07]    → Advancing 60 ticks; progressed=1801/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:36:55]    → Advancing 60 ticks; progressed=1861/19200
+[22:36:55]    → Advancing 60 ticks; progressed=1921/19200
+[22:36:56]    → Advancing 60 ticks; progressed=1981/19200
+[22:36:56]    → Advancing 60 ticks; progressed=2041/19200
+[22:36:56]    → Advancing 60 ticks; progressed=2101/19200
+[22:36:57]    → Advancing 60 ticks; progressed=2161/19200
+[22:36:57]    → Advancing 60 ticks; progressed=2221/19200
+[22:36:57]    → Advancing 60 ticks; progressed=2281/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:37:50]    → Advancing 60 ticks; progressed=2341/19200
+[22:37:51]    → Advancing 60 ticks; progressed=2401/19200
+[22:37:52]    → Advancing 60 ticks; progressed=2461/19200
+[22:37:53]    → Advancing 60 ticks; progressed=2521/19200
+[22:37:53]    → Advancing 60 ticks; progressed=2581/19200
+[22:37:54]    → Advancing 60 ticks; progressed=2641/19200
+[22:37:56]    → Advancing 60 ticks; progressed=2701/19200
+[22:37:57]    → Advancing 60 ticks; progressed=2761/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:38:53]    → Advancing 60 ticks; progressed=2821/19200
+[22:38:54]    → Advancing 60 ticks; progressed=2881/19200
+[22:38:55]    → Advancing 60 ticks; progressed=2941/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:39:13]    → Advancing 60 ticks; progressed=3001/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.5s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.8s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:49:00]    → Advancing 60 ticks; progressed=3061/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.8s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: developer.1@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Planner generate_daily_report using GPTPlanner failed after 2.63s: OpenAI completion failed: Error code: 400 - {'error': {'message': "This model's maximum context length is 128000 tokens. However, your messages resulted in 129881 tokens. Please reduce the length of the messages.", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}. Falling back to stub planner.
+Planner generate_daily_report using GPTPlanner failed after 1.91s: OpenAI completion failed: Error code: 400 - {'error': {'message': "This model's maximum context length is 128000 tokens. However, your messages resulted in 132790 tokens. Please reduce the length of the messages.", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}. Falling back to stub planner.
+Slow GPT API call: 16.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 129.5s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: dev.1@multiproject.dev devops.1@multiproject.dev
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:56:25]    → Advancing 60 ticks; progressed=3121/19200
+[22:56:26]    → Advancing 60 ticks; progressed=3181/19200
+[22:56:27]    → Advancing 60 ticks; progressed=3241/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:56:59]    → Advancing 60 ticks; progressed=3301/19200
+[22:57:00]    → Advancing 60 ticks; progressed=3361/19200
+[22:57:01]    → Advancing 60 ticks; progressed=3421/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[22:57:18]    → Advancing 60 ticks; progressed=3481/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 12.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:02:32]    → Advancing 60 ticks; progressed=3541/19200
+[23:02:33]    → Advancing 60 ticks; progressed=3601/19200
+[23:02:34]    → Advancing 60 ticks; progressed=3661/19200
+[23:02:35]    → Advancing 60 ticks; progressed=3721/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:03:23]    → Advancing 60 ticks; progressed=3781/19200
+[23:03:24]    → Advancing 60 ticks; progressed=3841/19200
+[23:03:25]    → Advancing 60 ticks; progressed=3901/19200
+[23:03:26]    → Advancing 60 ticks; progressed=3961/19200
+[23:03:27]    → Advancing 60 ticks; progressed=4021/19200
+[23:03:28]    → Advancing 60 ticks; progressed=4081/19200
+[23:03:28]    → Advancing 60 ticks; progressed=4141/19200
+[23:03:29]    → Advancing 60 ticks; progressed=4201/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:04:29]    → Advancing 60 ticks; progressed=4261/19200
+[23:04:30]    → Advancing 60 ticks; progressed=4321/19200
+[23:04:30]    → Advancing 60 ticks; progressed=4381/19200
+[23:04:31]    → Advancing 60 ticks; progressed=4441/19200
+[23:04:32]    → Advancing 60 ticks; progressed=4501/19200
+[23:04:33]    → Advancing 60 ticks; progressed=4561/19200
+[23:04:33]    → Advancing 60 ticks; progressed=4621/19200
+[23:04:34]    → Advancing 60 ticks; progressed=4681/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:05:31]    → Advancing 60 ticks; progressed=4741/19200
+[23:05:32]    → Advancing 60 ticks; progressed=4801/19200
+[23:05:33]    → Advancing 60 ticks; progressed=4861/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:05:51]    → Advancing 60 ticks; progressed=4921/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 15.4s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: support@multiproject.dev
+Rejecting hallucinated email address: support@multiproject.dev
+Slow GPT API call: 13.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:09:06]    → Advancing 60 ticks; progressed=4981/19200
+[23:09:07]    → Advancing 60 ticks; progressed=5041/19200
+[23:09:09]    → Advancing 60 ticks; progressed=5101/19200
+[23:09:10]    → Advancing 60 ticks; progressed=5161/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:09:59]    → Advancing 60 ticks; progressed=5221/19200
+[23:09:59]    → Advancing 60 ticks; progressed=5281/19200
+[23:10:00]    → Advancing 60 ticks; progressed=5341/19200
+[23:10:01]    → Advancing 60 ticks; progressed=5401/19200
+[23:10:02]    → Advancing 60 ticks; progressed=5461/19200
+[23:10:03]    → Advancing 60 ticks; progressed=5521/19200
+[23:10:03]    → Advancing 60 ticks; progressed=5581/19200
+[23:10:06]    → Advancing 60 ticks; progressed=5641/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:11:01]    → Advancing 60 ticks; progressed=5701/19200
+[23:11:02]    → Advancing 60 ticks; progressed=5761/19200
+[23:11:03]    → Advancing 60 ticks; progressed=5821/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:11:29]    → Advancing 60 ticks; progressed=5881/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 13.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:14:39]    → Advancing 60 ticks; progressed=5941/19200
+[23:14:40]    → Advancing 60 ticks; progressed=6001/19200
+[23:14:41]    → Advancing 60 ticks; progressed=6061/19200
+[23:14:42]    → Advancing 60 ticks; progressed=6121/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:15:38]    → Advancing 60 ticks; progressed=6181/19200
+[23:15:39]    → Advancing 60 ticks; progressed=6241/19200
+[23:15:40]    → Advancing 60 ticks; progressed=6301/19200
+[23:15:40]    → Advancing 60 ticks; progressed=6361/19200
+[23:15:41]    → Advancing 60 ticks; progressed=6421/19200
+[23:15:42]    → Advancing 60 ticks; progressed=6481/19200
+[23:15:42]    → Advancing 60 ticks; progressed=6541/19200
+[23:15:43]    → Advancing 60 ticks; progressed=6601/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:16:47]    → Advancing 60 ticks; progressed=6661/19200
+[23:16:48]    → Advancing 60 ticks; progressed=6721/19200
+[23:16:48]    → Advancing 60 ticks; progressed=6781/19200
+[23:16:49]    → Advancing 60 ticks; progressed=6841/19200
+[23:16:50]    → Advancing 60 ticks; progressed=6901/19200
+[23:16:51]    → Advancing 60 ticks; progressed=6961/19200
+[23:16:52]    → Advancing 60 ticks; progressed=7021/19200
+[23:16:53]    → Advancing 60 ticks; progressed=7081/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:17:52]    → Advancing 60 ticks; progressed=7141/19200
+[23:17:53]    → Advancing 60 ticks; progressed=7201/19200
+[23:17:53]    → Advancing 60 ticks; progressed=7261/19200
+[23:17:54]    → Advancing 60 ticks; progressed=7321/19200
+[23:17:55]    → Advancing 60 ticks; progressed=7381/19200
+[23:17:57]    → Advancing 60 ticks; progressed=7441/19200
+[23:17:57]    → Advancing 60 ticks; progressed=7501/19200
+[23:17:58]    → Advancing 60 ticks; progressed=7561/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:18:48]    → Advancing 60 ticks; progressed=7621/19200
+[23:18:49]    → Advancing 60 ticks; progressed=7681/19200
+[23:18:49]    → Advancing 60 ticks; progressed=7741/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:19:07]    → Advancing 60 ticks; progressed=7801/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 11.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 21.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 17.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.5s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.1s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:28:41]    → Advancing 60 ticks; progressed=7861/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Slow GPT API call: 10.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:30:34]    → Advancing 60 ticks; progressed=7921/19200
+[23:30:35]    → Advancing 60 ticks; progressed=7981/19200
+[23:30:36]    → Advancing 60 ticks; progressed=8041/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:31:35]    → Advancing 60 ticks; progressed=8101/19200
+[23:31:35]    → Advancing 60 ticks; progressed=8161/19200
+[23:31:36]    → Advancing 60 ticks; progressed=8221/19200
+[23:31:37]    → Advancing 60 ticks; progressed=8281/19200
+[23:31:37]    → Advancing 60 ticks; progressed=8341/19200
+[23:31:38]    → Advancing 60 ticks; progressed=8401/19200
+[23:31:38]    → Advancing 60 ticks; progressed=8461/19200
+[23:31:39]    → Advancing 60 ticks; progressed=8521/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:32:42]    → Advancing 60 ticks; progressed=8581/19200
+[23:32:43]    → Advancing 60 ticks; progressed=8641/19200
+[23:32:44]    → Advancing 60 ticks; progressed=8701/19200
+[23:32:44]    → Advancing 60 ticks; progressed=8761/19200
+[23:32:45]    → Advancing 60 ticks; progressed=8821/19200
+[23:32:46]    → Advancing 60 ticks; progressed=8881/19200
+[23:32:46]    → Advancing 60 ticks; progressed=8941/19200
+[23:32:48]    → Advancing 60 ticks; progressed=9001/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:33:46]    → Advancing 60 ticks; progressed=9061/19200
+[23:33:47]    → Advancing 60 ticks; progressed=9121/19200
+[23:33:47]    → Advancing 60 ticks; progressed=9181/19200
+[23:33:48]    → Advancing 60 ticks; progressed=9241/19200
+[23:33:49]    → Advancing 60 ticks; progressed=9301/19200
+[23:33:49]    → Advancing 60 ticks; progressed=9361/19200
+[23:33:50]    → Advancing 60 ticks; progressed=9421/19200
+[23:33:51]    → Advancing 60 ticks; progressed=9481/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:34:49]    → Advancing 60 ticks; progressed=9541/19200
+[23:34:50]    → Advancing 60 ticks; progressed=9601/19200
+[23:34:50]    → Advancing 60 ticks; progressed=9661/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:35:08]    → Advancing 60 ticks; progressed=9721/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 13.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.9s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:38:18]    → Advancing 60 ticks; progressed=9781/19200
+[23:38:19]    → Advancing 60 ticks; progressed=9841/19200
+[23:38:21]    → Advancing 60 ticks; progressed=9901/19200
+[23:38:21]    → Advancing 60 ticks; progressed=9961/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:39:01]    → Advancing 60 ticks; progressed=10021/19200
+[23:39:01]    → Advancing 60 ticks; progressed=10081/19200
+[23:39:02]    → Advancing 60 ticks; progressed=10141/19200
+[23:39:03]    → Advancing 60 ticks; progressed=10201/19200
+[23:39:03]    → Advancing 60 ticks; progressed=10261/19200
+[23:39:04]    → Advancing 60 ticks; progressed=10321/19200
+[23:39:05]    → Advancing 60 ticks; progressed=10381/19200
+[23:39:07]    → Advancing 60 ticks; progressed=10441/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:40:07]    → Advancing 60 ticks; progressed=10501/19200
+[23:40:08]    → Advancing 60 ticks; progressed=10561/19200
+[23:40:08]    → Advancing 60 ticks; progressed=10621/19200
+[23:40:09]    → Advancing 60 ticks; progressed=10681/19200
+[23:40:10]    → Advancing 60 ticks; progressed=10741/19200
+[23:40:11]    → Advancing 60 ticks; progressed=10801/19200
+[23:40:12]    → Advancing 60 ticks; progressed=10861/19200
+[23:40:14]    → Advancing 60 ticks; progressed=10921/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:41:13]    → Advancing 60 ticks; progressed=10981/19200
+[23:41:14]    → Advancing 60 ticks; progressed=11041/19200
+[23:41:15]    → Advancing 60 ticks; progressed=11101/19200
+[23:41:15]    → Advancing 60 ticks; progressed=11161/19200
+[23:41:16]    → Advancing 60 ticks; progressed=11221/19200
+[23:41:17]    → Advancing 60 ticks; progressed=11281/19200
+[23:41:17]    → Advancing 60 ticks; progressed=11341/19200
+[23:41:19]    → Advancing 60 ticks; progressed=11401/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:42:16]    → Advancing 60 ticks; progressed=11461/19200
+[23:42:17]    → Advancing 60 ticks; progressed=11521/19200
+[23:42:18]    → Advancing 60 ticks; progressed=11581/19200
+[23:42:19]    → Advancing 60 ticks; progressed=11641/19200
+[23:42:19]    → Advancing 60 ticks; progressed=11701/19200
+[23:42:20]    → Advancing 60 ticks; progressed=11761/19200
+[23:42:21]    → Advancing 60 ticks; progressed=11821/19200
+[23:42:22]    → Advancing 60 ticks; progressed=11881/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.5s for gpt-4o-mini (openai_key1)
+Planner generate_hourly_plan using GPTPlanner failed after 6.63s: Expecting value: line 1 column 1 (char 0). Falling back to stub planner.
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 15.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.4s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:43:22]    → Advancing 60 ticks; progressed=11941/19200
+[23:43:23]    → Advancing 60 ticks; progressed=12001/19200
+[23:43:23]    → Advancing 60 ticks; progressed=12061/19200
+[23:43:24]    → Advancing 60 ticks; progressed=12121/19200
+[23:43:25]    → Advancing 60 ticks; progressed=12181/19200
+[23:43:26]    → Advancing 60 ticks; progressed=12241/19200
+[23:43:26]    → Advancing 60 ticks; progressed=12301/19200
+[23:43:27]    → Advancing 60 ticks; progressed=12361/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:44:15]    → Advancing 60 ticks; progressed=12421/19200
+[23:44:16]    → Advancing 60 ticks; progressed=12481/19200
+[23:44:16]    → Advancing 60 ticks; progressed=12541/19200
+[23:44:17]    → Advancing 60 ticks; progressed=12601/19200
+[23:44:18]    → Advancing 60 ticks; progressed=12661/19200
+[23:44:18]    → Advancing 60 ticks; progressed=12721/19200
+[23:44:20]    → Advancing 60 ticks; progressed=12781/19200
+[23:44:21]    → Advancing 60 ticks; progressed=12841/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:45:20]    → Advancing 60 ticks; progressed=12901/19200
+[23:45:20]    → Advancing 60 ticks; progressed=12961/19200
+[23:45:21]    → Advancing 60 ticks; progressed=13021/19200
+[23:45:22]    → Advancing 60 ticks; progressed=13081/19200
+[23:45:23]    → Advancing 60 ticks; progressed=13141/19200
+[23:45:23]    → Advancing 60 ticks; progressed=13201/19200
+[23:45:24]    → Advancing 60 ticks; progressed=13261/19200
+[23:45:26]    → Advancing 60 ticks; progressed=13321/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:46:19]    → Advancing 60 ticks; progressed=13381/19200
+[23:46:20]    → Advancing 60 ticks; progressed=13441/19200
+[23:46:21]    → Advancing 60 ticks; progressed=13501/19200
+[23:46:22]    → Advancing 60 ticks; progressed=13561/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:46:42]    → Advancing 60 ticks; progressed=13621/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+Slow GPT API call: 10.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: pm@multiproject.dev
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: all@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev dev.1@multiproject.dev
+Rejecting hallucinated email address: all@multiproject.dev
+Rejecting hallucinated email address: all@multiproject.dev
+Rejecting hallucinated email address: all@multiproject.dev
+Rejecting hallucinated email address: dev.1@multiproject.dev, devops.1@multiproject.dev
+Rejecting hallucinated email address: all@multiproject.dev
+Slow GPT API call: 13.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.7s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Planner generate_daily_report using GPTPlanner failed after 2.38s: OpenAI completion failed: Error code: 400 - {'error': {'message': "This model's maximum context length is 128000 tokens. However, your messages resulted in 195323 tokens. Please reduce the length of the messages.", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}. Falling back to stub planner.
+Slow GPT API call: 10.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: dev.1@multiproject.dev devops.1@multiproject.dev
+Slow GPT API call: 13.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 15.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 12.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.9s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.9s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Slow GPT API call: 13.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 13.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: dev.ops.1@multiproject.dev
+Slow GPT API call: 10.8s for gpt-4o-mini (openai_key1)
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:53:07]    → Advancing 60 ticks; progressed=13681/19200
+[23:53:08]    → Advancing 60 ticks; progressed=13741/19200
+[23:53:09]    → Advancing 60 ticks; progressed=13801/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).Slow GPT API call: 10.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 18.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 15.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 15.9s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: dev.1@multiproject.dev devops.1@multiproject.dev
+Slow GPT API call: 18.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 127.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.6s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.4s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 16.7s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 18.3s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.8s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.1s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 17.1s for gpt-4o-mini (openai_key1)
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Rejecting hallucinated email address: designer.1@multiproject.dev devops.1@multiproject.dev
+Planner generate_daily_report using GPTPlanner failed after 2.90s: OpenAI completion failed: Error code: 400 - {'error': {'message': "This model's maximum context length is 128000 tokens. However, your messages resulted in 132979 tokens. Please reduce the length of the messages.", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}. Falling back to stub planner.
+Slow GPT API call: 17.5s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 10.0s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 14.2s for gpt-4o-mini (openai_key1)
+Slow GPT API call: 11.4s for gpt-4o-mini (openai_key1)
+
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:53:56]    → Advancing 60 ticks; progressed=13861/19200
+[23:53:56]    → Advancing 60 ticks; progressed=13921/19200
+[23:53:57]    → Advancing 60 ticks; progressed=13981/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[23:54:12]    → Advancing 60 ticks; progressed=14041/19200
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+⚠️  Free tier limit exceeded for mini models. Using OPENAI_API_KEY (company credits).
+[00:02:23]    → Advancing 60 ticks; progressed=14101/19200
+[00:09:07]    → Advancing 60 ticks; progressed=14161/19200
+[00:16:18]    → Advancing 60 ticks; progressed=14221/19200
+[00:16:18]    → Advancing 60 ticks; progressed=14281/19200
+[00:17:01]    → Advancing 60 ticks; progressed=14341/19200
+[00:17:02]    → Advancing 60 ticks; progressed=14401/19200
+[00:17:02]    → Advancing 60 ticks; progressed=14461/19200
+[00:17:21]    → Advancing 60 ticks; progressed=14521/19200
+[00:22:03]    → Advancing 60 ticks; progressed=14581/19200
+[00:22:04]    → Advancing 60 ticks; progressed=14641/19200
+[00:22:05]    → Advancing 60 ticks; progressed=14701/19200
+[00:22:07]    → Advancing 60 ticks; progressed=14761/19200
+[00:22:54]    → Advancing 60 ticks; progressed=14821/19200
+[00:22:55]    → Advancing 60 ticks; progressed=14881/19200
+[00:22:56]    → Advancing 60 ticks; progressed=14941/19200
+[00:22:56]    → Advancing 60 ticks; progressed=15001/19200
+[00:22:58]    → Advancing 60 ticks; progressed=15061/19200
+[00:22:58]    → Advancing 60 ticks; progressed=15121/19200
+[00:22:59]    → Advancing 60 ticks; progressed=15181/19200
+[00:23:00]    → Advancing 60 ticks; progressed=15241/19200
+[00:23:52]    → Advancing 60 ticks; progressed=15301/19200
+[00:23:53]    → Advancing 60 ticks; progressed=15361/19200
+[00:23:54]    → Advancing 60 ticks; progressed=15421/19200
+[00:24:12]    → Advancing 60 ticks; progressed=15481/19200
+[00:33:46]    → Advancing 60 ticks; progressed=15541/19200
+[00:33:47]    → Advancing 60 ticks; progressed=15601/19200
+[00:33:48]    → Advancing 60 ticks; progressed=15661/19200
+[00:33:49]    → Advancing 60 ticks; progressed=15721/19200
+[00:34:40]    → Advancing 60 ticks; progressed=15781/19200
+[00:34:41]    → Advancing 60 ticks; progressed=15841/19200
+[00:34:42]    → Advancing 60 ticks; progressed=15901/19200
+[00:34:42]    → Advancing 60 ticks; progressed=15961/19200
+[00:34:43]    → Advancing 60 ticks; progressed=16021/19200
+[00:34:44]    → Advancing 60 ticks; progressed=16081/19200
+[00:34:44]    → Advancing 60 ticks; progressed=16141/19200
+[00:34:45]    → Advancing 60 ticks; progressed=16201/19200
+[00:35:36]    → Advancing 60 ticks; progressed=16261/19200
+[00:35:37]    → Advancing 60 ticks; progressed=16321/19200
+[00:35:37]    → Advancing 60 ticks; progressed=16381/19200
+[00:35:38]    → Advancing 60 ticks; progressed=16441/19200
+[00:35:39]    → Advancing 60 ticks; progressed=16501/19200
+[00:35:39]    → Advancing 60 ticks; progressed=16561/19200
+[00:35:40]    → Advancing 60 ticks; progressed=16621/19200
+[00:35:41]    → Advancing 60 ticks; progressed=16681/19200
+[00:36:31]    → Advancing 60 ticks; progressed=16741/19200
+[00:36:32]    → Advancing 60 ticks; progressed=16801/19200
+[00:36:33]    → Advancing 60 ticks; progressed=16861/19200
+[00:36:33]    → Advancing 60 ticks; progressed=16921/19200
+[00:36:34]    → Advancing 60 ticks; progressed=16981/19200
+[00:36:35]    → Advancing 60 ticks; progressed=17041/19200
+[00:36:35]    → Advancing 60 ticks; progressed=17101/19200
+[00:36:36]    → Advancing 60 ticks; progressed=17161/19200
+[00:37:31]    → Advancing 60 ticks; progressed=17221/19200
+[00:37:31]    → Advancing 60 ticks; progressed=17281/19200
+[00:37:32]    → Advancing 60 ticks; progressed=17341/19200
+[00:37:51]    → Advancing 60 ticks; progressed=17401/19200
+[00:40:32]    → Advancing 60 ticks; progressed=17461/19200
+[00:40:33]    → Advancing 60 ticks; progressed=17521/19200
+[00:40:34]    → Advancing 60 ticks; progressed=17581/19200
+[00:40:34]    → Advancing 60 ticks; progressed=17641/19200
+[00:41:19]    → Advancing 60 ticks; progressed=17701/19200
+[00:41:19]    → Advancing 60 ticks; progressed=17761/19200
+[00:41:20]    → Advancing 60 ticks; progressed=17821/19200
+[00:41:38]    → Advancing 60 ticks; progressed=17881/19200
+[00:50:27]    → Advancing 60 ticks; progressed=17941/19200
+[01:00:27] API Error: HTTPConnectionPool(host='127.0.0.1', port=62818): Read timed out. (read timeout=600) (POST http://127.0.0.1:62818/api/v1/simulation/advance)
+[01:00:27]    ! advance 실패 (시도 1/3)
+[01:00:38]    → Advancing 60 ticks; progressed=18001/19200
+[01:00:39]    → Advancing 60 ticks; progressed=18061/19200
+[01:01:21]    → Advancing 60 ticks; progressed=18121/19200
+[01:01:22]    → Advancing 60 ticks; progressed=18181/19200
+[01:01:23]    → Advancing 60 ticks; progressed=18241/19200
+[01:01:24]    → Advancing 60 ticks; progressed=18301/19200
+[01:01:24]    → Advancing 60 ticks; progressed=18361/19200
+[01:01:25]    → Advancing 60 ticks; progressed=18421/19200
+[01:01:26]    → Advancing 60 ticks; progressed=18481/19200
+[01:01:26]    → Advancing 60 ticks; progressed=18541/19200
+[01:02:33]    → Advancing 60 ticks; progressed=18601/19200
+[01:02:33]    → Advancing 60 ticks; progressed=18661/19200
+[01:02:34]    → Advancing 60 ticks; progressed=18721/19200
+[01:02:35]    → Advancing 60 ticks; progressed=18781/19200
+[01:02:36]    → Advancing 60 ticks; progressed=18841/19200
+[01:02:37]    → Advancing 60 ticks; progressed=18901/19200
+[01:02:37]    → Advancing 60 ticks; progressed=18961/19200
+[01:02:38]    → Advancing 60 ticks; progressed=19021/19200
+[01:03:34]    → Advancing 60 ticks; progressed=19081/19200
+[01:03:35]    → Advancing 59 ticks; progressed=19141/19200
+[01:03:36] 📥 이메일/채팅 로그 수집…
+[01:03:37] Saved: multi_project_8week_ko/email_communications.json
+[01:03:37] API Error: 404 Client Error: Not Found for url: http://127.0.0.1:62817/rooms/dm:designer:sim-manager/messages (GET http://127.0.0.1:62817/rooms/dm:designer:sim-manager/messages)
+[01:03:37] API Error: 404 Client Error: Not Found for url: http://127.0.0.1:62817/rooms/dm:dev:sim-manager/messages (GET http://127.0.0.1:62817/rooms/dm:dev:sim-manager/messages)
+[01:03:37] API Error: 404 Client Error: Not Found for url: http://127.0.0.1:62817/rooms/dm:devops:sim-manager/messages (GET http://127.0.0.1:62817/rooms/dm:devops:sim-manager/messages)
+[01:03:37] API Error: 404 Client Error: Not Found for url: http://127.0.0.1:62817/rooms/dm:pm:sim-manager/messages (GET http://127.0.0.1:62817/rooms/dm:pm:sim-manager/messages)
+[01:03:37] Saved: multi_project_8week_ko/chat_communications.json
+[01:03:37] Saved: multi_project_8week_ko/final_state.json
+[01:03:37] ✅ 완료. 출력: C:\Users\USER\Documents\projects\virtualoffice\simulation_output\multi_project_8week_ko

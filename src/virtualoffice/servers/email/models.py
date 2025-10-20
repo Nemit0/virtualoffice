@@ -33,6 +33,8 @@ class EmailSend(BaseModel):
     subject: str = Field(..., max_length=512)
     body: str
     thread_id: Optional[str] = Field(default=None, max_length=128)
+    # Optional simulated timestamp (ISO 8601). When provided, server uses it for sent_at.
+    sent_at_iso: Optional[str] = None
 
     @field_validator("sender")
     @classmethod

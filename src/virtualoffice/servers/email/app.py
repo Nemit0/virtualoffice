@@ -141,10 +141,17 @@ def send_email(payload: EmailSend, conn=Depends(db_dependency)):
     all_addresses = [payload.sender, *recipients]
     _ensure_mailboxes(conn, all_addresses)
 
-    cursor = conn.execute(
-        "INSERT INTO emails(sender, subject, body, thread_id) VALUES (?, ?, ?, ?)",
-        (payload.sender, payload.subject, payload.body, payload.thread_id),
-    )
+    # Allow overriding sent_at when sent_at_iso is provided
+    if getattr(payload, "sent_at_iso", None):
+        cursor = conn.execute(
+            "INSERT INTO emails(sender, subject, body, thread_id, sent_at) VALUES (?, ?, ?, ?, ?)",
+            (payload.sender, payload.subject, payload.body, payload.thread_id, payload.sent_at_iso),
+        )
+    else:
+        cursor = conn.execute(
+            "INSERT INTO emails(sender, subject, body, thread_id) VALUES (?, ?, ?, ?)",
+            (payload.sender, payload.subject, payload.body, payload.thread_id),
+        )
     email_id = cursor.lastrowid
 
     for address in payload.to:
@@ -167,7 +174,21 @@ def send_email(payload: EmailSend, conn=Depends(db_dependency)):
 
 
 @app.get("/mailboxes/{address}/emails", response_model=List[EmailMessage])
-def list_mailbox_emails(address: str, conn=Depends(db_dependency)):
+def list_mailbox_emails(
+    address: str,
+    since_id: int | None = None,
+    since_timestamp: str | None = None,
+    limit: int | None = None,
+    conn=Depends(db_dependency)
+):
+    """Get emails for a mailbox, optionally filtered by ID or timestamp.
+
+    Args:
+        address: Email address of the mailbox
+        since_id: Only return emails with ID greater than this (for polling new messages)
+        since_timestamp: Only return emails sent after this ISO timestamp (for time-based filtering)
+        limit: Maximum number of emails to return (newest first)
+    """
     cleaned = _normalise_or_422(address)
     mailbox_exists = conn.execute(
         "SELECT 1 FROM mailboxes WHERE address = ?",
@@ -176,13 +197,30 @@ def list_mailbox_emails(address: str, conn=Depends(db_dependency)):
     if not mailbox_exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
 
-    email_ids = [
-        row["email_id"]
-        for row in conn.execute(
-            "SELECT email_id FROM email_recipients WHERE address = ? ORDER BY email_id DESC",
-            (cleaned,),
-        )
-    ]
+    # Build query with optional filters
+    query = """
+        SELECT DISTINCT er.email_id
+        FROM email_recipients er
+        JOIN emails e ON er.email_id = e.id
+        WHERE er.address = ?
+    """
+    params = [cleaned]
+
+    if since_id is not None:
+        query += " AND er.email_id > ?"
+        params.append(since_id)
+
+    if since_timestamp is not None:
+        query += " AND e.sent_at > ?"
+        params.append(since_timestamp)
+
+    query += " ORDER BY er.email_id DESC"
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    email_ids = [row["email_id"] for row in conn.execute(query, params)]
     return [_row_to_email(conn, email_id) for email_id in email_ids]
 
 
