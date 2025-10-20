@@ -1331,6 +1331,14 @@ class SimulationEngine:
         context: str | None,
     ) -> dict[str, Any]:
         with get_connection() as conn:
+            # Verify person exists before attempting insert
+            person_exists = conn.execute(
+                "SELECT id FROM people WHERE id = ?", (person_id,)
+            ).fetchone()
+            if not person_exists:
+                logger.error(f"Cannot store worker plan: person_id {person_id} does not exist in database")
+                raise ValueError(f"Person ID {person_id} not found in database")
+
             cursor = conn.execute(
                 "INSERT INTO worker_plans(person_id, tick, plan_type, content, model_used, tokens_used, context) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
