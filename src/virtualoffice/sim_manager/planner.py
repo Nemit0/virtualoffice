@@ -386,18 +386,15 @@ class GPTPlanner:
                 "Hourly log:",
                 hourly_log or "No hourly updates recorded.",
                 "",
-                "Minute schedule:",
-                minute_schedule,
-                "",
-                "Summarise the day with minute-by-minute highlights, note communications, and flag risks for tomorrow.",
+                "Summarise the day with key highlights, note communications, and flag risks for tomorrow.",
             ]
         )
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are an operations chief of staff producing detailed daily reports. "
-                    "Capture minute-level timeline, decisions, escalations, and buffer usage. "
+                    "You are an operations chief of staff producing concise daily reports. "
+                    "Summarize key achievements, decisions, communications, and any blockers. "
                     "Write as a human; avoid references to AI, simulation, prompts, or models."
                 ),
             },
