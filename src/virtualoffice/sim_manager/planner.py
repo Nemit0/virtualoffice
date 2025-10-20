@@ -74,6 +74,16 @@ class Planner(Protocol):
     ) -> PlanResult:
         ...
 
+    def generate_hourly_summary(
+        self,
+        *,
+        worker: PersonRead,
+        hour_index: int,
+        hourly_plans: str,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        ...
+
     def generate_daily_report(
         self,
         *,
@@ -232,6 +242,7 @@ class GPTPlanner:
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
         all_active_projects: list[dict[str, Any]] | None = None,
+        recent_emails: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         # Encourage explicit, machine-parseable scheduled comm lines for the engine.
         wh = getattr(worker, "work_hours", "09:00-17:00") or "09:00-17:00"
@@ -251,6 +262,17 @@ class GPTPlanner:
             team_roster_lines.append("")  # Add blank line
         else:
             team_roster_lines.append(f"Known handles: {worker.chat_handle}.")
+
+        # Build recent emails context for threading
+        recent_emails_lines = []
+        if recent_emails:
+            recent_emails_lines.append("Recent Emails (for threading context):")
+            for i, email in enumerate(recent_emails[-5:], 1):  # Show last 5 emails
+                email_id = email.get('email_id', f'email-{i}')
+                from_addr = email.get('from', 'unknown')
+                subject = email.get('subject', 'No subject')
+                recent_emails_lines.append(f"  [{email_id}] From: {from_addr} - Subject: {subject}")
+            recent_emails_lines.append("")
 
         # Handle multiple concurrent projects
         project_context_lines = []
@@ -273,6 +295,7 @@ class GPTPlanner:
                 f"Work hours today: {wh} (only schedule inside these).",
                 "",
                 *team_roster_lines,
+                *recent_emails_lines,
                 project_reference,
                 "",
                 "Daily focus:",
@@ -285,6 +308,10 @@ class GPTPlanner:
                 "",
                 "Email format (you MUST include cc or bcc in most emails for transparency):",
                 "- Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: Subject | Body text",
+                "",
+                "Reply to email format (use when responding to a recent email):",
+                "- Reply at HH:MM to [email-id] cc PERSON: Subject | Body text",
+                "  Example: Reply at 14:00 to [email-42] cc dev@domain: RE: API status | Thanks for the update...",
                 "",
                 "Chat format:",
                 "- Chat at HH:MM with TARGET: message text",
@@ -377,6 +404,46 @@ class GPTPlanner:
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.daily_report_model
+        if self._locale == "ko":
+            messages = [
+                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                *messages,
+            ]
+        return self._invoke(messages, model)
+
+    def generate_hourly_summary(
+        self,
+        *,
+        worker: PersonRead,
+        hour_index: int,
+        hourly_plans: str,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        """Generate a concise summary of an hour's worth of activity."""
+        user_content = "\n".join(
+            [
+                f"Worker: {worker.name} ({worker.role}) - Hour {hour_index + 1}",
+                "",
+                "Hourly plans for this hour:",
+                hourly_plans,
+                "",
+                "Summarize this hour's activities in 2-3 concise bullet points.",
+                "Focus on: key tasks completed, communications sent, and any blockers/decisions.",
+                "Keep it brief - this is for aggregating into daily reports."
+            ]
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You create brief hourly activity summaries. "
+                    "Output 2-3 bullet points maximum. Be concise and factual. "
+                    "Never mention being an AI or simulation."
+                ),
+            },
+            {"role": "user", "content": user_content},
+        ]
+        model = model_hint or self.hourly_model
         if self._locale == "ko":
             messages = [
                 {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
@@ -543,6 +610,18 @@ class StubPlanner:
         body = "\n".join(lines)
         model = model_hint or "vdos-stub-hourly"
         return self._result("Hourly Plan", body, model)
+
+    def generate_hourly_summary(
+        self,
+        *,
+        worker: PersonRead,
+        hour_index: int,
+        hourly_plans: str,
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        body = f"- Continued project work\n- Coordinated with team\n- {hour_index + 1} hour(s) logged"
+        model = model_hint or "vdos-stub-hourly-summary"
+        return self._result("Hourly Summary", body, model)
 
     def generate_daily_report(
         self,

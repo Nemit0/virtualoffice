@@ -8,6 +8,7 @@ import random
 import time
 import threading
 import math
+import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
@@ -158,6 +159,18 @@ CREATE TABLE IF NOT EXISTS worker_plans (
 );
 
 
+CREATE TABLE IF NOT EXISTS hourly_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER NOT NULL,
+    hour_index INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    model_used TEXT NOT NULL,
+    tokens_used INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE,
+    UNIQUE(person_id, hour_index)
+);
+
 CREATE TABLE IF NOT EXISTS daily_reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id INTEGER NOT NULL,
@@ -254,6 +267,9 @@ class SimulationEngine:
         # Locale (simple toggle for certain strings)
         self._locale = (os.getenv("VDOS_LOCALE", "en").strip().lower() or "en")
         self._planner_metrics_lock = threading.Lock()
+        # Email threading support
+        self._recent_emails: dict[int, deque] = {}  # {person_id: deque of recent emails}
+        self._email_threads: dict[str, str] = {}  # {thread_key: thread_id}
         # Planner strict mode: if True, do not fall back to stub on GPT failures
         if planner_strict is None:
             env = os.getenv("VDOS_PLANNER_STRICT", "0").strip().lower()
@@ -328,6 +344,13 @@ class SimulationEngine:
             r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
+        # Reply to email syntax: "Reply at HH:MM to [email-id] cc PERSON: Subject | Body"
+        reply_re = re.compile(
+            r"^Reply\s+at\s+(\d{2}:\d{2})\s+to\s+\[([^\]]+)\]"
+            r"(?:\s+cc\s+([^:]+?))?"
+            r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
+            re.I,
+        )
         chat_re = re.compile(r"^Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
         for ln in lines:
             m = email_re.match(ln)
@@ -337,6 +360,7 @@ class SimulationEngine:
             payload = ""
             cc_raw = None
             bcc_raw = None
+            reply_to_email_id = None
             if m:
                 channel = 'email'
                 when = m.group(1)
@@ -345,10 +369,21 @@ class SimulationEngine:
                 bcc_raw = (m.group(4) or '').strip()
                 payload = (m.group(5) or '').strip()
             else:
-                m = chat_re.match(ln)
+                # Try reply syntax
+                m = reply_re.match(ln)
                 if m:
-                    channel = 'chat'
-                    when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+                    channel = 'email'
+                    when = m.group(1)
+                    reply_to_email_id = (m.group(2) or '').strip()
+                    cc_raw = (m.group(3) or '').strip()
+                    bcc_raw = (m.group(4) or '').strip()
+                    payload = (m.group(5) or '').strip()
+                    # target will be determined from the parent email
+                else:
+                    m = chat_re.match(ln)
+                    if m:
+                        channel = 'chat'
+                        when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
             if not channel:
                 continue
             try:
@@ -361,11 +396,23 @@ class SimulationEngine:
                 continue
             t = base_tick + scheduled_tick_of_day
             entry = {'channel': channel, 'target': target, 'payload': payload}
+            if reply_to_email_id:
+                entry['reply_to_email_id'] = reply_to_email_id
             if cc_raw:
                 entry['cc'] = [x.strip() for x in cc_raw.split(',') if x.strip()]
             if bcc_raw:
                 entry['bcc'] = [x.strip() for x in bcc_raw.split(',') if x.strip()]
             sched.setdefault(t, []).append(entry)
+
+    def _get_thread_id_for_reply(self, person_id: int, email_id: str) -> tuple[str | None, str | None]:
+        """Look up thread_id and original sender from email-id in recent emails.
+        Returns (thread_id, original_sender_email) or (None, None) if not found.
+        """
+        recent = self._recent_emails.get(person_id, [])
+        for email in recent:
+            if email.get('email_id') == email_id:
+                return email.get('thread_id'), email.get('from')
+        return None, None
 
     def _dispatch_scheduled(self, person: PersonRead, current_tick: int, people_by_id: dict[int, PersonRead]) -> tuple[int, int]:
         emails = chats = 0
@@ -482,6 +529,20 @@ class SimulationEngine:
             channel = act.get('channel')
             target = act.get('target') or ""
             payload = act.get('payload') or ""
+            reply_to_email_id = act.get('reply_to_email_id')
+            thread_id = None
+
+            # Handle reply syntax - lookup parent email and thread_id
+            if reply_to_email_id:
+                thread_id, original_sender = self._get_thread_id_for_reply(person.id, reply_to_email_id)
+                if original_sender:
+                    # If we found the parent email, reply to its sender
+                    target = original_sender
+                else:
+                    # If email-id not found, log warning and skip
+                    logger.warning(f"Reply email-id [{reply_to_email_id}] not found in recent emails for {person.name}")
+                    continue
+
             email_to, chat_to = _match_target(target)
             if channel == 'email' and email_to:
                 subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name}"
@@ -514,9 +575,47 @@ class SimulationEngine:
                     cc_emails = _suggest_cc(email_to)
                 bcc_emails = _resolve_emails(list(bcc_raw))
                 recipients_key = tuple(sorted({email_to, *cc_emails, *bcc_emails}))
+
+                # Generate new thread_id if this is not a reply
+                if thread_id is None:
+                    thread_id = f"thread-{uuid.uuid4().hex[:16]}"
+
                 if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=payload):
-                    self.email_gateway.send_email(sender=person.email_address, to=[email_to], subject=subject, body=payload, cc=cc_emails, bcc=bcc_emails, sent_at_iso=dt_iso)
+                    result = self.email_gateway.send_email(
+                        sender=person.email_address,
+                        to=[email_to],
+                        subject=subject,
+                        body=payload,
+                        cc=cc_emails,
+                        bcc=bcc_emails,
+                        thread_id=thread_id,
+                        sent_at_iso=dt_iso
+                    )
                     emails += 1
+
+                    # Track sent email for threading context (store email_id if available)
+                    if result and isinstance(result, dict):
+                        email_id = result.get('id', f'email-{current_tick}-{emails}')
+                        email_record = {
+                            'email_id': email_id,
+                            'from': person.email_address,
+                            'to': email_to,
+                            'subject': subject,
+                            'thread_id': thread_id,
+                            'sent_at_tick': current_tick,
+                        }
+                        # Add to sender's recent emails
+                        if person.id not in self._recent_emails:
+                            self._recent_emails[person.id] = deque(maxlen=10)
+                        self._recent_emails[person.id].append(email_record)
+
+                        # Also add to all recipients' recent emails for their context
+                        for recipient_addr in [email_to, *cc_emails]:
+                            recipient_person = email_index.get(recipient_addr.lower())
+                            if recipient_person:
+                                if recipient_person.id not in self._recent_emails:
+                                    self._recent_emails[recipient_person.id] = deque(maxlen=10)
+                                self._recent_emails[recipient_person.id].append(email_record)
             elif channel == 'chat' and chat_to:
                 # Deterministic guard: only the lexicographically smaller handle sends to avoid mirrored DMs.
                 s_handle = person.chat_handle.lower()
@@ -1187,6 +1286,9 @@ class SimulationEngine:
         # Get all active people for team roster
         team = self._get_active_people()
 
+        # Get recent emails for this person (for threading context)
+        recent_emails = list(self._recent_emails.get(person.id, []))
+
         try:
             result = self._call_planner(
                 'generate_hourly_plan',
@@ -1198,6 +1300,7 @@ class SimulationEngine:
                 team=team,
                 model_hint=self._planner_model_hint,
                 all_active_projects=all_active_projects,
+                recent_emails=recent_emails,
             )
         except PlanningError as exc:
             raise RuntimeError(f"Unable to generate hourly plan for {person.name}: {exc}") from exc
@@ -1303,6 +1406,84 @@ class SimulationEngine:
             filtered = lines
         return "\n".join(filtered[:max_lines])
 
+    def _fetch_hourly_summary(self, person_id: int, hour_index: int) -> dict[str, Any] | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM hourly_summaries WHERE person_id = ? AND hour_index = ?",
+                (person_id, hour_index),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            'id': row['id'],
+            'person_id': row['person_id'],
+            'hour_index': row['hour_index'],
+            'summary': row['summary'],
+            'model_used': row['model_used'],
+            'tokens_used': row['tokens_used'],
+        }
+
+    def _store_hourly_summary(
+        self,
+        person_id: int,
+        hour_index: int,
+        result: PlanResult,
+    ) -> dict[str, Any]:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT OR REPLACE INTO hourly_summaries(person_id, hour_index, summary, model_used, tokens_used) VALUES (?, ?, ?, ?, ?)",
+                (person_id, hour_index, result.content, result.model_used, result.tokens_used or 0),
+            )
+            row_id = cursor.lastrowid
+        return {
+            'id': row_id,
+            'person_id': person_id,
+            'hour_index': hour_index,
+            'summary': result.content,
+            'model_used': result.model_used,
+            'tokens_used': result.tokens_used or 0,
+        }
+
+    def _generate_hourly_summary(
+        self,
+        person: PersonRead,
+        hour_index: int,
+    ) -> dict[str, Any]:
+        """Generate a summary for a completed hour."""
+        existing = self._fetch_hourly_summary(person.id, hour_index)
+        if existing:
+            return existing
+
+        # Get all hourly plans for this hour
+        start_tick = hour_index * 60 + 1
+        end_tick = (hour_index + 1) * 60
+        with get_connection() as conn:
+            hourly_rows = conn.execute(
+                "SELECT tick, content FROM worker_plans WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ? ORDER BY tick",
+                (person.id, start_tick, end_tick),
+            ).fetchall()
+
+        if not hourly_rows:
+            # No plans for this hour, skip summary
+            return {'person_id': person.id, 'hour_index': hour_index, 'summary': '', 'model_used': 'none', 'tokens_used': 0}
+
+        hourly_plans = "\n".join(f"Tick {row['tick']}: {row['content'][:200]}..." for row in hourly_rows)
+
+        try:
+            result = self._call_planner(
+                'generate_hourly_summary',
+                worker=person,
+                hour_index=hour_index,
+                hourly_plans=hourly_plans,
+                model_hint=self._planner_model_hint,
+            )
+        except PlanningError as exc:
+            logger.warning(f"Unable to generate hourly summary for {person.name} hour {hour_index}: {exc}")
+            # Store a stub summary instead of failing
+            result = PlanResult(content=f"Hour {hour_index + 1} activities", model_used="stub", tokens_used=0)
+
+        return self._store_hourly_summary(person_id=person.id, hour_index=hour_index, result=result)
+
     def _fetch_daily_report(self, person_id: int, day_index: int) -> dict[str, Any] | None:
         with get_connection() as conn:
             row = conn.execute(
@@ -1321,14 +1502,26 @@ class SimulationEngine:
         if existing:
             return existing
         daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
-        start_tick = day_index * self.hours_per_day + 1
-        end_tick = (day_index + 1) * self.hours_per_day
+
+        # Use hourly summaries instead of all tick logs
+        start_hour = day_index * (self.hours_per_day // 60)
+        end_hour = (day_index + 1) * (self.hours_per_day // 60)
         with get_connection() as conn:
-            hourly_rows = conn.execute(
-                "SELECT tick, content FROM worker_plans WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ? ORDER BY tick",
-                (person.id, start_tick, end_tick),
+            summary_rows = conn.execute(
+                "SELECT hour_index, summary FROM hourly_summaries WHERE person_id = ? AND hour_index BETWEEN ? AND ? ORDER BY hour_index",
+                (person.id, start_hour, end_hour - 1),
             ).fetchall()
-        hourly_summary = "\n".join(f"Tick {row['tick']}: {row['content']}" for row in hourly_rows)
+
+        if summary_rows:
+            hourly_summary = "\n".join(f"Hour {row['hour_index'] + 1}: {row['summary']}" for row in summary_rows)
+        else:
+            # Fallback: generate hourly summaries now if they don't exist
+            hourly_summary_lines = []
+            for h in range(start_hour, end_hour):
+                summary = self._generate_hourly_summary(person, h)
+                if summary.get('summary'):
+                    hourly_summary_lines.append(f"Hour {h + 1}: {summary['summary']}")
+            hourly_summary = "\n".join(hourly_summary_lines) if hourly_summary_lines else "No hourly activities recorded."
         schedule_blocks = [
             ScheduleBlock(block.start, block.end, block.activity)
             for block in person.schedule or []
@@ -1395,14 +1588,37 @@ class SimulationEngine:
             raise RuntimeError("Cannot generate simulation report without a project plan")
         people = self.list_people()
         with get_connection() as conn:
-            tick_rows = conn.execute("SELECT tick, reason FROM tick_log ORDER BY id").fetchall()
+            # Limit tick log to major milestones only (every 480 ticks = 1 day for 8-hour days)
+            tick_rows = conn.execute(
+                "SELECT tick, reason FROM tick_log WHERE tick % 480 = 1 OR reason IN ('kickoff', 'manual') ORDER BY id LIMIT 100",
+                ()
+            ).fetchall()
             event_rows = conn.execute("SELECT type, target_ids, project_id, at_tick, payload FROM events ORDER BY id").fetchall()
-        tick_summary = "\n".join(f"Tick {row['tick']}: {row['reason']}" for row in tick_rows)
-        event_summary = "\n".join(
-            f"Event {row['type']} (project={row['project_id']}, targets={row['target_ids']}, tick={row['at_tick']}) payload={row['payload']}"
-            for row in event_rows
-        ) or "No events logged."
-        daily_reports = self.list_daily_reports_for_summary()
+
+        # Summarize tick log
+        if len(tick_rows) > 50:
+            tick_summary = f"Major milestones ({len(tick_rows)} key ticks):\n"
+            tick_summary += "\n".join(f"Tick {row['tick']}: {row['reason']}" for row in tick_rows[:25])
+            tick_summary += f"\n... ({len(tick_rows) - 25} more ticks) ..."
+        else:
+            tick_summary = "\n".join(f"Tick {row['tick']}: {row['reason']}" for row in tick_rows)
+
+        # Summarize events concisely
+        event_summary = f"Total events: {len(event_rows)}\n"
+        event_summary += "\n".join(
+            f"- {row['type']} (project={row['project_id']}, tick={row['at_tick']})"
+            for row in event_rows[:20]  # Limit to first 20
+        ) if event_rows else "No events logged."
+
+        # Use daily report summaries (just the first 100 chars of each)
+        daily_reports_full = self.list_daily_reports_for_summary()
+        if len(daily_reports_full) > 1000:  # If very long, summarize further
+            daily_reports = f"Daily reports summary ({len(daily_reports_full.splitlines())} days):\n"
+            daily_reports += "\n".join(line[:150] for line in daily_reports_full.splitlines()[:50])
+            daily_reports += f"\n... ({len(daily_reports_full.splitlines()) - 50} more days) ..."
+        else:
+            daily_reports = daily_reports_full
+
         try:
             result = self._call_planner(
                 'generate_simulation_report',
@@ -1985,6 +2201,16 @@ class SimulationEngine:
                         )
                         self._queue_runtime_message(recipient, inbound)
 
+                # Generate hourly summaries at the end of each hour (every 60 ticks)
+                if status.current_tick % 60 == 0:
+                    completed_hour = (status.current_tick // 60) - 1
+                    for person in people:
+                        try:
+                            self._generate_hourly_summary(person, completed_hour)
+                        except Exception as e:
+                            logger.warning(f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}")
+
+                # Generate daily reports at the end of each day
                 if status.current_tick % self.hours_per_day == 0:
                     completed_day = (status.current_tick // self.hours_per_day) - 1
                     for person in people:
