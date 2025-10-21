@@ -446,6 +446,22 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Automatic ticking disabled",
         )
 
+    @app.put(f"{API_PREFIX}/simulation/ticks/interval")
+    def set_tick_interval(
+        interval: float = Body(..., ge=0.1, le=60.0, embed=True),
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Set the auto-tick interval in seconds."""
+        try:
+            return engine.set_tick_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get(f"{API_PREFIX}/simulation/ticks/interval")
+    def get_tick_interval(engine: SimulationEngine = Depends(get_engine)) -> dict[str, float]:
+        """Get the current auto-tick interval in seconds."""
+        return {"tick_interval_seconds": engine.get_tick_interval()}
+
     @app.post(f"{API_PREFIX}/simulation/advance", response_model=SimulationAdvanceResult)
     def advance_simulation(
         payload: SimulationAdvanceRequest,

@@ -1914,6 +1914,23 @@ class SimulationEngine:
             sim_time=self._format_sim_time(status.current_tick),
         )
 
+    def set_tick_interval(self, interval_seconds: float) -> dict[str, Any]:
+        """Update the auto-tick interval (in seconds)."""
+        if interval_seconds < 0.1:
+            raise ValueError("Tick interval must be at least 0.1 seconds")
+        if interval_seconds > 60:
+            raise ValueError("Tick interval cannot exceed 60 seconds")
+        self._tick_interval_seconds = interval_seconds
+        logger.info(f"Tick interval updated to {interval_seconds}s")
+        return {
+            "tick_interval_seconds": self._tick_interval_seconds,
+            "message": f"Tick interval set to {interval_seconds}s"
+        }
+
+    def get_tick_interval(self) -> float:
+        """Get the current auto-tick interval (in seconds)."""
+        return self._tick_interval_seconds
+
     def _run_auto_tick_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.wait(self._tick_interval_seconds):
             state = self._fetch_state()

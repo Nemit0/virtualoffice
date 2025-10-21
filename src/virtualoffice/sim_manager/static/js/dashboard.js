@@ -118,6 +118,14 @@ async function refreshState() {
   document.getElementById('state-sim_time').textContent = state.sim_time || 'Day 0 00:00';
   document.getElementById('state-auto').textContent = state.auto_tick;
 
+  // Load current tick interval
+  try {
+    const intervalData = await fetchJson(`${API_PREFIX}/simulation/ticks/interval`);
+    document.getElementById('tick-interval').value = intervalData.tick_interval_seconds;
+  } catch (err) {
+    console.error('Failed to fetch tick interval:', err);
+  }
+
   // Update refresh interval based on simulation state
   const wasRunning = isSimulationRunning;
   isSimulationRunning = state.is_running || state.auto_tick;
@@ -443,6 +451,24 @@ async function stopAutoTicks() {
   }
 }
 
+async function updateTickInterval() {
+  try {
+    const interval = parseFloat(document.getElementById('tick-interval').value);
+    if (isNaN(interval) || interval < 0.1 || interval > 60) {
+      setStatus('Tick interval must be between 0.1 and 60 seconds', true);
+      return;
+    }
+    const result = await fetchJson(`${API_PREFIX}/simulation/ticks/interval`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interval })
+    });
+    setStatus(result.message || `Tick interval set to ${interval}s`);
+  } catch (err) {
+    setStatus(err.message || String(err), true);
+  }
+}
+
 function populatePersonaForm(persona) {
   document.getElementById('persona-name').value = persona.name || '';
   document.getElementById('persona-role').value = persona.role || '';
@@ -720,6 +746,7 @@ function init() {
   document.getElementById('auto-start-btn').addEventListener('click', startAutoTicks);
   document.getElementById('auto-stop-btn').addEventListener('click', stopAutoTicks);
   document.getElementById('refresh-btn').addEventListener('click', refreshAll);
+  document.getElementById('tick-interval').addEventListener('change', updateTickInterval);
   document.getElementById('persona-generate-btn').addEventListener('click', generatePersona);
   document.getElementById('persona-create-btn').addEventListener('click', createPersona);
   document.getElementById('persona-clear-btn').addEventListener('click', clearPersonaForm);
