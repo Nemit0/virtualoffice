@@ -304,3 +304,6 @@ token_usage.json
 # Temporary files and patches
 out_patch_preview.txt
 tmp_view_app.py
+
+# Windows-specific: Git Bash creates 'nul' file when redirecting to >nul
+nul
