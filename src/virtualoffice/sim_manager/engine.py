@@ -1993,8 +1993,18 @@ class SimulationEngine:
                     if not active_projects:
                         active_projects = [project_plan] if project_plan else []
 
+                    # Skip planning if person has no active projects (idle until assigned)
+                    if not active_projects:
+                        logger.info(
+                            "Skipping planning for %s at tick %s (no active project assignments for week %s)",
+                            person.name,
+                            status.current_tick,
+                            current_week,
+                        )
+                        continue
+
                     # Use first project for daily plan, but pass all projects to hourly planner
-                    primary_project = active_projects[0] if active_projects else project_plan
+                    primary_project = active_projects[0]
 
                     daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project)
 
