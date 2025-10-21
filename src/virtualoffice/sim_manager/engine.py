@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS people (
     email_address TEXT NOT NULL,
     chat_handle TEXT NOT NULL,
     is_department_head INTEGER NOT NULL DEFAULT 0,
+    team_name TEXT,
     skills TEXT NOT NULL,
     personality TEXT NOT NULL,
     objectives TEXT NOT NULL,
@@ -402,7 +403,11 @@ class SimulationEngine:
                 entry['cc'] = [x.strip() for x in cc_raw.split(',') if x.strip()]
             if bcc_raw:
                 entry['bcc'] = [x.strip() for x in bcc_raw.split(',') if x.strip()]
-            sched.setdefault(t, []).append(entry)
+
+            # Deduplicate: check if identical entry already scheduled for this tick
+            existing = sched.setdefault(t, [])
+            if entry not in existing:
+                existing.append(entry)
 
     def _get_thread_id_for_reply(self, person_id: int, email_id: str) -> tuple[str | None, str | None]:
         """Look up thread_id and original sender from email-id in recent emails.
@@ -635,6 +640,8 @@ class SimulationEngine:
             people_columns = {row["name"] for row in conn.execute("PRAGMA table_info(people)")}
             if "is_department_head" not in people_columns:
                 conn.execute("ALTER TABLE people ADD COLUMN is_department_head INTEGER NOT NULL DEFAULT 0")
+            if "team_name" not in people_columns:
+                conn.execute("ALTER TABLE people ADD COLUMN team_name TEXT")
             state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(simulation_state)")}
             if "auto_tick" not in state_columns:
                 conn.execute("ALTER TABLE simulation_state ADD COLUMN auto_tick INTEGER NOT NULL DEFAULT 0")
@@ -793,10 +800,10 @@ class SimulationEngine:
                 """
                 INSERT INTO people (
                     name, role, timezone, work_hours, break_frequency,
-                    communication_style, email_address, chat_handle, is_department_head, skills,
+                    communication_style, email_address, chat_handle, is_department_head, team_name, skills,
                     personality, objectives, metrics, persona_markdown,
                     planning_guidelines, event_playbook, statuses
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.name,
@@ -808,6 +815,7 @@ class SimulationEngine:
                     payload.email_address,
                     payload.chat_handle,
                     1 if payload.is_department_head else 0,
+                    payload.team_name,
                     skills_json,
                     personality_json,
                     objectives_json,
@@ -2674,6 +2682,11 @@ class SimulationEngine:
     def _row_to_person(self, row) -> PersonRead:
         person_id = row["id"]
         schedule = self._fetch_schedule(person_id)
+        # Check if team_name column exists (for backward compatibility)
+        try:
+            team_name = row["team_name"]
+        except (KeyError, IndexError):
+            team_name = None
         return PersonRead(
             id=person_id,
             name=row["name"],
@@ -2685,6 +2698,7 @@ class SimulationEngine:
             email_address=row["email_address"],
             chat_handle=row["chat_handle"],
             is_department_head=bool(row["is_department_head"]),
+            team_name=team_name,
             skills=json.loads(row["skills"]),
             personality=json.loads(row["personality"]),
             objectives=json.loads(row["objectives"]),

@@ -66,7 +66,8 @@ function buildPersonCard(person, checked) {
   });
   label.appendChild(checkbox);
   const title = document.createElement('span');
-  title.textContent = ` ${person.name} (${person.role})`;
+  const teamInfo = person.team_name ? ` - ${person.team_name}` : '';
+  title.textContent = ` ${person.name} (${person.role})${teamInfo}`;
   label.appendChild(title);
   card.appendChild(label);
   const meta = document.createElement('div');
@@ -80,7 +81,8 @@ function buildPlanCard(entry) {
   const card = document.createElement('div');
   card.className = 'plan-card';
   const title = document.createElement('h3');
-  title.textContent = `${entry.person.name} (${entry.person.role})`;
+  const teamInfo = entry.person.team_name ? ` - ${entry.person.team_name}` : '';
+  title.textContent = `${entry.person.name} (${entry.person.role})${teamInfo}`;
   card.appendChild(title);
   if (entry.error) {
     const error = document.createElement('div');
@@ -335,6 +337,7 @@ function populatePersonaForm(persona) {
   document.getElementById('persona-style').value = persona.communication_style || 'Warm async';
   document.getElementById('persona-email').value = persona.email_address || '';
   document.getElementById('persona-chat').value = persona.chat_handle || '';
+  document.getElementById('persona-team').value = persona.team_name || '';
   document.getElementById('persona-is-head').checked = Boolean(persona.is_department_head);
   document.getElementById('persona-skills').value = (persona.skills || []).join(', ');
   document.getElementById('persona-personality').value = (persona.personality || []).join(', ');
@@ -384,6 +387,7 @@ function collectPersonaPayload() {
     }
   }
   const schedule = parseSchedule(document.getElementById('persona-schedule').value);
+  const teamName = document.getElementById('persona-team').value.trim();
   return {
     name: document.getElementById('persona-name').value.trim(),
     role: document.getElementById('persona-role').value.trim(),
@@ -393,6 +397,7 @@ function collectPersonaPayload() {
     communication_style: document.getElementById('persona-style').value.trim() || 'Async',
     email_address: document.getElementById('persona-email').value.trim(),
     chat_handle: document.getElementById('persona-chat').value.trim(),
+    team_name: teamName || null,
     is_department_head: document.getElementById('persona-is-head').checked,
     skills: parseCommaSeparated(document.getElementById('persona-skills').value),
     personality: parseCommaSeparated(document.getElementById('persona-personality').value),

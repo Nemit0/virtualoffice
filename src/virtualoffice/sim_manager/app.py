@@ -48,11 +48,12 @@ def _generate_persona_text(messages: list[dict[str, str]], model: str) -> tuple[
     return _gen(messages, model=model)
 
 
-def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None) -> dict[str, Any]:
+def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None, explicit_name: str | None = None) -> dict[str, Any]:
     """Best-effort persona generator.
 
     - Uses OpenAI if configured; otherwise returns a sensible stub.
     - Ensures output matches PersonCreate-compatible shape used by the dashboard.
+    - If explicit_name is provided, it overrides the GPT-generated name.
     """
     model = model_hint or os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
     system = (
@@ -85,9 +86,13 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None) ->
                 data = json.loads(text[start:end+1])
             else:
                 raise
+        # Override name if explicit_name provided (must be done before normalization)
+        if explicit_name:
+            data["name"] = explicit_name
+
         # Minimal normalization
-        # Harmonize naming to satisfy dashboard/tests expectations
-        if "developer" in prompt.lower():
+        # Harmonize naming to satisfy dashboard/tests expectations (but only if no explicit name)
+        if not explicit_name and "developer" in prompt.lower():
             if not str(data.get("name", "")).lower().startswith("auto "):
                 data["name"] = "Auto Dev"
             # Keep test-friendly default skill for developer prompts
@@ -206,7 +211,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         payload: PersonaGenerateRequest = Body(...),
         engine: SimulationEngine = Depends(get_engine),
     ) -> dict[str, Any]:
-        persona = _generate_persona_from_prompt(payload.prompt, payload.model_hint)
+        persona = _generate_persona_from_prompt(payload.prompt, payload.model_hint, payload.explicit_name)
         return {"persona": persona}
 
     @app.delete(f"{API_PREFIX}/people/by-name/{{person_name}}", status_code=status.HTTP_204_NO_CONTENT)

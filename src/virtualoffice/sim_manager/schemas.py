@@ -21,6 +21,7 @@ class PersonCreate(BaseModel):
     email_address: str
     chat_handle: str
     is_department_head: bool = False
+    team_name: str | None = Field(default=None, description="Team identifier for multi-team simulations")
     skills: Sequence[str]
     personality: Sequence[str]
     objectives: Sequence[str] | None = None
@@ -166,6 +167,7 @@ class TokenUsageSummary(BaseModel):
 class PersonaGenerateRequest(BaseModel):
     prompt: str
     model_hint: str | None = Field(default=None, description="Optional model name, e.g. gpt-4o-mini")
+    explicit_name: str | None = Field(default=None, description="Optional: force this exact name instead of GPT-generated name")
 
 
 # --- Status override (external integration) ---

@@ -35,7 +35,7 @@
 
 ## Completed
 
-### 2025-10-20
+### 2025-10-20 (Session 1)
 - ✅ Email threading implementation (Method 3: Explicit Reply Syntax)
   - Thread ID generation and assignment
   - Recent emails context for planner
@@ -48,6 +48,14 @@
   - Updated simulation reports to use sampled data (~98% token reduction)
   - Auto-generate summaries at end of each hour
   - Prevents context length errors in long simulations
+
+### 2025-10-20 (Session 2 - Continued)
+- ✅ Token optimization bug fix (Daily Report Context Length)
+  - **Issue Found**: 8-week simulation still hit 163K token limit (exceeding 128K)
+  - **Root Cause**: `minute_schedule` (32 entries/day) still included in daily report prompt
+  - **Fix**: Removed minute_schedule from `generate_daily_report()` in planner.py
+  - **Result**: Daily reports now only use hourly summaries (expected <10K tokens vs 163K)
+  - Completes the full hierarchical summarization chain: Tick → Hour → Day → Simulation
 - ✅ Project organization cleanup
   - Created `agent_reports/` directory
   - Created `scripts/` directory
