@@ -1802,10 +1802,19 @@ class SimulationEngine:
         active_people = self._resolve_active_people(request, all_people)
         self._active_person_ids = [person.id for person in active_people]
         if request is not None:
-            # Multi-project mode uses total_duration_weeks if provided
-            if request.total_duration_weeks:
-                self.project_duration_weeks = request.total_duration_weeks
+            # Validate that either single-project or multi-project fields are provided
+            if request.projects:
+                # Multi-project mode
+                if request.total_duration_weeks:
+                    self.project_duration_weeks = request.total_duration_weeks
+                else:
+                    # Calculate total duration from projects
+                    max_end_week = max(p.start_week + p.duration_weeks - 1 for p in request.projects)
+                    self.project_duration_weeks = max_end_week
             else:
+                # Single-project mode - require project_name and project_summary
+                if not request.project_name or not request.project_summary:
+                    raise RuntimeError("Either 'projects' or both 'project_name' and 'project_summary' must be provided")
                 self.project_duration_weeks = request.duration_weeks
             self._planner_model_hint = request.model_hint
             self._initialise_project_plan(request, active_people)
@@ -2602,7 +2611,14 @@ class SimulationEngine:
     def _derive_seed(self, request: SimulationStartRequest | None) -> int:
         if request and request.random_seed is not None:
             return request.random_seed
-        base = (request.project_name if request else 'vdos-default').encode('utf-8')
+        # For multi-project mode, use first project name; otherwise use single project name
+        if request and request.projects:
+            project_name = request.projects[0].project_name
+        elif request and request.project_name:
+            project_name = request.project_name
+        else:
+            project_name = 'vdos-default'
+        base = project_name.encode('utf-8')
         digest = hashlib.sha256(base).digest()
         return int.from_bytes(digest[:8], 'big')
 

@@ -292,8 +292,10 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             print(f"✅ Simulation initialized successfully on attempt {attempt}")
             return state
         except Exception as exc:
+            import traceback
             error_msg = f"Attempt {attempt}/{max_retries} failed: {str(exc)}"
             print(f"⚠️  {error_msg}")
+            print(f"Full traceback:\n{traceback.format_exc()}")
 
             if attempt < max_retries:
                 # Exponential backoff: 5s, 10s, 20s
@@ -326,7 +328,11 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             background_tasks.add_task(_bg_init)
             message = "Simulation initialization started in background (check /simulation/init-status)"
             if payload is not None:
-                message += f" for project '{payload.project_name}'"
+                if payload.projects:
+                    project_names = ", ".join(p.project_name for p in payload.projects)
+                    message += f" with {len(payload.projects)} projects: {project_names}"
+                elif payload.project_name:
+                    message += f" for project '{payload.project_name}'"
 
             # Return immediately with pending status
             state = engine.get_state()
@@ -343,9 +349,21 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 state = _retry_init(engine, payload)
             except RuntimeError as exc:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+            except Exception as exc:
+                # Catch all other exceptions and return 500 with details
+                import traceback
+                error_detail = f"{type(exc).__name__}: {str(exc)}\n\nTraceback:\n{traceback.format_exc()}"
+                print(f"❌ Simulation start failed with exception:\n{error_detail}")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_detail) from exc
             message = "Simulation started"
             if payload is not None:
-                message += f" for project '{payload.project_name}'"
+                if payload.projects:
+                    # Multi-project mode
+                    project_names = ", ".join(p.project_name for p in payload.projects)
+                    message += f" with {len(payload.projects)} projects: {project_names}"
+                elif payload.project_name:
+                    # Single-project mode
+                    message += f" for project '{payload.project_name}'"
             return SimulationControlResponse(
                 current_tick=state.current_tick,
                 is_running=state.is_running,

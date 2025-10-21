@@ -94,9 +94,10 @@ class ProjectTimelineIn(BaseModel):
 
 
 class SimulationStartRequest(BaseModel):
-    project_name: str
-    project_summary: str
-    duration_weeks: int = Field(default=4, ge=1, le=52)
+    # Single-project mode fields (optional when using multi-project mode)
+    project_name: str | None = Field(default=None, description="Project name (required for single-project mode)")
+    project_summary: str | None = Field(default=None, description="Project summary (required for single-project mode)")
+    duration_weeks: int = Field(default=4, ge=1, le=52, description="Project duration (used in single-project mode)")
     department_head_name: str | None = None
     model_hint: str | None = Field(default=None, description="Optional override for planning model")
     random_seed: int | None = Field(default=None, ge=0, description="Optional seed for reproducible events")
