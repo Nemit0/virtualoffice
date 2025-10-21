@@ -247,12 +247,35 @@ function gatherDeselectedPersonIds() {
 async function startSimulation() {
   const includeIds = gatherSelectedPersonIds();
   const excludeIds = gatherDeselectedPersonIds();
-  const projectName = document.getElementById('project-name').value.trim() || 'Dashboard Project';
-  const projectSummary = document.getElementById('project-summary').value.trim() || 'Generated from web dashboard';
-  const duration = parseInt(document.getElementById('project-duration').value, 10) || 1;
   const seedText = document.getElementById('random-seed').value.trim();
   const modelHint = document.getElementById('model-hint').value.trim();
-  const payload = { project_name: projectName, project_summary: projectSummary, duration_weeks: duration };
+
+  let payload;
+
+  // If multi-project configuration is provided, use it
+  if (projects.length > 0) {
+    // Multi-project mode
+    payload = {
+      projects: projects.map(p => ({
+        name: p.name,
+        summary: p.summary,
+        team_ids: p.team_ids,
+        start_week: p.start_week,
+        duration_weeks: p.duration_weeks
+      }))
+    };
+  } else {
+    // Backwards-compatible single project mode (legacy)
+    const projectName = document.getElementById('project-name')?.value.trim() || 'Dashboard Project';
+    const projectSummary = document.getElementById('project-summary')?.value.trim() || 'Generated from web dashboard';
+    const duration = parseInt(document.getElementById('project-duration')?.value, 10) || 1;
+    payload = {
+      project_name: projectName,
+      project_summary: projectSummary,
+      duration_weeks: duration
+    };
+  }
+
   if (includeIds.length) { payload.include_person_ids = includeIds; }
   if (excludeIds.length) { payload.exclude_person_ids = excludeIds; }
   if (seedText) {
@@ -260,6 +283,7 @@ async function startSimulation() {
     if (!Number.isNaN(seed)) { payload.random_seed = seed; }
   }
   if (modelHint) { payload.model_hint = modelHint; }
+
   try {
     setStatus('Starting simulation...');
     await fetchJson(`${API_PREFIX}/simulation/start`, {
@@ -623,6 +647,7 @@ function init() {
   document.getElementById('persona-generate-btn').addEventListener('click', generatePersona);
   document.getElementById('persona-create-btn').addEventListener('click', createPersona);
   document.getElementById('persona-clear-btn').addEventListener('click', clearPersonaForm);
+  document.getElementById('add-project-btn').addEventListener('click', addProject);
 
   // Initial refresh
   refreshAll();
