@@ -4,6 +4,8 @@ let selectedPeople = new Set();
 let refreshIntervalId = null;
 let currentRefreshInterval = 60000; // Start with 1 minute
 let isSimulationRunning = false;
+let projects = []; // Array of project objects
+let people_cache = []; // Cache of all people for project team selection
 
 function setStatus(message, isError = false) {
   const el = document.getElementById('status-message');
@@ -128,6 +130,7 @@ async function refreshState() {
 
 async function refreshPeopleAndPlans() {
   const people = await fetchJson(`${API_PREFIX}/people`);
+  people_cache = people; // Cache for project team selection
   const container = document.getElementById('people-container');
   const plansContainer = document.getElementById('plans-container');
   const currentSelection = new Set(Array.from(container.querySelectorAll('input[type=checkbox]')).filter(cb => cb.checked).map(cb => Number(cb.value)));
@@ -456,6 +459,139 @@ async function createPersona() {
   } catch (err) {
     setStatus(err.message || String(err), true);
   }
+}
+
+// Project Management Functions
+function addProject() {
+  const projectName = prompt("Enter project name:");
+  if (!projectName) return;
+
+  const projectSummary = prompt("Enter project summary:");
+  if (!projectSummary) return;
+
+  const startWeek = parseInt(prompt("Start week (1-52):", "1"));
+  if (!startWeek || startWeek < 1) {
+    setStatus("Invalid start week", true);
+    return;
+  }
+
+  const durationWeeks = parseInt(prompt("Duration in weeks (1-52):", "1"));
+  if (!durationWeeks || durationWeeks < 1) {
+    setStatus("Invalid duration", true);
+    return;
+  }
+
+  // Show team selection dialog
+  showTeamSelectionDialog(projectName, projectSummary, startWeek, durationWeeks);
+}
+
+function showTeamSelectionDialog(projectName, projectSummary, startWeek, durationWeeks) {
+  // Create a dialog for team selection
+  const teamIds = [];
+  const teams = getUniqueTeams();
+
+  if (teams.length === 0) {
+    setStatus("No teams available. Please create personas with team assignments first.", true);
+    return;
+  }
+
+  let message = `Select teams for "${projectName}":\n\n`;
+  teams.forEach((team, idx) => {
+    message += `${idx + 1}. ${team.name} (${team.members.length} members)\n`;
+  });
+  message += `\nEnter team numbers separated by commas (e.g., "1,2"):`;
+
+  const selection = prompt(message);
+  if (!selection) return;
+
+  const indices = selection.split(',').map(s => parseInt(s.trim()) - 1);
+  indices.forEach(idx => {
+    if (idx >= 0 && idx < teams.length) {
+      teamIds.push(...teams[idx].memberIds);
+    }
+  });
+
+  if (teamIds.length === 0) {
+    setStatus("No valid teams selected", true);
+    return;
+  }
+
+  const project = {
+    name: projectName,
+    summary: projectSummary,
+    team_ids: teamIds,
+    start_week: startWeek,
+    duration_weeks: durationWeeks
+  };
+
+  projects.push(project);
+  renderProjects();
+  setStatus(`Added project: ${projectName}`);
+}
+
+function getUniqueTeams() {
+  const teamsMap = new Map();
+
+  people_cache.forEach(person => {
+    const teamName = person.team_name || "No Team";
+    if (!teamsMap.has(teamName)) {
+      teamsMap.set(teamName, {
+        name: teamName,
+        members: [],
+        memberIds: []
+      });
+    }
+    teamsMap.get(teamName).members.push(person.name);
+    teamsMap.get(teamName).memberIds.push(person.id);
+  });
+
+  return Array.from(teamsMap.values());
+}
+
+function removeProject(index) {
+  if (confirm(`Remove project "${projects[index].name}"?`)) {
+    projects.splice(index, 1);
+    renderProjects();
+    setStatus("Project removed");
+  }
+}
+
+function renderProjects() {
+  const container = document.getElementById('projects-list');
+  container.innerHTML = '';
+
+  projects.forEach((project, index) => {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+
+    const title = document.createElement('h4');
+    title.textContent = project.name;
+    card.appendChild(title);
+
+    const summary = document.createElement('div');
+    summary.className = 'project-info';
+    summary.textContent = project.summary;
+    card.appendChild(summary);
+
+    const timeline = document.createElement('div');
+    timeline.className = 'project-info';
+    timeline.textContent = `📅 Week ${project.start_week} - ${project.start_week + project.duration_weeks - 1} (${project.duration_weeks} weeks)`;
+    card.appendChild(timeline);
+
+    const teamInfo = document.createElement('div');
+    teamInfo.className = 'project-teams';
+    const teamMembers = people_cache.filter(p => project.team_ids.includes(p.id)).map(p => p.name);
+    teamInfo.textContent = `👥 Team: ${teamMembers.join(', ')}`;
+    card.appendChild(teamInfo);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.className = 'remove-project-btn';
+    removeBtn.onclick = () => removeProject(index);
+    card.appendChild(removeBtn);
+
+    container.appendChild(card);
+  });
 }
 
 function setRefreshInterval(intervalMs) {

@@ -373,3 +373,57 @@ tbody tr:hover {
   color: #64748b;
   font-style: italic;
 }
+
+/* Project cards */
+.project-card {
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+  position: relative;
+}
+
+.project-card h4 {
+  margin: 0 0 12px;
+  color: #1f2933;
+  font-size: 15px;
+}
+
+.project-card .project-info {
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.project-card .project-teams {
+  font-size: 12px;
+  color: #64748b;
+  background: #e2e8f0;
+  padding: 8px;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.project-card .remove-project-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #dc2626;
+  margin: 0;
+}
+
+.project-card .remove-project-btn:hover {
+  background: #b91c1c;
+}
+
+#projects-list:empty::before {
+  content: "No projects added yet. Click 'Add Project' to begin.";
+  color: #64748b;
+  font-style: italic;
+  display: block;
+  padding: 16px;
+  text-align: center;
+  background: #f1f5f9;
+  border-radius: 6px;
+  border: 2px dashed #cbd5e1;
+}

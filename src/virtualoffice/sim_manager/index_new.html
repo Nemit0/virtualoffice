@@ -17,30 +17,26 @@
       <h2>Controls</h2>
       <div class="controls-grid">
         <div class="card">
-          <div class="form-group">
-            <label for="project-name">Project Name</label>
-            <input id="project-name" type="text" value="Dashboard Project"/>
+          <h3>Projects</h3>
+          <div id="projects-list"></div>
+          <div class="toolbar">
+            <button id="add-project-btn">Add Project</button>
           </div>
-          <div class="form-group">
-            <label for="project-summary">Project Summary</label>
-            <textarea id="project-summary">Generated from web dashboard</textarea>
-          </div>
+
+          <hr style="margin: 20px 0;">
+
           <div class="form-row">
-            <div class="form-group">
-              <label for="project-duration">Duration (weeks)</label>
-              <input id="project-duration" type="number" min="1" value="1"/>
-            </div>
             <div class="form-group">
               <label for="random-seed">Random Seed (optional)</label>
               <input id="random-seed" type="number"/>
             </div>
-          </div>
-          <div class="form-group">
-            <label for="model-hint">Model Hint (optional)</label>
-            <input id="model-hint" type="text" placeholder="gpt-4o-mini"/>
+            <div class="form-group">
+              <label for="model-hint">Model Hint (optional)</label>
+              <input id="model-hint" type="text" placeholder="gpt-4o-mini"/>
+            </div>
           </div>
           <div class="toolbar">
-            <button id="start-btn">Start</button>
+            <button id="start-btn">Start Simulation</button>
             <button id="stop-btn" class="secondary">Stop</button>
             <button id="reset-btn" class="secondary">Reset</button>
             <button id="full-reset-btn" class="secondary">Full Reset (Delete Personas)</button>
