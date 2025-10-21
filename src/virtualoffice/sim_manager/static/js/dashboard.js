@@ -1,6 +1,9 @@
 // VDOS Dashboard JavaScript
 const API_PREFIX = '/api/v1';
 let selectedPeople = new Set();
+let refreshIntervalId = null;
+let currentRefreshInterval = 60000; // Start with 1 minute
+let isSimulationRunning = false;
 
 function setStatus(message, isError = false) {
   const el = document.getElementById('status-message');
@@ -112,6 +115,15 @@ async function refreshState() {
   document.getElementById('state-current_tick').textContent = state.current_tick;
   document.getElementById('state-sim_time').textContent = state.sim_time || 'Day 0 00:00';
   document.getElementById('state-auto').textContent = state.auto_tick;
+
+  // Update refresh interval based on simulation state
+  const wasRunning = isSimulationRunning;
+  isSimulationRunning = state.is_running || state.auto_tick;
+
+  // If state changed, update the refresh interval
+  if (wasRunning !== isSimulationRunning) {
+    setRefreshInterval(isSimulationRunning ? 5000 : 60000);
+  }
 }
 
 async function refreshPeopleAndPlans() {
@@ -446,6 +458,23 @@ async function createPersona() {
   }
 }
 
+function setRefreshInterval(intervalMs) {
+  if (currentRefreshInterval === intervalMs) {
+    return; // No change needed
+  }
+
+  currentRefreshInterval = intervalMs;
+
+  // Clear existing interval
+  if (refreshIntervalId !== null) {
+    clearInterval(refreshIntervalId);
+  }
+
+  // Set new interval
+  refreshIntervalId = setInterval(refreshAll, intervalMs);
+  console.log(`Dashboard refresh interval set to ${intervalMs / 1000}s`);
+}
+
 function init() {
   document.getElementById('start-btn').addEventListener('click', startSimulation);
   document.getElementById('stop-btn').addEventListener('click', stopSimulation);
@@ -458,8 +487,12 @@ function init() {
   document.getElementById('persona-generate-btn').addEventListener('click', generatePersona);
   document.getElementById('persona-create-btn').addEventListener('click', createPersona);
   document.getElementById('persona-clear-btn').addEventListener('click', clearPersonaForm);
+
+  // Initial refresh
   refreshAll();
-  setInterval(refreshAll, 5000);
+
+  // Start with 1-minute interval (will auto-adjust based on simulation state)
+  setRefreshInterval(60000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
