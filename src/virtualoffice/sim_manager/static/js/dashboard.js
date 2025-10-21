@@ -454,8 +454,8 @@ async function stopAutoTicks() {
 async function updateTickInterval() {
   try {
     const interval = parseFloat(document.getElementById('tick-interval').value);
-    if (isNaN(interval) || interval < 0.1 || interval > 60) {
-      setStatus('Tick interval must be between 0.1 and 60 seconds', true);
+    if (isNaN(interval) || interval < 0 || interval > 60) {
+      setStatus('Tick interval must be between 0 and 60 seconds', true);
       return;
     }
     const result = await fetchJson(`${API_PREFIX}/simulation/ticks/interval`, {

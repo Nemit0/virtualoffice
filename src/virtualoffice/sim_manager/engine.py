@@ -1915,16 +1915,19 @@ class SimulationEngine:
         )
 
     def set_tick_interval(self, interval_seconds: float) -> dict[str, Any]:
-        """Update the auto-tick interval (in seconds)."""
-        if interval_seconds < 0.1:
-            raise ValueError("Tick interval must be at least 0.1 seconds")
+        """Update the auto-tick interval (in seconds). Use 0 for maximum speed."""
+        if interval_seconds < 0:
+            raise ValueError("Tick interval cannot be negative")
         if interval_seconds > 60:
             raise ValueError("Tick interval cannot exceed 60 seconds")
         self._tick_interval_seconds = interval_seconds
-        logger.info(f"Tick interval updated to {interval_seconds}s")
+        if interval_seconds == 0:
+            logger.info("Tick interval set to 0s (maximum speed - no delay between ticks)")
+        else:
+            logger.info(f"Tick interval updated to {interval_seconds}s")
         return {
             "tick_interval_seconds": self._tick_interval_seconds,
-            "message": f"Tick interval set to {interval_seconds}s"
+            "message": f"Tick interval set to {interval_seconds}s" + (" (max speed)" if interval_seconds == 0 else "")
         }
 
     def get_tick_interval(self) -> float:

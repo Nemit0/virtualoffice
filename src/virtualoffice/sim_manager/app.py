@@ -448,10 +448,10 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
 
     @app.put(f"{API_PREFIX}/simulation/ticks/interval")
     def set_tick_interval(
-        interval: float = Body(..., ge=0.1, le=60.0, embed=True),
+        interval: float = Body(..., ge=0.0, le=60.0, embed=True),
         engine: SimulationEngine = Depends(get_engine)
     ) -> dict[str, Any]:
-        """Set the auto-tick interval in seconds."""
+        """Set the auto-tick interval in seconds. Use 0 for maximum speed (no delay)."""
         try:
             return engine.set_tick_interval(interval)
         except ValueError as exc:
