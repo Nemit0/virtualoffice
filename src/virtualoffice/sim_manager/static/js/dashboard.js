@@ -333,9 +333,9 @@ async function startSimulation() {
     // Multi-project mode
     payload = {
       projects: projects.map(p => ({
-        name: p.name,
-        summary: p.summary,
-        team_ids: p.team_ids,
+        project_name: p.name,
+        project_summary: p.summary,
+        assigned_person_ids: p.team_ids,
         start_week: p.start_week,
         duration_weeks: p.duration_weeks
       }))
