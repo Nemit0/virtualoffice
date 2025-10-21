@@ -225,6 +225,11 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         plan = engine.get_project_plan()
         return plan if plan is not None else None
 
+    @app.get(f"{API_PREFIX}/simulation/active-projects")
+    def get_active_projects(engine: SimulationEngine = Depends(get_engine)) -> list[dict]:
+        """Get all active projects with their team assignments for the current simulation week."""
+        return engine.get_active_projects_with_assignments()
+
     @app.get(f"{API_PREFIX}/people/{{person_id}}/plans", response_model=list[WorkerPlanRead])
     def get_worker_plans(
         person_id: int,

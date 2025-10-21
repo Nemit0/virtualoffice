@@ -219,9 +219,85 @@ async function refreshEvents() {
   });
 }
 
+async function refreshActiveProjects() {
+  try {
+    const activeProjects = await fetchJson(`${API_PREFIX}/simulation/active-projects`);
+    const container = document.getElementById('active-projects-container');
+    container.innerHTML = '';
+
+    if (!activeProjects || activeProjects.length === 0) {
+      return; // Empty state handled by CSS ::before
+    }
+
+    activeProjects.forEach(item => {
+      const project = item.project;
+      const teamMembers = item.team_members || [];
+
+      const card = document.createElement('div');
+      card.className = 'active-project-item';
+
+      const title = document.createElement('h4');
+      title.textContent = `📋 ${project.project_name}`;
+      card.appendChild(title);
+
+      const summary = document.createElement('div');
+      summary.className = 'project-info';
+      summary.textContent = project.project_summary;
+      card.appendChild(summary);
+
+      const timeline = document.createElement('div');
+      timeline.className = 'project-timeline';
+      const endWeek = project.start_week + project.duration_weeks - 1;
+      timeline.textContent = `📅 Week ${project.start_week} - ${endWeek} (${project.duration_weeks} weeks)`;
+      card.appendChild(timeline);
+
+      // Group team members by team
+      const teamGroups = {};
+      teamMembers.forEach(member => {
+        const teamName = member.team_name || 'No Team';
+        if (!teamGroups[teamName]) {
+          teamGroups[teamName] = [];
+        }
+        teamGroups[teamName].push(member);
+      });
+
+      const teamDiv = document.createElement('div');
+      teamDiv.className = 'project-team';
+
+      Object.keys(teamGroups).sort().forEach((teamName, idx) => {
+        if (idx > 0) {
+          const separator = document.createElement('div');
+          separator.style.marginTop = '8px';
+          teamDiv.appendChild(separator);
+        }
+
+        const teamLabel = document.createElement('div');
+        teamLabel.style.fontWeight = '600';
+        teamLabel.style.marginBottom = '4px';
+        teamLabel.textContent = `${teamName}:`;
+        teamDiv.appendChild(teamLabel);
+
+        teamGroups[teamName].forEach(member => {
+          const memberSpan = document.createElement('span');
+          memberSpan.className = 'team-member';
+          memberSpan.textContent = `${member.name} (${member.role})`;
+          teamDiv.appendChild(memberSpan);
+        });
+      });
+
+      card.appendChild(teamDiv);
+      container.appendChild(card);
+    });
+  } catch (err) {
+    console.error('Error refreshing active projects:', err);
+    // Don't show error to user, just log it
+  }
+}
+
 async function refreshAll() {
   try {
     await refreshState();
+    await refreshActiveProjects();
     await refreshPeopleAndPlans();
     await refreshPlannerMetrics();
     await refreshTokenUsage();

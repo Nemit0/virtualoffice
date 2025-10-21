@@ -937,6 +937,73 @@ class SimulationEngine:
         self.project_duration_weeks = plan["duration_weeks"]
         return plan
 
+    def get_active_projects_with_assignments(self, current_week: int | None = None) -> list[dict[str, Any]]:
+        """Get all projects active at the given week with their team assignments."""
+        if current_week is None:
+            # Calculate current week from simulation state
+            status = self._fetch_state()
+            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            current_week = (current_day // 5) + 1  # 1-indexed weeks, assuming 5-day work weeks
+
+        with get_connection() as conn:
+            # Get all projects active in the current week
+            project_rows = conn.execute(
+                """
+                SELECT * FROM project_plans
+                WHERE start_week <= ? AND (start_week + duration_weeks - 1) >= ?
+                ORDER BY start_week ASC
+                """,
+                (current_week, current_week),
+            ).fetchall()
+
+            result = []
+            for proj_row in project_rows:
+                project = self._row_to_project_plan(proj_row)
+
+                # Get assigned people for this project
+                assignment_rows = conn.execute(
+                    """
+                    SELECT p.id, p.name, p.role, p.team_name
+                    FROM people p
+                    INNER JOIN project_assignments pa ON p.id = pa.person_id
+                    WHERE pa.project_id = ?
+                    ORDER BY p.team_name, p.name
+                    """,
+                    (project['id'],),
+                ).fetchall()
+
+                team_members = [
+                    {
+                        'id': row['id'],
+                        'name': row['name'],
+                        'role': row['role'],
+                        'team_name': row['team_name'],
+                    }
+                    for row in assignment_rows
+                ]
+
+                # If no specific assignments, project is for everyone
+                if not team_members:
+                    all_people_rows = conn.execute(
+                        "SELECT id, name, role, team_name FROM people ORDER BY team_name, name"
+                    ).fetchall()
+                    team_members = [
+                        {
+                            'id': row['id'],
+                            'name': row['name'],
+                            'role': row['role'],
+                            'team_name': row['team_name'],
+                        }
+                        for row in all_people_rows
+                    ]
+
+                result.append({
+                    'project': project,
+                    'team_members': team_members,
+                })
+
+            return result
+
     def list_worker_plans(
         self,
         person_id: int,

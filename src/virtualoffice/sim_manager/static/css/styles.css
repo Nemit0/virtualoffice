@@ -427,3 +427,57 @@ tbody tr:hover {
   border-radius: 6px;
   border: 2px dashed #cbd5e1;
 }
+
+/* Active project assignments display */
+.active-project-item {
+  border: 2px solid #10b981;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #f0fdf4;
+}
+
+.active-project-item h4 {
+  margin: 0 0 8px;
+  color: #065f46;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.active-project-item .project-timeline {
+  font-size: 12px;
+  color: #059669;
+  margin-bottom: 8px;
+}
+
+.active-project-item .project-team {
+  font-size: 13px;
+  color: #047857;
+  background: #d1fae5;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.active-project-item .team-member {
+  display: inline-block;
+  background: #ffffff;
+  border: 1px solid #10b981;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin: 4px 4px 4px 0;
+  font-size: 12px;
+  color: #065f46;
+}
+
+#active-projects-container:empty::before {
+  content: "No active projects running. Start a simulation to see active assignments.";
+  color: #64748b;
+  font-style: italic;
+  display: block;
+  padding: 16px;
+  text-align: center;
+  background: #f1f5f9;
+  border-radius: 6px;
+  border: 2px dashed #cbd5e1;
+}
