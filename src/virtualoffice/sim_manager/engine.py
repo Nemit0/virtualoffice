@@ -2579,8 +2579,9 @@ class SimulationEngine:
         return "Keep momentum on the current deliverables"
 
     def reset(self) -> SimulationState:
+        # Stop auto-ticks BEFORE acquiring lock to avoid deadlock
+        self.stop_auto_ticks()
         with self._advance_lock:
-            self.stop_auto_ticks()
             with get_connection() as conn:
                 for table in ("project_plans", "worker_plans", "worker_exchange_log", "worker_runtime_messages", "daily_reports", "simulation_reports", "events", "tick_log"):
                     conn.execute(f"DELETE FROM {table}")
@@ -2606,10 +2607,12 @@ class SimulationEngine:
 
         Intended for a destructive "start fresh" action in the dashboard.
         """
+        # First clear runtime and planning artifacts
+        # (reset() acquires its own lock)
+        self.reset()
+
+        # Then purge personas (cascades schedule blocks via FK)
         with self._advance_lock:
-            # First clear runtime and planning artifacts
-            self.reset()
-            # Then purge personas (cascades schedule blocks via FK)
             with get_connection() as conn:
                 conn.execute("DELETE FROM people")
                 conn.execute("DELETE FROM worker_status_overrides")
