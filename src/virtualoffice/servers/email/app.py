@@ -224,6 +224,47 @@ def list_mailbox_emails(
     return [_row_to_email(conn, email_id) for email_id in email_ids]
 
 
+@app.get("/senders/{address}/emails", response_model=List[EmailMessage])
+def list_sender_emails(
+    address: str,
+    since_id: int | None = None,
+    since_timestamp: str | None = None,
+    limit: int | None = None,
+    conn=Depends(db_dependency)
+):
+    """Get emails sent by a specific address.
+
+    Args:
+        address: Sender email address
+        since_id: Only return emails with ID greater than this
+        since_timestamp: Only return emails sent after this ISO timestamp
+        limit: Maximum number of emails to return (newest first)
+    """
+    cleaned = _normalise_or_422(address)
+
+    # Ensure the mailbox exists (provision if needed to avoid 404 in fresh DB)
+    _ensure_mailboxes(conn, [cleaned])
+
+    query = "SELECT id FROM emails WHERE sender = ?"
+    params = [cleaned]
+
+    if since_id is not None:
+        query += " AND id > ?"
+        params.append(since_id)
+
+    if since_timestamp is not None:
+        query += " AND sent_at > ?"
+        params.append(since_timestamp)
+
+    query += " ORDER BY id DESC"
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    email_ids = [row["id"] for row in conn.execute(query, params)]
+    return [_row_to_email(conn, email_id) for email_id in email_ids]
+
 @app.get("/emails/{email_id}", response_model=EmailMessage)
 def get_email(email_id: int, conn=Depends(db_dependency)):
     return _row_to_email(conn, email_id)

@@ -13,6 +13,11 @@
   </header>
 
   <main>
+    <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+      <button class="tab-button active" data-tab="controls" role="tab" aria-selected="true" aria-controls="control-panel" id="tab-controls-button">Controls</button>
+      <button class="tab-button" data-tab="emails" role="tab" aria-selected="false" aria-controls="tab-emails" id="tab-emails-button">Emails</button>
+      <button class="tab-button" data-tab="chat" role="tab" aria-selected="false" aria-controls="tab-chat" id="tab-chat-button">Chat</button>
+    </nav>
     <section id="control-panel">
       <h2>Controls</h2>
       <div class="controls-grid">
@@ -258,7 +263,124 @@
       <h2>Recent Events</h2>
       <ul id="events-list"></ul>
     </section>
+
+    <!-- Emails Tab -->
+    <section id="tab-emails" class="tabbed-section" style="display: none;" role="tabpanel" aria-labelledby="tab-emails-button">
+      <h2 id="email-tab-heading">Emails</h2>
+      
+      <!-- Email Client Header -->
+      <div class="email-client-header" role="toolbar" aria-label="Email client controls">
+        <div class="email-client-controls">
+          <div class="form-group">
+            <label for="email-person-select">Persona</label>
+            <select id="email-person-select" aria-describedby="email-person-help">
+              <option value="">Select a persona...</option>
+            </select>
+            <div id="email-person-help" class="sr-only">Choose which persona's emails to view</div>
+          </div>
+          
+          <div class="email-folder-navigation" role="tablist" aria-label="Email folders">
+            <div class="segmented">
+              <button id="email-folder-inbox" class="seg active" role="tab" aria-selected="true" aria-controls="email-list" tabindex="0">Inbox</button>
+              <button id="email-folder-sent" class="seg" role="tab" aria-selected="false" aria-controls="email-list" tabindex="-1">Sent</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="email-client-actions">
+          <button id="email-refresh-btn" class="secondary" aria-describedby="email-refresh-help">
+            <span aria-hidden="true">🔄</span> Refresh
+          </button>
+          <div id="email-refresh-help" class="sr-only">Refresh email list (Shortcut: R)</div>
+          <div class="email-status-indicator" role="status" aria-live="polite">
+            <span id="email-last-refresh">Never refreshed</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Email Client Body - Two Pane Layout -->
+      <div class="email-client-body" role="main" aria-label="Email client interface">
+        <div class="email-client-layout">
+          <!-- Email List Pane -->
+          <div class="email-list-pane" role="region" aria-labelledby="email-list-heading">
+            <div class="email-list-header">
+              <div class="email-list-title">
+                <h3 id="email-list-heading">
+                  <span id="email-folder-title">Inbox</span>
+                  <span id="email-count" class="email-count-badge" aria-label="email count">0</span>
+                </h3>
+              </div>
+              <div class="email-search-container">
+                <input type="text" id="email-search" class="email-search-input" placeholder="Search emails..." aria-label="Search emails" />
+                <button id="email-search-clear" class="email-search-clear" aria-label="Clear search" style="display: none;">×</button>
+              </div>
+            </div>
+            <div class="email-list-container">
+              <div id="email-list" class="email-list" tabindex="0" aria-describedby="email-list-help">
+                <!-- Email rows will be populated here -->
+                <div class="email-list-placeholder">
+                  <div class="placeholder-icon" aria-hidden="true">📧</div>
+                  <div class="placeholder-text">
+                    <p>Select a persona to view emails</p>
+                  </div>
+                </div>
+              </div>
+              <div id="email-list-help" class="sr-only">Use arrow keys to navigate emails, Enter to select, R to refresh, I for Inbox, S for Sent</div>
+            </div>
+          </div>
+
+          <!-- Email Detail Pane -->
+          <div class="email-detail-pane" role="region" aria-labelledby="email-detail-heading">
+            <div class="email-detail-container">
+              <div id="email-detail" class="email-detail-view" aria-live="polite">
+                <!-- Email detail content will be populated here -->
+                <div class="email-detail-placeholder">
+                  <div class="placeholder-icon" aria-hidden="true">✉️</div>
+                  <div class="placeholder-text">
+                    <h3 id="email-detail-heading">No email selected</h3>
+                    <p>Select an email from the list to view its contents</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat Tab -->
+    <section id="tab-chat" class="tabbed-section" style="display: none;">
+      <h2>Chat</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="chat-person-select">Persona</label>
+          <select id="chat-person-select"></select>
+        </div>
+      </div>
+      <div class="controls-grid">
+        <div class="card">
+          <h3>DMs</h3>
+          <div id="chat-dms-list" class="vertical-list"></div>
+        </div>
+        <div class="card">
+          <h3>Rooms</h3>
+          <div id="chat-rooms-list" class="vertical-list"></div>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <!-- Email Modal Viewer -->
+  <div id="email-modal" class="modal" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="email-modal-subject">Subject</div>
+        <button id="email-modal-close" class="secondary">Close</button>
+      </div>
+      <div class="modal-body" id="email-modal-body"></div>
+    </div>
+  </div>
 
   <script src="/static/js/dashboard.js"></script>
 </body>

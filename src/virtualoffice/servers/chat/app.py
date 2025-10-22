@@ -338,3 +338,62 @@ def list_user_dms(
 
     messages = conn.execute(query, params)
     return [_message_to_record(conn, row["id"]) for row in messages]
+
+
+@app.get("/users/{handle}/rooms", response_model=List[RoomRecord])
+def list_user_rooms(handle: str, conn=Depends(db_dependency)):
+    """List all rooms the user is a member of."""
+    normalised = _normalise_handle(handle)
+    rows = conn.execute(
+        """
+        SELECT r.id, r.slug, r.name, r.is_dm
+        FROM chat_rooms r
+        JOIN chat_members m ON r.id = m.room_id
+        WHERE m.handle = ?
+        ORDER BY r.is_dm DESC, r.slug
+        """,
+        (normalised,),
+    ).fetchall()
+    return [_room_to_record(conn, row) for row in rows]
+
+
+@app.get("/users/{handle}/messages", response_model=List[MessageRecord])
+def list_user_visible_messages(
+    handle: str,
+    since_id: int | None = None,
+    since_timestamp: str | None = None,
+    limit: int | None = None,
+    conn=Depends(db_dependency)
+):
+    """Get all messages visible to a user (across rooms they belong to)."""
+    normalised = _normalise_handle(handle)
+    room_ids = [
+        row["room_id"]
+        for row in conn.execute(
+            "SELECT room_id FROM chat_members WHERE handle = ?",
+            (normalised,),
+        )
+    ]
+    if not room_ids:
+        return []
+
+    placeholders = ",".join("?" * len(room_ids))
+    query = f"SELECT id FROM chat_messages WHERE room_id IN ({placeholders})"
+    params = list(room_ids)
+
+    if since_id is not None:
+        query += " AND id > ?"
+        params.append(since_id)
+
+    if since_timestamp is not None:
+        query += " AND sent_at > ?"
+        params.append(since_timestamp)
+
+    query += " ORDER BY sent_at DESC"
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    rows = conn.execute(query, params)
+    return [_message_to_record(conn, row["id"]) for row in rows]

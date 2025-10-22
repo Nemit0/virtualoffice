@@ -136,8 +136,7 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None, ex
             "schedule": [{"start": "09:00", "end": "10:00", "activity": "Plan"}],
         }
 
-with open(os.path.join(os.path.dirname(__file__), "index_new.html"), "r", encoding="utf-8") as f:
-    DASHBOARD_HTML = f.read()
+_DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "index_new.html")
 
 def _build_default_engine() -> SimulationEngine:
     email_base = os.getenv("VDOS_EMAIL_BASE_URL")
@@ -187,7 +186,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:
-        return HTMLResponse(DASHBOARD_HTML)
+        # Read dashboard HTML fresh each request so UI updates without server restart
+        try:
+            with open(_DASHBOARD_PATH, "r", encoding="utf-8") as f:
+                html = f.read()
+        except Exception as exc:  # pragma: no cover - fallback in case of file read error
+            html = f"<html><body><h1>VDOS Dashboard</h1><p>Failed to load dashboard: {exc}</p></body></html>"
+        return HTMLResponse(html)
 
     @app.on_event("shutdown")
     def _shutdown() -> None:
@@ -598,6 +603,84 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         from virtualoffice.common.db import get_connection
         with get_connection() as conn:
             conn.execute("DELETE FROM worker_status_overrides WHERE worker_id = ?", (person_id,))
+
+    # --- Monitoring proxy endpoints (avoid CORS by routing through sim_manager) ---
+    @app.get(f"{API_PREFIX}/monitor/emails/{{person_id}}")
+    def monitor_emails(
+        person_id: int,
+        box: str = Query(default="all", pattern="^(all|inbox|sent)$"),
+        limit: int | None = Query(default=50, ge=1, le=500),
+        since_id: int | None = Query(default=None),
+        since_timestamp: str | None = Query(default=None),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> dict[str, list[dict]]:
+        """Return inbox/sent emails for the given person by proxying the email server."""
+        people = engine.list_people()
+        person = next((p for p in people if p.id == person_id), None)
+        if not person:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+        # Use the underlying HttpEmailGateway client if available
+        email_client = getattr(engine.email_gateway, "client", None)
+        if email_client is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Email client unavailable")
+
+        params = {"limit": limit}
+        if since_id is not None:
+            params["since_id"] = since_id
+        if since_timestamp is not None:
+            params["since_timestamp"] = since_timestamp
+
+        result: dict[str, list[dict]] = {"inbox": [], "sent": []}
+        try:
+            if box in ("all", "inbox"):
+                r_in = email_client.get(f"/mailboxes/{person.email_address}/emails", params=params)
+                r_in.raise_for_status()
+                result["inbox"] = r_in.json()
+            if box in ("all", "sent"):
+                r_out = email_client.get(f"/senders/{person.email_address}/emails", params=params)
+                r_out.raise_for_status()
+                result["sent"] = r_out.json()
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Email proxy failed: {exc}")
+        return result
+
+    @app.get(f"{API_PREFIX}/monitor/chat/messages/{{person_id}}")
+    def monitor_chat_messages(
+        person_id: int,
+        scope: str = Query(default="all", pattern="^(all|dms|rooms)$"),
+        limit: int | None = Query(default=100, ge=1, le=1000),
+        since_id: int | None = Query(default=None),
+        since_timestamp: str | None = Query(default=None),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> dict[str, list[dict]]:
+        """Return chat messages visible to a user (DMs and/or rooms) via the chat server."""
+        people = engine.list_people()
+        person = next((p for p in people if p.id == person_id), None)
+        if not person:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+        chat_client = getattr(engine.chat_gateway, "client", None)
+        if chat_client is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Chat client unavailable")
+
+        params = {"limit": limit}
+        if since_id is not None:
+            params["since_id"] = since_id
+        if since_timestamp is not None:
+            params["since_timestamp"] = since_timestamp
+
+        result: dict[str, list[dict]] = {"dms": [], "rooms": []}
+        try:
+            if scope in ("all", "dms"):
+                rd = chat_client.get(f"/users/{person.chat_handle}/dms", params=params)
+                rd.raise_for_status()
+                result["dms"] = rd.json()
+            if scope in ("all", "rooms"):
+                rr = chat_client.get(f"/users/{person.chat_handle}/messages", params=params)
+                rr.raise_for_status()
+                result["rooms"] = rr.json()
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
+        return result
 
     return app
 
