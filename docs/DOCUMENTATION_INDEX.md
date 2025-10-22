@@ -127,6 +127,13 @@ If you're adding features:
 - Performance optimizations
 - Extension points
 
+### API Documentation Includes:
+- Complete REST API reference for all services
+- New export/import endpoints for personas and projects
+- Request/response examples with realistic data
+- Error handling and validation documentation
+- Authentication and rate limiting information
+
 ### Configuration Documentation Includes:
 - All 30+ environment variables documented
 - Service connection settings

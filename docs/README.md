@@ -21,7 +21,7 @@
 ### API Reference
 - [Email API](api/email-api.md) - REST endpoints for email operations
 - [Chat API](api/chat-api.md) - REST endpoints for chat operations
-- [Simulation Manager API](api/sim-manager-api.md) - REST endpoints for simulation control
+- [Simulation Manager API](api/API_REFERENCE.md) - REST endpoints for simulation control, export/import
 
 ### Workflows
 - [Simulation Lifecycle](workflows/simulation-lifecycle.md) - How simulations run from start to finish
@@ -111,6 +111,11 @@ sim_request = {
 }
 response = client.post("/api/v1/simulation/start", json=sim_request)
 print(f"Simulation started: {response.json()}")
+
+# Export personas for backup
+response = client.get("/api/v1/export/personas")
+personas_backup = response.json()
+print(f"Exported {len(personas_backup['personas'])} personas")
 
 # Advance simulation
 advance_request = {"ticks": 480, "reason": "manual advance"}

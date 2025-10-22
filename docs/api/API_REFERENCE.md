@@ -252,6 +252,157 @@ Content-Type: application/json
 GET /api/v1/events?limit=20
 ```
 
+### Export/Import
+
+#### Export Personas
+```http
+GET /api/v1/export/personas
+```
+
+**Response:**
+```json
+{
+  "export_type": "personas",
+  "export_timestamp": "2024-01-15T10:30:00Z",
+  "version": "1.0",
+  "personas": [
+    {
+      "name": "Alice Johnson",
+      "role": "Senior Developer",
+      "timezone": "UTC",
+      "work_hours": "09:00-17:00",
+      "break_frequency": "50/10 cadence",
+      "communication_style": "Async",
+      "email_address": "alice@vdos.local",
+      "chat_handle": "alice",
+      "is_department_head": false,
+      "team_name": "Engineering",
+      "skills": ["Python", "FastAPI"],
+      "personality": ["Analytical", "Collaborative"],
+      "objectives": ["Deliver quality code"],
+      "metrics": ["Code review time"],
+      "planning_guidelines": ["Focus on testing"],
+      "schedule": [
+        {"start": "09:00", "end": "10:00", "activity": "Planning"}
+      ],
+      "event_playbook": {},
+      "statuses": ["Working", "Away"]
+    }
+  ]
+}
+```
+
+#### Import Personas
+```http
+POST /api/v1/import/personas
+Content-Type: application/json
+
+{
+  "export_type": "personas",
+  "export_timestamp": "2024-01-15T10:30:00Z",
+  "version": "1.0",
+  "personas": [
+    {
+      "name": "Bob Smith",
+      "role": "Designer",
+      "timezone": "UTC",
+      "work_hours": "09:00-17:00",
+      "break_frequency": "50/10 cadence",
+      "communication_style": "Visual",
+      "email_address": "bob@vdos.local",
+      "chat_handle": "bob",
+      "is_department_head": false,
+      "team_name": "Design",
+      "skills": ["UI/UX", "Figma"],
+      "personality": ["Creative", "Detail-oriented"],
+      "objectives": ["Create intuitive interfaces"],
+      "metrics": ["User satisfaction"],
+      "planning_guidelines": ["User-first approach"],
+      "schedule": [
+        {"start": "09:00", "end": "10:00", "activity": "Design review"}
+      ],
+      "event_playbook": {},
+      "statuses": ["Working", "Away"]
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "imported_count": 1,
+  "skipped_count": 0,
+  "total_processed": 1,
+  "errors": [],
+  "message": "Successfully imported 1 personas, skipped 0"
+}
+```
+
+#### Export Projects
+```http
+GET /api/v1/export/projects
+```
+
+**Response:**
+```json
+{
+  "export_type": "projects",
+  "export_timestamp": "2024-01-15T10:30:00Z",
+  "version": "1.0",
+  "projects": [
+    {
+      "project_name": "Dashboard MVP",
+      "project_summary": "Build a metrics dashboard for team productivity",
+      "start_week": 1,
+      "duration_weeks": 2,
+      "assigned_person_ids": []
+    }
+  ]
+}
+```
+
+#### Import Projects
+```http
+POST /api/v1/import/projects
+Content-Type: application/json
+
+{
+  "export_type": "projects",
+  "export_timestamp": "2024-01-15T10:30:00Z",
+  "version": "1.0",
+  "projects": [
+    {
+      "project_name": "Mobile App",
+      "project_summary": "Develop mobile companion app",
+      "start_week": 3,
+      "duration_weeks": 4,
+      "assigned_person_ids": [1, 2, 3]
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "validated_projects": [
+    {
+      "project_name": "Mobile App",
+      "project_summary": "Develop mobile companion app",
+      "start_week": 3,
+      "duration_weeks": 4,
+      "assigned_person_ids": [1, 2, 3]
+    }
+  ],
+  "valid_count": 1,
+  "error_count": 0,
+  "total_processed": 1,
+  "errors": [],
+  "message": "Validated 1 projects, 0 errors found"
+}
+```
+
 ### Reports and Analytics
 
 #### Get Simulation Reports

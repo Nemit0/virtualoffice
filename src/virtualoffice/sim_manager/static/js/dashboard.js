@@ -343,46 +343,59 @@ function gatherDeselectedPersonIds() {
 }
 
 async function startSimulation() {
-  const includeIds = gatherSelectedPersonIds();
-  const excludeIds = gatherDeselectedPersonIds();
-  const seedText = document.getElementById('random-seed').value.trim();
-  const modelHint = document.getElementById('model-hint').value.trim();
-
-  let payload;
-
-  // If multi-project configuration is provided, use it
-  if (projects.length > 0) {
-    // Multi-project mode
-    payload = {
-      projects: projects.map(p => ({
-        project_name: p.name,
-        project_summary: p.summary,
-        assigned_person_ids: p.team_ids,
-        start_week: p.start_week,
-        duration_weeks: p.duration_weeks
-      }))
-    };
-  } else {
-    // Backwards-compatible single project mode (legacy)
-    const projectName = document.getElementById('project-name')?.value.trim() || 'Dashboard Project';
-    const projectSummary = document.getElementById('project-summary')?.value.trim() || 'Generated from web dashboard';
-    const duration = parseInt(document.getElementById('project-duration')?.value, 10) || 1;
-    payload = {
-      project_name: projectName,
-      project_summary: projectSummary,
-      duration_weeks: duration
-    };
+  const startBtn = document.getElementById('start-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (startBtn.disabled) {
+    return;
   }
-
-  if (includeIds.length) { payload.include_person_ids = includeIds; }
-  if (excludeIds.length) { payload.exclude_person_ids = excludeIds; }
-  if (seedText) {
-    const seed = Number(seedText);
-    if (!Number.isNaN(seed)) { payload.random_seed = seed; }
-  }
-  if (modelHint) { payload.model_hint = modelHint; }
-
+  
+  // Disable button and update text to show it's processing
+  startBtn.disabled = true;
+  const originalText = startBtn.textContent;
+  startBtn.textContent = 'Starting...';
+  startBtn.style.opacity = '0.6';
+  
   try {
+    const includeIds = gatherSelectedPersonIds();
+    const excludeIds = gatherDeselectedPersonIds();
+    const seedText = document.getElementById('random-seed').value.trim();
+    const modelHint = document.getElementById('model-hint').value.trim();
+
+    let payload;
+
+    // If multi-project configuration is provided, use it
+    if (projects.length > 0) {
+      // Multi-project mode
+      payload = {
+        projects: projects.map(p => ({
+          project_name: p.name,
+          project_summary: p.summary,
+          assigned_person_ids: p.team_ids,
+          start_week: p.start_week,
+          duration_weeks: p.duration_weeks
+        }))
+      };
+    } else {
+      // Backwards-compatible single project mode (legacy)
+      const projectName = document.getElementById('project-name')?.value.trim() || 'Dashboard Project';
+      const projectSummary = document.getElementById('project-summary')?.value.trim() || 'Generated from web dashboard';
+      const duration = parseInt(document.getElementById('project-duration')?.value, 10) || 1;
+      payload = {
+        project_name: projectName,
+        project_summary: projectSummary,
+        duration_weeks: duration
+      };
+    }
+
+    if (includeIds.length) { payload.include_person_ids = includeIds; }
+    if (excludeIds.length) { payload.exclude_person_ids = excludeIds; }
+    if (seedText) {
+      const seed = Number(seedText);
+      if (!Number.isNaN(seed)) { payload.random_seed = seed; }
+    }
+    if (modelHint) { payload.model_hint = modelHint; }
+
     setStatus('Starting simulation...');
     await fetchJson(`${API_PREFIX}/simulation/start`, {
       method: 'POST',
@@ -392,10 +405,28 @@ async function startSimulation() {
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    startBtn.disabled = false;
+    startBtn.textContent = originalText;
+    startBtn.style.opacity = '1';
   }
 }
 
 async function stopSimulation() {
+  const stopBtn = document.getElementById('stop-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (stopBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  stopBtn.disabled = true;
+  const originalText = stopBtn.textContent;
+  stopBtn.textContent = 'Stopping...';
+  stopBtn.style.opacity = '0.6';
+  
   try {
     setStatus('Stopping simulation...');
     await fetchJson(`${API_PREFIX}/simulation/stop`, { method: 'POST' });
@@ -403,10 +434,28 @@ async function stopSimulation() {
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    stopBtn.disabled = false;
+    stopBtn.textContent = originalText;
+    stopBtn.style.opacity = '1';
   }
 }
 
 async function resetSimulation() {
+  const resetBtn = document.getElementById('reset-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (resetBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  resetBtn.disabled = true;
+  const originalText = resetBtn.textContent;
+  resetBtn.textContent = 'Resetting...';
+  resetBtn.style.opacity = '0.6';
+  
   try {
     setStatus('Resetting simulation...');
     await fetchJson(`${API_PREFIX}/simulation/reset`, { method: 'POST' });
@@ -414,12 +463,31 @@ async function resetSimulation() {
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    resetBtn.disabled = false;
+    resetBtn.textContent = originalText;
+    resetBtn.style.opacity = '1';
   }
 }
 
 async function fullResetSimulation() {
   const confirmed = confirm('This will DELETE ALL PERSONAS and reset the simulation. Continue?');
   if (!confirmed) return;
+  
+  const fullResetBtn = document.getElementById('full-reset-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (fullResetBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  fullResetBtn.disabled = true;
+  const originalText = fullResetBtn.textContent;
+  fullResetBtn.textContent = 'Resetting...';
+  fullResetBtn.style.opacity = '0.6';
+  
   try {
     setStatus('Performing full reset...');
     await fetchJson(`${API_PREFIX}/simulation/full-reset`, { method: 'POST' });
@@ -427,13 +495,31 @@ async function fullResetSimulation() {
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    fullResetBtn.disabled = false;
+    fullResetBtn.textContent = originalText;
+    fullResetBtn.style.opacity = '1';
   }
 }
 
 async function advanceSimulation() {
-  const ticks = parseInt(document.getElementById('advance-ticks').value, 10) || 1;
-  const reason = document.getElementById('advance-reason').value.trim() || 'manual';
+  const advanceBtn = document.getElementById('advance-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (advanceBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  advanceBtn.disabled = true;
+  const originalText = advanceBtn.textContent;
+  advanceBtn.textContent = 'Advancing...';
+  advanceBtn.style.opacity = '0.6';
+  
   try {
+    const ticks = parseInt(document.getElementById('advance-ticks').value, 10) || 1;
+    const reason = document.getElementById('advance-reason').value.trim() || 'manual';
     await fetchJson(`${API_PREFIX}/simulation/advance`, {
       method: 'POST',
       body: JSON.stringify({ ticks, reason }),
@@ -442,26 +528,67 @@ async function advanceSimulation() {
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    advanceBtn.disabled = false;
+    advanceBtn.textContent = originalText;
+    advanceBtn.style.opacity = '1';
   }
 }
 
 async function startAutoTicks() {
+  const autoStartBtn = document.getElementById('auto-start-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (autoStartBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  autoStartBtn.disabled = true;
+  const originalText = autoStartBtn.textContent;
+  autoStartBtn.textContent = 'Starting...';
+  autoStartBtn.style.opacity = '0.6';
+  
   try {
     await fetchJson(`${API_PREFIX}/simulation/ticks/start`, { method: 'POST' });
     setStatus('Automatic ticking enabled');
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    autoStartBtn.disabled = false;
+    autoStartBtn.textContent = originalText;
+    autoStartBtn.style.opacity = '1';
   }
 }
 
 async function stopAutoTicks() {
+  const autoStopBtn = document.getElementById('auto-stop-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (autoStopBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  autoStopBtn.disabled = true;
+  const originalText = autoStopBtn.textContent;
+  autoStopBtn.textContent = 'Stopping...';
+  autoStopBtn.style.opacity = '0.6';
+  
   try {
     await fetchJson(`${API_PREFIX}/simulation/ticks/stop`, { method: 'POST' });
     setStatus('Automatic ticking disabled');
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    autoStopBtn.disabled = false;
+    autoStopBtn.textContent = originalText;
+    autoStopBtn.style.opacity = '1';
   }
 }
 
@@ -765,12 +892,257 @@ function init() {
   document.getElementById('persona-create-btn').addEventListener('click', createPersona);
   document.getElementById('persona-clear-btn').addEventListener('click', clearPersonaForm);
   document.getElementById('add-project-btn').addEventListener('click', addProject);
+  
+  // Export/Import event listeners
+  document.getElementById('export-personas-btn').addEventListener('click', exportPersonas);
+  document.getElementById('import-personas-btn').addEventListener('click', importPersonas);
+  document.getElementById('export-projects-btn').addEventListener('click', exportProjects);
+  document.getElementById('import-projects-btn').addEventListener('click', importProjects);
 
   // Initial refresh
   refreshAll();
 
   // Start with 1-minute interval (will auto-adjust based on simulation state)
   setRefreshInterval(60000);
+}
+
+// Export/Import Functions
+async function exportPersonas() {
+  const exportBtn = document.getElementById('export-personas-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (exportBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  exportBtn.disabled = true;
+  const originalText = exportBtn.textContent;
+  exportBtn.textContent = 'Exporting...';
+  exportBtn.style.opacity = '0.6';
+  
+  try {
+    setStatus('Exporting personas...');
+    const data = await fetchJson(`${API_PREFIX}/export/personas`);
+    
+    // Create and download JSON file
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vdos-personas-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setStatus(`Exported ${data.personas.length} personas successfully`);
+  } catch (err) {
+    setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    exportBtn.disabled = false;
+    exportBtn.textContent = originalText;
+    exportBtn.style.opacity = '1';
+  }
+}
+
+async function importPersonas() {
+  const importBtn = document.getElementById('import-personas-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (importBtn.disabled) {
+    return;
+  }
+  
+  // Create file input
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json';
+  fileInput.style.display = 'none';
+  
+  fileInput.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Disable button and update text to show it's processing
+    importBtn.disabled = true;
+    const originalText = importBtn.textContent;
+    importBtn.textContent = 'Importing...';
+    importBtn.style.opacity = '0.6';
+    
+    try {
+      setStatus('Reading file...');
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      setStatus('Importing personas...');
+      const result = await fetchJson(`${API_PREFIX}/import/personas`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      
+      setStatus(result.message);
+      if (result.errors && result.errors.length > 0) {
+        console.warn('Import warnings:', result.errors);
+      }
+      
+      // Refresh the personas list
+      await refreshPeopleAndPlans();
+      
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setStatus('Invalid JSON file format', true);
+      } else {
+        setStatus(err.message || String(err), true);
+      }
+    } finally {
+      // Re-enable button and restore original text
+      importBtn.disabled = false;
+      importBtn.textContent = originalText;
+      importBtn.style.opacity = '1';
+      
+      // Clean up file input
+      document.body.removeChild(fileInput);
+    }
+  });
+  
+  document.body.appendChild(fileInput);
+  fileInput.click();
+}
+
+async function exportProjects() {
+  const exportBtn = document.getElementById('export-projects-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (exportBtn.disabled) {
+    return;
+  }
+  
+  // Disable button and update text to show it's processing
+  exportBtn.disabled = true;
+  const originalText = exportBtn.textContent;
+  exportBtn.textContent = 'Exporting...';
+  exportBtn.style.opacity = '0.6';
+  
+  try {
+    setStatus('Exporting projects...');
+    
+    // Export current frontend projects array
+    const exportData = {
+      export_type: 'projects',
+      export_timestamp: new Date().toISOString(),
+      version: '1.0',
+      projects: projects.map(p => ({
+        project_name: p.name,
+        project_summary: p.summary,
+        start_week: p.start_week,
+        duration_weeks: p.duration_weeks,
+        assigned_person_ids: p.team_ids || []
+      }))
+    };
+    
+    // Create and download JSON file
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vdos-projects-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setStatus(`Exported ${exportData.projects.length} projects successfully`);
+  } catch (err) {
+    setStatus(err.message || String(err), true);
+  } finally {
+    // Re-enable button and restore original text
+    exportBtn.disabled = false;
+    exportBtn.textContent = originalText;
+    exportBtn.style.opacity = '1';
+  }
+}
+
+async function importProjects() {
+  const importBtn = document.getElementById('import-projects-btn');
+  
+  // Prevent multiple clicks by disabling the button
+  if (importBtn.disabled) {
+    return;
+  }
+  
+  // Create file input
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json';
+  fileInput.style.display = 'none';
+  
+  fileInput.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Disable button and update text to show it's processing
+    importBtn.disabled = true;
+    const originalText = importBtn.textContent;
+    importBtn.textContent = 'Importing...';
+    importBtn.style.opacity = '0.6';
+    
+    try {
+      setStatus('Reading file...');
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      setStatus('Validating projects...');
+      const result = await fetchJson(`${API_PREFIX}/import/projects`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      
+      if (result.error_count > 0) {
+        setStatus(`Validation errors found: ${result.errors.join(', ')}`, true);
+        return;
+      }
+      
+      // Clear existing projects and load imported ones
+      projects.length = 0;
+      result.validated_projects.forEach(p => {
+        projects.push({
+          name: p.project_name,
+          summary: p.project_summary,
+          start_week: p.start_week,
+          duration_weeks: p.duration_weeks,
+          team_ids: p.assigned_person_ids || []
+        });
+      });
+      
+      // Re-render projects
+      renderProjects();
+      
+      setStatus(result.message);
+      if (result.errors && result.errors.length > 0) {
+        console.warn('Import warnings:', result.errors);
+      }
+      
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setStatus('Invalid JSON file format', true);
+      } else {
+        setStatus(err.message || String(err), true);
+      }
+    } finally {
+      // Re-enable button and restore original text
+      importBtn.disabled = false;
+      importBtn.textContent = originalText;
+      importBtn.style.opacity = '1';
+      
+      // Clean up file input
+      document.body.removeChild(fileInput);
+    }
+  });
+  
+  document.body.appendChild(fileInput);
+  fileInput.click();
 }
 
 document.addEventListener('DOMContentLoaded', init);

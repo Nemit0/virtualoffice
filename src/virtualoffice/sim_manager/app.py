@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query, Request, status
@@ -681,6 +682,183 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
         return result
+
+    # --- Export/Import endpoints ---
+    @app.get(f"{API_PREFIX}/export/personas")
+    def export_personas(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Export all personas to JSON format for backup/sharing."""
+        people = engine.list_people()
+        export_data = {
+            "export_type": "personas",
+            "export_timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "1.0",
+            "personas": []
+        }
+        
+        for person in people:
+            # Convert PersonRead to export format (exclude id and persona_markdown)
+            persona_data = {
+                "name": person.name,
+                "role": person.role,
+                "timezone": person.timezone,
+                "work_hours": person.work_hours,
+                "break_frequency": person.break_frequency,
+                "communication_style": person.communication_style,
+                "email_address": person.email_address,
+                "chat_handle": person.chat_handle,
+                "is_department_head": person.is_department_head,
+                "team_name": person.team_name,
+                "skills": list(person.skills),
+                "personality": list(person.personality),
+                "objectives": list(person.objectives) if person.objectives else [],
+                "metrics": list(person.metrics) if person.metrics else [],
+                "planning_guidelines": list(person.planning_guidelines) if person.planning_guidelines else [],
+                "schedule": [{"start": block.start, "end": block.end, "activity": block.activity} 
+                           for block in person.schedule] if person.schedule else [],
+                "event_playbook": dict(person.event_playbook) if person.event_playbook else {},
+                "statuses": list(person.statuses) if person.statuses else []
+            }
+            export_data["personas"].append(persona_data)
+        
+        return export_data
+
+    @app.post(f"{API_PREFIX}/import/personas")
+    def import_personas(
+        import_data: dict[str, Any] = Body(...),
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Import personas from JSON format, integrating seamlessly into the database."""
+        if import_data.get("export_type") != "personas":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid export type, expected 'personas'")
+        
+        personas_data = import_data.get("personas", [])
+        if not isinstance(personas_data, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid personas data format")
+        
+        imported_count = 0
+        skipped_count = 0
+        errors = []
+        
+        # Get existing personas to check for duplicates
+        existing_people = engine.list_people()
+        existing_emails = {p.email_address for p in existing_people}
+        existing_handles = {p.chat_handle for p in existing_people}
+        
+        for i, persona_data in enumerate(personas_data):
+            try:
+                # Check for duplicates
+                email = persona_data.get("email_address")
+                handle = persona_data.get("chat_handle")
+                
+                if email in existing_emails:
+                    skipped_count += 1
+                    errors.append(f"Persona {i+1}: Email '{email}' already exists, skipped")
+                    continue
+                    
+                if handle in existing_handles:
+                    skipped_count += 1
+                    errors.append(f"Persona {i+1}: Chat handle '{handle}' already exists, skipped")
+                    continue
+                
+                # Create PersonCreate object
+                person_create = PersonCreate(**persona_data)
+                
+                # Import into database
+                created_person = engine.create_person(person_create)
+                imported_count += 1
+                
+                # Update tracking sets
+                existing_emails.add(email)
+                existing_handles.add(handle)
+                
+            except Exception as exc:
+                errors.append(f"Persona {i+1}: {str(exc)}")
+                skipped_count += 1
+        
+        return {
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+            "total_processed": len(personas_data),
+            "errors": errors,
+            "message": f"Successfully imported {imported_count} personas, skipped {skipped_count}"
+        }
+
+    @app.get(f"{API_PREFIX}/export/projects")
+    def export_projects(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Export current project configuration to JSON format."""
+        # Note: Projects are stored in the frontend JavaScript, not in the database
+        # This endpoint returns the current project plan if simulation is running
+        project_plan = engine.get_project_plan()
+        
+        export_data = {
+            "export_type": "projects",
+            "export_timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "1.0",
+            "projects": []
+        }
+        
+        if project_plan:
+            # Single project mode - convert to multi-project format
+            export_data["projects"].append({
+                "project_name": project_plan.project_name,
+                "project_summary": project_plan.project_summary,
+                "start_week": 1,
+                "duration_weeks": project_plan.duration_weeks,
+                "assigned_person_ids": []  # Not stored in current schema
+            })
+        
+        return export_data
+
+    @app.post(f"{API_PREFIX}/import/projects")
+    def import_projects(
+        import_data: dict[str, Any] = Body(...),
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Import projects configuration. Note: Projects are managed in frontend, this validates format."""
+        if import_data.get("export_type") != "projects":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid export type, expected 'projects'")
+        
+        projects_data = import_data.get("projects", [])
+        if not isinstance(projects_data, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid projects data format")
+        
+        validated_projects = []
+        errors = []
+        
+        for i, project_data in enumerate(projects_data):
+            try:
+                # Validate project structure
+                required_fields = ["project_name", "project_summary", "start_week", "duration_weeks"]
+                for field in required_fields:
+                    if field not in project_data:
+                        raise ValueError(f"Missing required field: {field}")
+                
+                # Validate data types and ranges
+                if not isinstance(project_data["start_week"], int) or project_data["start_week"] < 1:
+                    raise ValueError("start_week must be a positive integer")
+                    
+                if not isinstance(project_data["duration_weeks"], int) or project_data["duration_weeks"] < 1:
+                    raise ValueError("duration_weeks must be a positive integer")
+                
+                # Ensure assigned_person_ids is a list
+                if "assigned_person_ids" not in project_data:
+                    project_data["assigned_person_ids"] = []
+                elif not isinstance(project_data["assigned_person_ids"], list):
+                    raise ValueError("assigned_person_ids must be a list")
+                
+                validated_projects.append(project_data)
+                
+            except Exception as exc:
+                errors.append(f"Project {i+1}: {str(exc)}")
+        
+        return {
+            "validated_projects": validated_projects,
+            "valid_count": len(validated_projects),
+            "error_count": len(errors),
+            "total_processed": len(projects_data),
+            "errors": errors,
+            "message": f"Validated {len(validated_projects)} projects, {len(errors)} errors found"
+        }
 
     return app
 
