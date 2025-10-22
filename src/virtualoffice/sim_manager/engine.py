@@ -2606,16 +2606,34 @@ class SimulationEngine:
         """Resets simulation state and deletes all personas.
 
         Intended for a destructive "start fresh" action in the dashboard.
+        Flushes ALL data including emails, chats, and all simulation artifacts.
         """
         # First clear runtime and planning artifacts
         # (reset() acquires its own lock)
         self.reset()
 
-        # Then purge personas (cascades schedule blocks via FK)
+        # Then purge ALL data including email and chat servers
         with self._advance_lock:
             with get_connection() as conn:
+                # Delete personas (cascades to schedule_blocks, project_assignments, etc.)
                 conn.execute("DELETE FROM people")
                 conn.execute("DELETE FROM worker_status_overrides")
+
+                # Delete email server data
+                conn.execute("DELETE FROM emails")
+                conn.execute("DELETE FROM email_recipients")
+                conn.execute("DELETE FROM mailboxes")
+                conn.execute("DELETE FROM drafts")
+
+                # Delete chat server data
+                conn.execute("DELETE FROM chat_messages")
+                conn.execute("DELETE FROM chat_members")
+                conn.execute("DELETE FROM chat_rooms")
+                conn.execute("DELETE FROM chat_users")
+
+                # Delete any remaining simulation artifacts
+                conn.execute("DELETE FROM hourly_summaries")
+
             # Reset runtime caches after purge
             self._reset_runtime_state()
             self._update_work_windows([])
