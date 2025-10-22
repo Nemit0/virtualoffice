@@ -9,6 +9,19 @@ import subprocess
 import threading
 import webbrowser
 from typing import Optional
+from pathlib import Path
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+# Find and load .env from project root
+project_root = Path(__file__).parent.parent.parent
+env_path = project_root / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"[VDOS] Loaded environment variables from {env_path}")
+else:
+    print(f"[VDOS] Warning: .env file not found at {env_path}")
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
