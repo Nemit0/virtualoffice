@@ -250,16 +250,33 @@ class GPTPlanner:
         # Build team roster with explicit email addresses
         team_roster_lines = []
         valid_emails = []
+        name_to_email_map = []  # Clear mapping for Korean names
         if team:
-            team_roster_lines.append("Team Roster:")
+            team_roster_lines.append("=== YOUR TEAM ROSTER ===")
+            team_roster_lines.append("(Use ONLY these exact email addresses - never create new ones!)")
+            team_roster_lines.append("")
+
+            # First, show YOURSELF for reference
+            team_roster_lines.append(f"YOU: {worker.name} ({worker.role})")
+            team_roster_lines.append(f"  Your Email: {worker.email_address}")
+            team_roster_lines.append(f"  Your Chat: {worker.chat_handle}")
+            team_roster_lines.append("")
+
+            team_roster_lines.append("YOUR TEAMMATES:")
             for member in team:
                 if member.id == worker.id:
-                    continue  # Skip self
-                team_roster_lines.append(
-                    f"- {member.name} ({member.role}) - Email: {member.email_address}, Chat: @{member.chat_handle}"
-                )
+                    continue  # Already showed above
+                team_roster_lines.append(f"- {member.name} ({member.role})")
+                team_roster_lines.append(f"  Email: {member.email_address}")
+                team_roster_lines.append(f"  Chat: {member.chat_handle}")
                 valid_emails.append(member.email_address)
-            team_roster_lines.append("")  # Add blank line
+                name_to_email_map.append(f"  '{member.name}' = {member.email_address}")
+
+            team_roster_lines.append("")
+            team_roster_lines.append("CRITICAL NAME-TO-EMAIL MAPPING:")
+            team_roster_lines.append("When writing emails, use these EXACT email addresses:")
+            team_roster_lines.extend(name_to_email_map)
+            team_roster_lines.append("")
         else:
             team_roster_lines.append(f"Known handles: {worker.chat_handle}.")
 
@@ -347,14 +364,17 @@ class GPTPlanner:
                 "VALID EMAIL ADDRESSES (use ONLY these):",
                 *(f"  - {email}" for email in valid_emails),
                 "",
-                "CORRECT EXAMPLES:",
-                f"- Email at 10:30 to {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} cc {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: Sprint update | Completed auth module",
+                "CORRECT EXAMPLES (follow these patterns):",
+                f"- Email at 10:30 to {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} cc {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: Sprint update | Completed auth module, ready for review",
                 f"- Chat at 11:00 with {team[0].chat_handle if team else 'colleague'}: Quick question about the API endpoint",
+                f"- Reply at 14:00 to [email-42] cc {valid_emails[0] if valid_emails else 'lead@example.dev'}: RE: API status | Thanks for the update, proceeding with integration",
                 "",
-                "WRONG EXAMPLES (DO NOT DO THIS):",
-                "- Email at 10:30 to dev cc pm: ... (WRONG - use full email addresses!)",
-                "- Email at 10:30 to team@company.dev: ... (WRONG - no distribution lists!)",
-                "- Email at 10:30 to all: ... (WRONG - specify exact recipients!)",
+                "WRONG EXAMPLES (NEVER DO THIS):",
+                "- Email at 10:30 to dev cc pm: ... (WRONG - 'dev' and 'pm' are not email addresses!)",
+                "- Email at 10:30 to team@company.dev: ... (WRONG - no distribution lists exist!)",
+                "- Email at 10:30 to all: ... (WRONG - specify exact email addresses!)",
+                "- Email at 10:30 to 김민수: ... (WRONG - use the email address, not the person's name!)",
+                "- Email at 10:30 to @colleague: ... (WRONG - @ is for chat, use email address!)",
                 "",
                 "Do not add bracketed headers or meta text besides 'Scheduled Communications'.",
             ]
@@ -368,10 +388,17 @@ class GPTPlanner:
                     "Adopt the worker's tone/personality for phrasing and word choice. "
                     "Never mention being an AI, a simulation, or the generation process. "
                     "At the end, you MUST output a 'Scheduled Communications' block with lines starting EXACTLY with 'Email at' or 'Chat at' as specified. "
-                    "CRITICAL EMAIL ADDRESS RULE: You MUST use ONLY the exact email addresses provided in the 'VALID EMAIL ADDRESSES' list. "
-                    "NEVER create email addresses, distribution lists (like team@, all@, manager@), or use chat handles in email fields. "
-                    "When writing email lines with cc/bcc, use ONLY the full email addresses from the valid list. "
-                    "Follow the format exactly: 'Email at HH:MM to user.1@domain.dev cc user.2@domain.dev: Subject | Body' "
+                    "\n"
+                    "CRITICAL EMAIL ADDRESS RULES (FOLLOW EXACTLY):\n"
+                    "1. You MUST use ONLY the exact email addresses shown in 'YOUR TEAM ROSTER' and 'VALID EMAIL ADDRESSES' sections\n"
+                    "2. NEVER create, invent, or hallucinate email addresses - even if they seem logical\n"
+                    "3. NEVER use distribution lists (team@, all@, manager@, dept@) - they don't exist\n"
+                    "4. NEVER use chat handles in email fields - use the full email address\n"
+                    "5. When names are in Korean/non-English, use the romanized email address shown in the mapping\n"
+                    "6. Check the 'CRITICAL NAME-TO-EMAIL MAPPING' section to match names to correct emails\n"
+                    "7. Example: If roster shows '김민수' = minsu.kim@company.kr, write 'Email to minsu.kim@company.kr' NOT 'Email to 김민수@company.kr'\n"
+                    "\n"
+                    "EMAIL FORMAT: 'Email at HH:MM to user.1@domain.dev cc user.2@domain.dev: Subject | Body'\n"
                     "IMPORTANT: Write substantive email bodies with 3-5 sentences minimum, including specific details and context. "
                     "Include project tags in subjects when working on multiple projects (e.g., '[Mobile App] API status'). "
                     "Make emails realistic and professional with clear action items or questions."
