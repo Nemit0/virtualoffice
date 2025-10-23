@@ -25,9 +25,11 @@ _AVAILABLE_AZURE_MODELS = [
     "text-embedding-ada-002"
 ]
 
+# Azure OpenAI 설정 (offline_agent와 동일한 환경변수명 사용)
 _AZURE_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-_AZURE_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-_AZURE_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+_AZURE_API_KEY = os.getenv("AZURE_OPENAI_KEY")  # offline_agent와 동일한 키명
+_AZURE_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")  # offline_agent와 동일
+_AZURE_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")  # 배포명 추가
 
 # OpenAI API keys
 _API_KEY = os.getenv("OPENAI_API_KEY")
@@ -123,28 +125,47 @@ def _record_tokens(tokens: int, provider: str, model: str) -> None:
 
 def _choose_provider(model: str) -> tuple[str, bool]:
     """
-    Choose which provider to use based on free tier limits.
+    Choose which provider to use based on configuration and free tier limits.
 
     Returns: (provider_name, use_azure)
-    provider_name: "openai_key1", "openai_key2", or "azure"
+    provider_name: "azure", "openai_key1", or "openai_key2"
     use_azure: True if should use Azure, False if OpenAI API
     """
+    # LLM_PROVIDER 환경변수로 우선순위 결정 (offline_agent와 동일)
+    llm_provider = os.getenv("LLM_PROVIDER", "azure").lower()
+    
     data = _load_token_usage()
     model_type = "mini" if _is_mini_model(model) else "regular"
     limit = _FREE_TIER_LIMITS[model_type]
 
-    # Priority: OPENAI_API_KEY only (Azure disabled per company policy)
+    # Azure 우선 (offline_agent와 동일한 설정)
+    if llm_provider == "azure" and _AZURE_ENDPOINT and _AZURE_API_KEY:
+        if data["daily_usage"]["azure"][model_type] < limit:
+            return ("azure", True)
+        else:
+            print(f"⚠️  Azure free tier limit exceeded for {model_type} models. Using Azure (company credits).")
+            return ("azure", True)
 
-    # Check OPENAI_API_KEY (key1)
+    # OpenAI API 폴백
     if _API_KEY and data["daily_usage"]["openai_key1"][model_type] < limit:
         return ("openai_key1", False)
 
-    # If limit exceeded, still use key1 (will charge - company provided credits)
-    if _API_KEY:
-        print(f"⚠️  Free tier limit exceeded for {model_type} models. Using OPENAI_API_KEY (company credits).")
-        return ("openai_key1", False)
+    # API Key2 폴백
+    if _API_KEY2 and data["daily_usage"]["openai_key2"][model_type] < limit:
+        return ("openai_key2", False)
 
-    raise RuntimeError("No API keys configured")
+    # 제한 초과 시에도 사용 가능한 키 사용
+    if _AZURE_ENDPOINT and _AZURE_API_KEY:
+        print(f"⚠️  Using Azure OpenAI (limits may be exceeded).")
+        return ("azure", True)
+    elif _API_KEY:
+        print(f"⚠️  Using OpenAI API Key 1 (limits may be exceeded).")
+        return ("openai_key1", False)
+    elif _API_KEY2:
+        print(f"⚠️  Using OpenAI API Key 2 (limits may be exceeded).")
+        return ("openai_key2", False)
+
+    raise RuntimeError("No API keys configured. Please set AZURE_OPENAI_KEY/AZURE_OPENAI_ENDPOINT or OPENAI_API_KEY")
 
 
 def _get_openai_client(api_key: str) -> OpenAI:
@@ -157,7 +178,9 @@ def _get_azure_client() -> AzureOpenAI:
     global _azure_client
     if _azure_client is None:
         if not _AZURE_ENDPOINT or not _AZURE_API_KEY:
-            raise RuntimeError("Azure OpenAI not configured (missing AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_API_KEY)")
+            raise RuntimeError("Azure OpenAI not configured (missing AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_KEY)")
+        
+        logger.info(f"Initializing Azure OpenAI client: {_AZURE_ENDPOINT}")
         _azure_client = AzureOpenAI(
             azure_endpoint=_AZURE_ENDPOINT,
             api_key=_AZURE_API_KEY,
@@ -203,10 +226,12 @@ def generate_text(prompt: list[dict], model: str = "gpt-4o-mini") -> tuple[str, 
 
     try:
         if use_azure:
-            # Azure OpenAI
+            # Azure OpenAI (배포명 사용)
             client = _get_azure_client()
+            deployment_name = _AZURE_DEPLOYMENT or actual_model
+            logger.debug(f"Using Azure deployment: {deployment_name}")
             response = client.chat.completions.create(
-                model=actual_model,  # Use deployment name directly
+                model=deployment_name,  # Azure에서는 배포명 사용
                 messages=prompt,
                 timeout=_DEFAULT_TIMEOUT,
             )
