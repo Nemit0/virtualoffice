@@ -550,7 +550,16 @@ class SimulationEngine:
 
             email_to, chat_to = _match_target(target)
             if channel == 'email' and email_to:
-                subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name}"
+                # Parse "Subject | Body" format from payload
+                if ' | ' in payload:
+                    parts = payload.split(' | ', 1)  # Split only on first occurrence
+                    subject = parts[0].strip()
+                    body = parts[1].strip()
+                else:
+                    # Fallback to generic subject if no pipe separator
+                    subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name}"
+                    body = payload
+
                 cc_raw = act.get('cc') or []
                 bcc_raw = act.get('bcc') or []
                 def _resolve_emails(raw_list: list[str]) -> list[str]:
@@ -585,12 +594,12 @@ class SimulationEngine:
                 if thread_id is None:
                     thread_id = f"thread-{uuid.uuid4().hex[:16]}"
 
-                if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=payload):
+                if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=body):
                     result = self.email_gateway.send_email(
                         sender=person.email_address,
                         to=[email_to],
                         subject=subject,
-                        body=payload,
+                        body=body,
                         cc=cc_emails,
                         bcc=bcc_emails,
                         thread_id=thread_id,
