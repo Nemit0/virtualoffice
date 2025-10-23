@@ -1302,6 +1302,12 @@ function renderEmailList(containerId, items) {
       cc.textContent = `CC: ${msg.cc.join(', ')}`;
       details.appendChild(cc);
     }
+    if (msg.bcc && msg.bcc.length) {
+      const bcc = document.createElement('div');
+      bcc.className = 'meta';
+      bcc.textContent = `BCC: ${msg.bcc.join(', ')}`;
+      details.appendChild(bcc);
+    }
 
     const pre = document.createElement('pre');
     pre.textContent = msg.body || '';
@@ -2010,7 +2016,17 @@ function renderEmailDetail(msg) {
     `;
     addresses.appendChild(cc);
   }
-  
+
+  if (msg.bcc && msg.bcc.length) {
+    const bcc = document.createElement('div');
+    bcc.className = 'email-address-row';
+    bcc.innerHTML = `
+      <span class="email-address-label">BCC:</span>
+      <span class="email-address-value">${msg.bcc.join(', ')}</span>
+    `;
+    addresses.appendChild(bcc);
+  }
+
   if (msg.thread_id) {
     const thread = document.createElement('div');
     thread.className = 'email-address-row';
