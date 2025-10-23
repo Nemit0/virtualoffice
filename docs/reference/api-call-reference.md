@@ -87,27 +87,56 @@ Base URL: `http://127.0.0.1:8015/api/v1`
 ### Persona Generation
 
 #### `POST /api/v1/personas/generate`
-**Generate persona using GPT**
+**Generate persona using GPT with Korean localization support**
 
 **Request Body**:
 ```json
 {
   "prompt": "Experienced agile project manager for mobile app development",
-  "model_hint": "gpt-4.1-nano"
+  "model_hint": "gpt-4.1-nano",
+  "explicit_name": "Alice Johnson"
 }
 ```
 
-**Response**:
+**Response (English locale)**:
 ```json
 {
   "persona": {
     "name": "Alice Johnson",
     "role": "Project Manager",
+    "timezone": "UTC",
+    "work_hours": "09:00-17:00",
+    "break_frequency": "50/10 cadence",
+    "communication_style": "Async",
     "skills": ["Agile", "Scrum"],
+    "personality": ["Helpful"],
     ...
   }
 }
 ```
+
+**Response (Korean locale - VDOS_LOCALE=ko)**:
+```json
+{
+  "persona": {
+    "name": "김민준",
+    "role": "프로젝트 매니저",
+    "timezone": "Asia/Seoul",
+    "work_hours": "09:00-18:00",
+    "break_frequency": "50분 작업/10분 휴식",
+    "communication_style": "협업적",
+    "skills": ["애자일", "스크럼"],
+    "personality": ["도움이 되는"],
+    ...
+  }
+}
+```
+
+**Localization Features**:
+- **Korean Mode**: When `VDOS_LOCALE=ko`, generates natural Korean workplace personas
+- **Language Enforcement**: Strict Korean-only instructions prevent English mixing
+- **Locale Defaults**: Korean personas automatically use `Asia/Seoul` timezone and Korean workplace terminology
+- **Fallback Support**: Korean-localized stub personas when AI unavailable
 
 **Called By**:
 - `quick_simulation.py:165` - `create_mobile_team()`
@@ -116,7 +145,7 @@ Base URL: `http://127.0.0.1:8015/api/v1`
 - All Korean variants (`*_ko.py`)
 
 **Code Location**: `src/virtualoffice/sim_manager/app.py:202-208`
-**Implementation**: `src/virtualoffice/sim_manager/app.py:49-130` - `_generate_persona_from_prompt()`
+**Implementation**: `src/virtualoffice/sim_manager/app.py:49-200` - `_generate_persona_from_prompt()`
 
 **External Dependency**: Calls OpenAI API via `utils/completion_util.py`
 

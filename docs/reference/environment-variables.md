@@ -137,10 +137,17 @@ VDOS uses environment variables for configuration. Variables can be set in:
 
 ### VDOS_LOCALE
 - **Default**: `en`
-- **Description**: Locale for generated content
+- **Description**: Locale for generated content with enhanced Korean support
 - **Values**: `en` (English), `ko` (Korean)
 - **Example**: `VDOS_LOCALE=ko`
-- **Notes**: Affects planner prompts and generated text
+- **Notes**: 
+  - Affects all AI-generated content (plans, messages, reports, personas)
+  - Korean mode enforces natural workplace Korean language
+  - Prevents English/Korean mixing with strict language instructions
+  - Includes context-aware examples for proper Korean terminology
+  - Applied across all planner functions and persona generation for consistency
+  - Korean personas automatically use `Asia/Seoul` timezone and Korean workplace defaults
+  - Fallback stub personas also localized to Korean when AI unavailable
 
 ## OpenAI Integration
 

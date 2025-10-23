@@ -54,6 +54,9 @@ pip install -r requirements.txt
 # Set up environment variables (required for AI features)
 # Create .env file with your OPENAI_API_KEY
 echo "OPENAI_API_KEY=your-key-here" > .env
+
+# Optional: Enable Korean localization for workplace simulations
+echo "VDOS_LOCALE=ko" >> .env
 ```
 
 ### Running the GUI

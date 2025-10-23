@@ -377,7 +377,7 @@ main()
    └─ [auto-tick with Korean communications]
 ```
 
-**KoreanGPTPlanner**:
+**KoreanGPTPlanner** (Legacy - Enhanced Korean support now built-in):
 ```python
 class KoreanGPTPlanner(GPTPlanner):
     def _invoke(self, messages, model):
@@ -386,6 +386,8 @@ class KoreanGPTPlanner(GPTPlanner):
         ] + list(messages)
         return super()._invoke(prefixed, model)
 ```
+
+**Note**: As of October 2025, enhanced Korean language support is built into the main `GPTPlanner` when `VDOS_LOCALE=ko` is set. The custom `KoreanGPTPlanner` is maintained for compatibility but the standard planner now provides superior Korean workplace communication with stricter language enforcement and contextual examples.
 
 ---
 

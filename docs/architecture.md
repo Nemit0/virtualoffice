@@ -365,7 +365,7 @@ When a worker receives a message:
 | `VDOS_SIM_HANDLE` | sim-manager | Simulation manager chat handle |
 | `VDOS_GUI_AUTOKILL_SECONDS` | - | Auto-shutdown for testing (optional) |
 | `VDOS_PLANNER_STRICT` | 0 | Disable stub fallback |
-| `VDOS_LOCALE` | en | Locale (en or ko) |
+| `VDOS_LOCALE` | en | Locale (en or ko) - Enhanced Korean support |
 | `VDOS_CONTACT_COOLDOWN_TICKS` | 10 | Min ticks between contacts |
 | `VDOS_MAX_HOURLY_PLANS_PER_MINUTE` | 10 | Planning rate limit |
 | `OPENAI_API_KEY` | - | OpenAI API key (optional) |
@@ -379,6 +379,51 @@ When a worker receives a message:
 | `VDOS_PLANNER_HOURLY_MODEL` | (same as daily) | Hourly plan model |
 | `VDOS_PLANNER_DAILY_REPORT_MODEL` | (same as daily) | Daily report model |
 | `VDOS_PLANNER_SIM_REPORT_MODEL` | (same as project) | Sim report model |
+
+### Localization Support
+
+VDOS provides enhanced localization support for Korean workplace simulations:
+
+#### Korean Language Configuration
+- **Environment Variable**: `VDOS_LOCALE=ko`
+- **Supported Languages**: English (`en`) and Korean (`ko`)
+- **Scope**: All AI-generated content including plans, messages, and reports
+
+#### Korean Language Enforcement (October 2025 Enhancement)
+When `VDOS_LOCALE=ko` is set, the system applies enhanced Korean language instructions across all AI-generated content:
+
+**Planner Functions:**
+```python
+# Enhanced Korean system message (applied to all planner functions)
+"모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 
+한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요. 
+예: '개발 환경 설정' (O), 'development environment setup' (X)"
+```
+
+**Persona Generation:**
+```python
+# Korean persona generation system message
+"한국 직장 시뮬레이션을 위한 JSON 페르소나를 생성합니다. 
+모든 텍스트 필드는 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 
+실제 한국 직장인처럼 현실적으로 작성하세요. AI나 시뮬레이션에 대한 언급은 하지 마세요."
+```
+
+#### Localization Features
+- **Natural Korean Communication**: Workplace-appropriate Korean language patterns
+- **Mixed Language Prevention**: Strict enforcement against English/Korean mixing
+- **Context-Aware Examples**: Specific examples of correct Korean terminology
+- **Consistent Application**: Applied across all AI-powered functions:
+  - **Planner Functions**: Project planning, daily planning, hourly planning, daily reports, simulation reports, communication drafting
+  - **Persona Generation**: AI-assisted persona creation with Korean workplace context
+  - **Fallback Handling**: Korean-localized stub personas when AI is unavailable
+- **Locale-Specific Defaults**: Korean personas use `Asia/Seoul` timezone, `09:00-18:00` work hours, and Korean workplace terminology
+
+#### Korean Simulation Scripts
+Several Korean-specific simulation scripts demonstrate localized behavior:
+- `mobile_chat_simulation_ko.py` - 4-week Korean mobile app simulation
+- `short_blog_simulation_ko.py` - 5-day Korean blog simulation with `KoreanGPTPlanner`
+- `multi_project_simulation_ko.py` - Multi-project Korean simulation
+- `test_*_ko.py` scripts - Various Korean test scenarios
 
 ## Threading Model
 

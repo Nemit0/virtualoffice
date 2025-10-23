@@ -37,9 +37,18 @@ VDOS now includes OpenAI integration as a core dependency. Set up your API key:
 ```bash
 # Create .env file
 echo "OPENAI_API_KEY=your-api-key-here" > .env
+
+# Optional: Enable Korean localization
+echo "VDOS_LOCALE=ko" >> .env
 ```
 
 **Note**: While the OpenAI package is installed, AI features will gracefully degrade to stub implementations if no API key is provided.
+
+**Localization**: Set `VDOS_LOCALE=ko` for enhanced Korean workplace simulations with:
+- Natural Korean communication patterns and strict language enforcement
+- Korean-localized persona generation with workplace-appropriate terminology
+- Korean timezone (`Asia/Seoul`) and work hours (`09:00-18:00`) defaults
+- Consistent Korean experience across all AI-generated content
 
 ## Quick Start Options
 
@@ -115,6 +124,8 @@ You can create personas in several ways:
 **Via GUI:**
 1. Click "Create Person" in the dashboard
 2. Fill in the form manually or use "Generate with GPT-4o"
+   - For Korean simulations: Set `VDOS_LOCALE=ko` to generate Korean workplace personas
+   - Korean personas automatically use appropriate timezone, work hours, and terminology
 3. Click OK to create
 
 **Via API:**

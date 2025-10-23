@@ -57,20 +57,39 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None, ex
     - If explicit_name is provided, it overrides the GPT-generated name.
     """
     model = model_hint or os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
-    system = (
-        "You generate JSON personas for internal simulations. "
-        "Respond ONLY with a single JSON object containing fields: "
-        "name, role, timezone, work_hours, break_frequency, communication_style, "
-        "email_address, chat_handle, is_department_head (boolean), skills (array), personality (array), "
-        "objectives (array, optional), metrics (array, optional), planning_guidelines (array, optional), "
-        "schedule (array of {start, end, activity}). "
-        "Write as a realistic human colleague; do not include any meta-commentary about AI, prompts, or models."
-    )
-    user = (
-        f"Create a realistic persona for: {prompt}. "
-        "Prefer concise values. Timezone like 'UTC'. Work hours '09:00-17:00'. "
-        "Return JSON only."
-    )
+    locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
+    
+    if locale == "ko":
+        system = (
+            "한국 직장 시뮬레이션을 위한 JSON 페르소나를 생성합니다. "
+            "다음 필드를 포함한 JSON 객체만 응답하세요: "
+            "name, role, timezone, work_hours, break_frequency, communication_style, "
+            "email_address, chat_handle, is_department_head (boolean), skills (array), personality (array), "
+            "objectives (array, optional), metrics (array, optional), planning_guidelines (array, optional), "
+            "schedule (array of {start, end, activity}). "
+            "모든 텍스트 필드는 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. "
+            "실제 한국 직장인처럼 현실적으로 작성하세요. AI나 시뮬레이션에 대한 언급은 하지 마세요."
+        )
+        user = (
+            f"다음에 대한 현실적인 페르소나를 생성하세요: {prompt}. "
+            "간결한 값을 선호합니다. 시간대는 'Asia/Seoul', 근무시간은 '09:00-18:00' 형식으로. "
+            "JSON만 반환하세요."
+        )
+    else:
+        system = (
+            "You generate JSON personas for internal simulations. "
+            "Respond ONLY with a single JSON object containing fields: "
+            "name, role, timezone, work_hours, break_frequency, communication_style, "
+            "email_address, chat_handle, is_department_head (boolean), skills (array), personality (array), "
+            "objectives (array, optional), metrics (array, optional), planning_guidelines (array, optional), "
+            "schedule (array of {start, end, activity}). "
+            "Write as a realistic human colleague; do not include any meta-commentary about AI, prompts, or models."
+        )
+        user = (
+            f"Create a realistic persona for: {prompt}. "
+            "Prefer concise values. Timezone like 'UTC'. Work hours '09:00-17:00'. "
+            "Return JSON only."
+        )
     # Try model
     try:
         text, _ = _generate_persona_text([
@@ -98,13 +117,24 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None, ex
                 data["name"] = "Auto Dev"
             # Keep test-friendly default skill for developer prompts
             data["skills"] = ["Python"]
-        data.setdefault("timezone", "UTC")
-        data.setdefault("work_hours", "09:00-17:00")
-        data.setdefault("break_frequency", "50/10 cadence")
-        data.setdefault("communication_style", "Async")
-        data.setdefault("skills", ["Generalist"])
-        data.setdefault("personality", ["Helpful"])
-        data.setdefault("schedule", [{"start": "09:00", "end": "10:00", "activity": "Plan"}])
+        
+        # Set defaults based on locale
+        if locale == "ko":
+            data.setdefault("timezone", "Asia/Seoul")
+            data.setdefault("work_hours", "09:00-18:00")
+            data.setdefault("break_frequency", "50분 작업/10분 휴식")
+            data.setdefault("communication_style", "협업적")
+            data.setdefault("skills", ["일반"])
+            data.setdefault("personality", ["도움이 되는"])
+            data.setdefault("schedule", [{"start": "09:00", "end": "10:00", "activity": "계획 수립"}])
+        else:
+            data.setdefault("timezone", "UTC")
+            data.setdefault("work_hours", "09:00-17:00")
+            data.setdefault("break_frequency", "50/10 cadence")
+            data.setdefault("communication_style", "Async")
+            data.setdefault("skills", ["Generalist"])
+            data.setdefault("personality", ["Helpful"])
+            data.setdefault("schedule", [{"start": "09:00", "end": "10:00", "activity": "Plan"}])
         data.setdefault("is_department_head", False)
         if not data.get("email_address") and data.get("name"):
             local = data["name"].lower().replace(" ", ".")
@@ -114,28 +144,59 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None, ex
         return data
     except Exception:
         # Fallback stub (no network, no key, or parse error)
-        safe = prompt.strip() or "Auto Worker"
-        role = "Engineer"
-        # naive role extraction
-        for token in ("engineer", "developer", "designer", "manager", "analyst"):
-            if token in safe.lower():
-                role = token.title()
-                break
-        base = safe.replace(" ", ".").lower()
-        return {
-            "name": f"Auto {role}",
-            "role": role,
-            "timezone": "UTC",
-            "work_hours": "09:00-17:00",
-            "break_frequency": "50/10 cadence",
-            "communication_style": "Async",
-            "email_address": f"{base or 'auto' }@vdos.local",
-            "chat_handle": (safe.split()[0] if safe else "auto").lower(),
-            "is_department_head": False,
-            "skills": ["Python"] if role in {"Engineer", "Developer"} else ["Generalist"],
-            "personality": ["Helpful"],
-            "schedule": [{"start": "09:00", "end": "10:00", "activity": "Plan"}],
-        }
+        safe = prompt.strip() or ("자동 작업자" if locale == "ko" else "Auto Worker")
+        
+        if locale == "ko":
+            role = "엔지니어"
+            # Korean role extraction
+            role_mapping = {
+                "개발자": "개발자", "developer": "개발자", "engineer": "엔지니어",
+                "디자이너": "디자이너", "designer": "디자이너",
+                "매니저": "매니저", "manager": "매니저", "관리자": "매니저",
+                "분석가": "분석가", "analyst": "분석가"
+            }
+            for token, korean_role in role_mapping.items():
+                if token in safe.lower():
+                    role = korean_role
+                    break
+            
+            base = safe.replace(" ", ".").lower()
+            return {
+                "name": f"자동 {role}",
+                "role": role,
+                "timezone": "Asia/Seoul",
+                "work_hours": "09:00-18:00",
+                "break_frequency": "50분 작업/10분 휴식",
+                "communication_style": "협업적",
+                "email_address": f"{base or 'auto'}@vdos.local",
+                "chat_handle": (safe.split()[0] if safe else "auto").lower(),
+                "is_department_head": False,
+                "skills": ["파이썬"] if "개발" in role else ["일반"],
+                "personality": ["도움이 되는"],
+                "schedule": [{"start": "09:00", "end": "10:00", "activity": "계획 수립"}],
+            }
+        else:
+            role = "Engineer"
+            # naive role extraction
+            for token in ("engineer", "developer", "designer", "manager", "analyst"):
+                if token in safe.lower():
+                    role = token.title()
+                    break
+            base = safe.replace(" ", ".").lower()
+            return {
+                "name": f"Auto {role}",
+                "role": role,
+                "timezone": "UTC",
+                "work_hours": "09:00-17:00",
+                "break_frequency": "50/10 cadence",
+                "communication_style": "Async",
+                "email_address": f"{base or 'auto' }@vdos.local",
+                "chat_handle": (safe.split()[0] if safe else "auto").lower(),
+                "is_department_head": False,
+                "skills": ["Python"] if role in {"Engineer", "Developer"} else ["Generalist"],
+                "personality": ["Helpful"],
+                "schedule": [{"start": "09:00", "end": "10:00", "activity": "Plan"}],
+            }
 
 _DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "index_new.html")
 

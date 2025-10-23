@@ -2061,7 +2061,15 @@ class SimulationEngine:
                             continue
                         ack_phrase = (message.action_item or message.summary or ("요청하신 내용" if self._locale == 'ko' else "your latest update")).rstrip('.')
                         if self._locale == 'ko':
-                            ack_body = f"{sender_person.name.split()[0]}님, {ack_phrase} 진행 중입니다."
+                            # More varied and natural Korean acknowledgments
+                            import random
+                            ack_patterns = [
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다.",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 진행하겠습니다.",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중입니다.",
+                                f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리하겠습니다.",
+                            ]
+                            ack_body = random.choice(ack_patterns)
                         else:
                             ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
                         if self._can_send(
@@ -2300,7 +2308,8 @@ class SimulationEngine:
                             emails_sent += 1
                         self._log_exchange(status.current_tick, person.id, recipient.id, "email", subject, body)
 
-                        if i == 0:
+                        # Reduce frequency of auto-generated updates for more natural communication
+                        if i == 0 and os.getenv("VDOS_REDUCE_AUTO_UPDATES", "false").lower() != "true":
                             chat_body = (f"간단 업데이트: {action_item}" if self._locale == 'ko' else f"Quick update: {action_item}")
                             if self._can_send(
                                 tick=status.current_tick,

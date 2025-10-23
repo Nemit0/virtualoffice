@@ -175,7 +175,7 @@ class GPTPlanner:
         # Language enforcement
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요. 예: '개발 환경 설정' (O), 'development environment setup' (X)"},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -226,7 +226,7 @@ class GPTPlanner:
         model = model_hint or self.daily_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -409,7 +409,7 @@ class GPTPlanner:
         model = model_hint or self.hourly_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요. 'Scheduled Communications' 섹션의 형식은 그대로 유지하되 내용은 한국어로 작성하세요."},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -451,7 +451,7 @@ class GPTPlanner:
         model = model_hint or self.daily_report_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -491,7 +491,7 @@ class GPTPlanner:
         model = model_hint or self.hourly_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -543,7 +543,7 @@ class GPTPlanner:
         model = model_hint or self.simulation_report_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답은 자연스러운 한국어로만 작성하세요. 영어 표현을 사용하지 마세요."},
+                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
                 *messages,
             ]
         return self._invoke(messages, model)

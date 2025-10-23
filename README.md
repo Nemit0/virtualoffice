@@ -87,7 +87,7 @@ In many orgs, the **data you want to analyze doesn’t exist yet** or can’t be
 ### 5) Web Dashboard (Browser-Based Control Panel)
 - Accessed via browser at `http://127.0.0.1:8015` when servers are running.
 - Provides comprehensive simulation management:
-  - **Persona Management**: Create/edit personas manually or with GPT-4o assistance
+  - **Persona Management**: Create/edit personas manually or with GPT-4o assistance (supports Korean localization)
   - **Multi-Project Configuration**: Add multiple projects, assign teams, set different timelines
   - **Team Organization**: Group personas into teams with `team_name` field
   - **Simulation Controls**: Start/stop, advance ticks, reset, auto-tick toggle
@@ -368,9 +368,11 @@ curl -X POST http://127.0.0.1:8015/api/v1/projects/seed \
 ## Extending with AI
 
 * **Plan synthesis**: use an LLM prompt to transform role+skills+project context into hourly plans.
+* **Persona generation**: GPT-4o assisted creation of realistic worker profiles with Korean localization support.
 * **Drafting messages**: generate polite, role-consistent emails/chats; keep a “tone” profile per person.
 * **Report generation**: summarize completed/blocked/next; enforce consistent rubric.
 * **Event realism**: sample distributions for delays, misunderstanding probability, and rework rates.
+* **Korean localization**: Set `VDOS_LOCALE=ko` for natural Korean workplace communication across all AI features.
 
 > Keep a deterministic seed for reproducibility.
 
