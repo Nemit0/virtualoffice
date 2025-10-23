@@ -386,6 +386,32 @@ Base URL: `http://127.0.0.1:8015/api/v1`
 
 ---
 
+#### `GET /api/v1/simulation/auto-pause-status`
+**Get auto-pause on project completion status**
+
+**Response**:
+```json
+{
+  "auto_pause_enabled": true,
+  "should_pause": false,
+  "active_projects_count": 1,
+  "future_projects_count": 2,
+  "current_week": 3,
+  "reason": "Projects still exist"
+}
+```
+
+**Called By**:
+- Dashboard for auto-pause status monitoring
+- External tools checking simulation lifecycle
+
+**Code Location**: `src/virtualoffice/sim_manager/app.py:540-545`
+**Implementation**: `src/virtualoffice/sim_manager/engine.py:1930-1970` - `get_auto_pause_status()`
+
+**Feature**: When `VDOS_AUTO_PAUSE_ON_PROJECT_END=true`, automatically pauses auto-tick when all projects complete
+
+---
+
 ### Project & Planning
 
 #### `GET /api/v1/simulation/project-plan`
@@ -881,6 +907,7 @@ Base URL: `https://api.openai.com`
 | `/simulation/advance` | POST | Scripts, Auto-tick | `app.py:419`, `engine.py:1054` |
 | `/simulation/ticks/start` | POST | Scripts | `app.py:394`, `engine.py:1037` |
 | `/simulation/ticks/stop` | POST | Scripts | `app.py:408`, `engine.py:697` |
+| `/simulation/auto-pause-status` | GET | Dashboard, External | `app.py:540`, `engine.py:1930` |
 | `/simulation/token-usage` | GET | Scripts | `app.py:246`, `engine.py:1645` |
 | `/people/{id}/plans` | GET | Scripts | `app.py:221`, `engine.py:765` |
 | `/people/{id}/daily-reports` | GET | Scripts | `app.py:230`, `engine.py:814` |
@@ -950,7 +977,7 @@ Base URL: `https://api.openai.com`
 
 This reference documents:
 
-1. **47 Total Endpoints**: 27 Sim Manager, 10 Email, 9 Chat, 1 OpenAI
+1. **48 Total Endpoints**: 28 Sim Manager, 10 Email, 9 Chat, 1 OpenAI
 2. **3 Core Services**: All communicate via HTTP REST APIs
 3. **Gateway Pattern**: Engine uses gateways to abstract HTTP calls
 4. **GPT Integration**: 4 endpoints call OpenAI for planning

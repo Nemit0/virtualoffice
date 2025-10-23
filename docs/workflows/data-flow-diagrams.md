@@ -926,13 +926,23 @@ Tick 1234 (Day 2, Wednesday 13:34)
       "timestamp": "2025-01-17T14:34:00"
     })
 
-[8] Tick Log
+[8] Auto-Pause Check (if VDOS_AUTO_PAUSE_ON_PROJECT_END=true)
+    SELECT COUNT(*) FROM project_plans 
+    WHERE (start_week <= current_week AND start_week + duration_weeks > current_week)
+       OR start_week > current_week
+    
+    If count = 0:
+      → UPDATE simulation_state SET auto_tick = 0
+      → Log: "No active or future projects remaining; automatically pausing auto-tick"
+      → Break auto-tick loop
+
+[9] Tick Log
     INSERT INTO tick_log (tick, reason, created_at)
     VALUES (1234, "auto-tick", CURRENT_TIMESTAMP)
 
 End of Tick 1234
 → All data persisted
-→ Ready for tick 1235
+→ Ready for tick 1235 (unless auto-paused)
 ```
 
 ---

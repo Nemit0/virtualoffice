@@ -1923,6 +1923,50 @@ class SimulationEngine:
             sim_time=self._format_sim_time(status.current_tick),
         )
 
+    def get_auto_pause_status(self) -> dict[str, Any]:
+        """Get information about auto-pause status and reasons."""
+        auto_pause_enabled = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "false").lower() == "true"
+        
+        if not auto_pause_enabled:
+            return {
+                "auto_pause_enabled": False,
+                "reason": "Auto-pause on project end is disabled",
+                "active_projects": None,
+                "future_projects": None
+            }
+        
+        try:
+            active_projects = self.get_active_projects_with_assignments()
+            
+            # Check for future projects
+            status = self._fetch_state()
+            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            current_week = (current_day // 5) + 1
+            
+            with get_connection() as conn:
+                future_projects = conn.execute(
+                    "SELECT COUNT(*) as count FROM project_plans WHERE start_week > ?",
+                    (current_week,)
+                ).fetchone()
+            
+            should_pause = len(active_projects) == 0 and future_projects["count"] == 0
+            
+            return {
+                "auto_pause_enabled": True,
+                "should_pause": should_pause,
+                "active_projects_count": len(active_projects),
+                "future_projects_count": future_projects["count"],
+                "current_week": current_week,
+                "reason": "No active or future projects remaining" if should_pause else "Projects still exist"
+            }
+            
+        except Exception as exc:
+            return {
+                "auto_pause_enabled": True,
+                "error": str(exc),
+                "reason": f"Failed to check project status: {exc}"
+            }
+
     def set_tick_interval(self, interval_seconds: float) -> dict[str, Any]:
         """Update the auto-tick interval (in seconds). Use 0 for maximum speed."""
         if interval_seconds < 0:
@@ -1948,6 +1992,32 @@ class SimulationEngine:
             state = self._fetch_state()
             if not state.is_running or not state.auto_tick:
                 break
+            
+            # Check if auto-pause on project completion is enabled
+            auto_pause_on_completion = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "false").lower() == "true"
+            if auto_pause_on_completion:
+                try:
+                    active_projects = self.get_active_projects_with_assignments()
+                    if not active_projects:
+                        # Check if there are any future projects that haven't started yet
+                        current_day = (state.current_tick - 1) // self.hours_per_day if state.current_tick > 0 else 0
+                        current_week = (current_day // 5) + 1
+                        
+                        with get_connection() as conn:
+                            future_projects = conn.execute(
+                                "SELECT COUNT(*) as count FROM project_plans WHERE start_week > ?",
+                                (current_week,)
+                            ).fetchone()
+                        
+                        if future_projects["count"] == 0:
+                            logger.info("No active or future projects remaining; automatically pausing auto-tick.")
+                            self._set_auto_tick(False)
+                            break
+                        else:
+                            logger.info(f"No active projects, but {future_projects['count']} future projects exist; continuing auto-tick.")
+                except Exception as exc:
+                    logger.warning(f"Failed to check active projects for auto-pause: {exc}")
+            
             try:
                 self.advance(1, "auto")
             except Exception as exc:  # pragma: no cover - defensive logging

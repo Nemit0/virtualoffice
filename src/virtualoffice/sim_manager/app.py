@@ -529,6 +529,11 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         """Get the current auto-tick interval in seconds."""
         return {"tick_interval_seconds": engine.get_tick_interval()}
 
+    @app.get(f"{API_PREFIX}/simulation/auto-pause-status")
+    def get_auto_pause_status(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Get information about auto-pause on project end status."""
+        return engine.get_auto_pause_status()
+
     @app.post(f"{API_PREFIX}/simulation/advance", response_model=SimulationAdvanceResult)
     def advance_simulation(
         payload: SimulationAdvanceRequest,

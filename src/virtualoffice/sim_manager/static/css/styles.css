@@ -923,6 +923,41 @@ tbody tr:hover {
   -webkit-overflow-scrolling: touch;
   contain: layout style paint;
   will-change: scroll-position;
+  /* Enhanced scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+/* Webkit scrollbar styling for better visibility */
+.email-list-container::-webkit-scrollbar {
+  width: 8px;
+  background: #f8fafc;
+}
+
+.email-list-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+  margin: 2px 0;
+}
+
+.email-list-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+  min-height: 20px;
+}
+
+.email-list-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.email-list-container::-webkit-scrollbar-thumb:active {
+  background: #64748b;
+}
+
+/* Ensure scrollbar is visible when content overflows */
+.email-list-container:hover::-webkit-scrollbar-thumb {
+  background: #94a3b8;
 }
 
 .email-list {
@@ -930,6 +965,8 @@ tbody tr:hover {
   /* Performance optimization: Enable GPU acceleration for large lists */
   transform: translateZ(0);
   contain: layout style paint;
+  /* Ensure proper spacing for scrollable content */
+  padding-bottom: 8px;
 }
 
 /* Email List Placeholder */

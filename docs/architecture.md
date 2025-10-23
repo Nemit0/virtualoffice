@@ -368,6 +368,7 @@ When a worker receives a message:
 | `VDOS_LOCALE` | en | Locale (en or ko) - Enhanced Korean support |
 | `VDOS_CONTACT_COOLDOWN_TICKS` | 10 | Min ticks between contacts |
 | `VDOS_MAX_HOURLY_PLANS_PER_MINUTE` | 10 | Planning rate limit |
+| `VDOS_AUTO_PAUSE_ON_PROJECT_END` | false | Auto-pause when all projects complete |
 | `OPENAI_API_KEY` | - | OpenAI API key (optional) |
 
 ### Model Configuration
@@ -435,6 +436,7 @@ Several Korean-specific simulation scripts demonstrate localized behavior:
 ### Simulation Engine
 - Main thread: FastAPI event loop
 - Auto-tick thread: Optional background thread for automatic advancement
+- Auto-pause: Intelligent stopping when all projects complete (configurable)
 - Lock: `_advance_lock` prevents concurrent tick advancement
 
 ## Error Handling
@@ -462,6 +464,13 @@ When `GPTPlanner` fails:
 ### Rate Limiting
 - Hourly planning: Max 10 plans per person per minute
 - Contact cooldown: 10 ticks between same sender/recipient pairs
+
+### Auto-Pause on Project Completion
+When `VDOS_AUTO_PAUSE_ON_PROJECT_END=true`, the simulation automatically pauses auto-tick when:
+- No projects are currently active in the current simulation week
+- No projects are scheduled to start in future weeks
+
+This prevents simulations from running indefinitely after all work is completed, providing intelligent lifecycle management while maintaining backward compatibility (disabled by default).
 
 ### Caching
 - Project plan cached in `_project_plan_cache`

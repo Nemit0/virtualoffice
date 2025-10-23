@@ -88,6 +88,13 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Example**: `VDOS_MAX_HOURLY_PLANS_PER_MINUTE=5`
 - **Notes**: Rate limit to prevent planning loops
 
+### VDOS_AUTO_PAUSE_ON_PROJECT_END
+- **Default**: `false`
+- **Description**: Automatically pause auto-tick when all projects complete
+- **Example**: `VDOS_AUTO_PAUSE_ON_PROJECT_END=true`
+- **Values**: `true` (enable auto-pause), `false` (disabled)
+- **Notes**: Prevents simulations from running indefinitely after all work is done. Checks for both active and future projects before pausing.
+
 ## Simulation Identity
 
 ### VDOS_SIM_EMAIL
@@ -203,6 +210,9 @@ VDOS_LOCALE=en
 
 # Planner behavior
 VDOS_PLANNER_STRICT=0
+
+# Auto-pause
+VDOS_AUTO_PAUSE_ON_PROJECT_END=false
 ```
 
 ## Docker Example
