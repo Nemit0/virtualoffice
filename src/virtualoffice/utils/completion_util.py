@@ -174,6 +174,14 @@ def generate_text(prompt: list[dict], model: str = "gpt-4o-mini") -> tuple[str, 
 
     Priority: OPENAI_API_KEY (free tier) -> OPENAI_API_KEY2 (free tier) -> Azure
     """
+    # Experimental: Override model if FIX_ALL_GPT_MODEL is enabled
+    fix_all_gpt = os.getenv("FIX_ALL_GPT_MODEL", "false").lower() == "true"
+    if fix_all_gpt:
+        fixed_model = os.getenv("FIXED_MODEL", "gpt-4o")
+        if fixed_model:
+            model = fixed_model
+            logger.info(f"[EXPERIMENTAL] Model override enabled: using {model}")
+
     # Choose provider based on free tier limits
     provider, use_azure = _choose_provider(model)
 
