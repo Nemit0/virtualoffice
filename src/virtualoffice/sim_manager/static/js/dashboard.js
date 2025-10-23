@@ -1770,6 +1770,31 @@ function formatRelativeTime(timestamp) {
   }
 }
 
+function formatAbsoluteTime(timestamp) {
+  if (!timestamp) return '';
+
+  const emailTime = new Date(timestamp);
+
+  // Format: "Monday, October 22, 2025 at 2:30 PM"
+  const dateOptions = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  };
+
+  const timeOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  };
+
+  const datePart = emailTime.toLocaleDateString('en-US', dateOptions);
+  const timePart = emailTime.toLocaleTimeString('en-US', timeOptions);
+
+  return `${datePart} at ${timePart}`;
+}
+
 // Helper function to select email by index
 function selectEmailByIndex(index) {
   const currentList = emailCache[emailFolder] || [];
@@ -1925,20 +1950,34 @@ function renderEmailDetail(msg) {
   
   const meta = document.createElement('div');
   meta.className = 'email-detail-meta';
-  
+
+  // Show both relative time and absolute timestamp
   const timestamp = document.createElement('span');
   timestamp.className = 'email-detail-timestamp';
-  timestamp.textContent = formatRelativeTime(msg.sent_at);
-  
+  const relativeTime = formatRelativeTime(msg.sent_at);
+  const absoluteTime = msg.sent_at ? formatAbsoluteTime(msg.sent_at) : '';
+  timestamp.textContent = relativeTime;
+  timestamp.title = absoluteTime; // Show full timestamp on hover
+
   const emailId = document.createElement('span');
   emailId.className = 'email-detail-id';
   emailId.textContent = `#${msg.id}`;
-  
+  emailId.title = 'Email ID';
+
   meta.appendChild(timestamp);
   meta.appendChild(emailId);
   detailHeader.appendChild(subject);
   detailHeader.appendChild(meta);
   detailEl.appendChild(detailHeader);
+
+  // Add full timestamp row in addresses section
+  const timestampRow = document.createElement('div');
+  timestampRow.className = 'email-address-row';
+  timestampRow.innerHTML = `
+    <span class="email-address-label">Sent:</span>
+    <span class="email-address-value">${absoluteTime || 'Unknown'}</span>
+  `;
+  detailEl.appendChild(timestampRow);
 
   // Email addresses section
   const addresses = document.createElement('div');
@@ -2007,7 +2046,8 @@ function openEmailModal(msg) {
 
   const headerMeta = document.createElement('div');
   headerMeta.className = 'meta';
-  headerMeta.textContent = `#${msg.id} • ${msg.sent_at || ''}`;
+  const formattedTime = msg.sent_at ? formatAbsoluteTime(msg.sent_at) : 'Unknown time';
+  headerMeta.textContent = `#${msg.id} • ${formattedTime}`;
   bodyEl.appendChild(headerMeta);
 
   const from = document.createElement('div');
