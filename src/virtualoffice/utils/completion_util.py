@@ -123,26 +123,72 @@ def _record_tokens(tokens: int, provider: str, model: str) -> None:
 
 def _choose_provider(model: str) -> tuple[str, bool]:
     """
-    Choose which provider to use based on free tier limits.
+    Choose which provider to use based on VDOS_API_PROVIDER setting or free tier limits.
+
+    Environment variable VDOS_API_PROVIDER can be:
+    - "openai_key1": Use OPENAI_API_KEY (default)
+    - "openai_key2": Use OPENAI_API_KEY2
+    - "azure": Use Azure OpenAI
+    - "auto": Automatic selection based on free tier limits (legacy behavior)
 
     Returns: (provider_name, use_azure)
     provider_name: "openai_key1", "openai_key2", or "azure"
     use_azure: True if should use Azure, False if OpenAI API
     """
+    # Check for explicit provider selection
+    provider_override = os.getenv("VDOS_API_PROVIDER", "auto").lower()
+
+    # Handle explicit provider selection
+    if provider_override == "openai_key1":
+        if not _API_KEY:
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        return ("openai_key1", False)
+
+    elif provider_override == "openai_key2":
+        if not _API_KEY2:
+            raise RuntimeError("OPENAI_API_KEY2 not configured")
+        return ("openai_key2", False)
+
+    elif provider_override == "azure":
+        if not _AZURE_ENDPOINT or not _AZURE_API_KEY:
+            raise RuntimeError("Azure OpenAI not configured (missing AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_API_KEY)")
+        return ("azure", True)
+
+    # Auto mode: Choose based on free tier limits (legacy behavior)
     data = _load_token_usage()
     model_type = "mini" if _is_mini_model(model) else "regular"
     limit = _FREE_TIER_LIMITS[model_type]
 
-    # Priority: OPENAI_API_KEY only (Azure disabled per company policy)
+    # Priority: OPENAI_API_KEY (key1) -> OPENAI_API_KEY2 (key2) -> Azure
 
     # Check OPENAI_API_KEY (key1)
     if _API_KEY and data["daily_usage"]["openai_key1"][model_type] < limit:
         return ("openai_key1", False)
 
-    # If limit exceeded, still use key1 (will charge - company provided credits)
+    # Check OPENAI_API_KEY2 (key2)
+    if _API_KEY2 and data["daily_usage"]["openai_key2"][model_type] < limit:
+        logger.info(f"Switching to OPENAI_API_KEY2 (key1 free tier limit reached for {model_type})")
+        return ("openai_key2", False)
+
+    # Check Azure
+    if _AZURE_ENDPOINT and _AZURE_API_KEY and data["daily_usage"]["azure"][model_type] < limit:
+        logger.info(f"Switching to Azure OpenAI (OpenAI free tier limits reached for {model_type})")
+        return ("azure", True)
+
+    # If all limits exceeded, use key1 (will charge - company provided credits)
     if _API_KEY:
-        print(f"⚠️  Free tier limit exceeded for {model_type} models. Using OPENAI_API_KEY (company credits).")
+        logger.warning(f"All free tier limits exceeded for {model_type} models. Using OPENAI_API_KEY (company credits).")
         return ("openai_key1", False)
+
+    # If key1 not available, try key2
+    if _API_KEY2:
+        logger.warning(f"All free tier limits exceeded for {model_type} models. Using OPENAI_API_KEY2 (company credits).")
+        return ("openai_key2", False)
+
+    # Last resort: Azure
+    if _AZURE_ENDPOINT and _AZURE_API_KEY:
+        logger.warning(f"All free tier limits exceeded for {model_type} models. Using Azure OpenAI (company credits).")
+        return ("azure", True)
 
     raise RuntimeError("No API keys configured")
 
