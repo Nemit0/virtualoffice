@@ -66,6 +66,22 @@
               <small style="color: #64748b; font-size: 11px;">0 = max speed (no delay)</small>
             </div>
           </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="auto-pause-toggle">
+                <input id="auto-pause-toggle" type="checkbox" checked aria-describedby="auto-pause-help"/>
+                Auto-pause when projects complete
+              </label>
+              <small id="auto-pause-help" style="color: #64748b; font-size: 11px;">Automatically stops auto-tick when all projects are finished</small>
+            </div>
+            <div class="form-group">
+              <label for="auto-refresh-toggle">
+                <input id="auto-refresh-toggle" type="checkbox" checked aria-describedby="auto-refresh-help"/>
+                Auto-refresh dashboard
+              </label>
+              <small id="auto-refresh-help" style="color: #64748b; font-size: 11px;">Automatically refreshes all tabs (Controls, Emails, Chat) during simulation</small>
+            </div>
+          </div>
           <div class="toolbar">
             <button id="advance-btn">Advance</button>
             <button id="auto-start-btn">Start Auto</button>
@@ -94,6 +110,25 @@
         <div class="state-item">
           <strong>Auto Tick</strong><br>
           <span id="state-auto">False</span>
+        </div>
+        <div class="state-item">
+          <strong>Auto-Pause</strong><br>
+          <span id="state-auto-pause">—</span>
+        </div>
+        <div class="state-item">
+          <strong>Active Projects</strong><br>
+          <span id="state-active-projects">—</span>
+        </div>
+        <div class="state-item">
+          <strong>Future Projects</strong><br>
+          <span id="state-future-projects">—</span>
+        </div>
+      </div>
+      <div id="auto-pause-warning" class="auto-pause-warning" style="display: none;">
+        <div class="warning-icon">⚠️</div>
+        <div class="warning-text">
+          <strong>Auto-pause will trigger soon</strong><br>
+          <span id="auto-pause-warning-text">No active projects remaining</span>
         </div>
       </div>
     </section>

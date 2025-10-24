@@ -14,6 +14,8 @@ import time
 from .engine import SimulationEngine
 from .gateways import HttpChatGateway, HttpEmailGateway
 from .schemas import (
+    AutoPauseStatusResponse,
+    AutoPauseToggleRequest,
     EventCreate,
     EventRead,
     PersonCreate,
@@ -529,9 +531,43 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         """Get the current auto-tick interval in seconds."""
         return {"tick_interval_seconds": engine.get_tick_interval()}
 
+    @app.get(f"{API_PREFIX}/simulation/auto-pause/status", response_model=AutoPauseStatusResponse)
+    def get_auto_pause_status(engine: SimulationEngine = Depends(get_engine)) -> AutoPauseStatusResponse:
+        """Get comprehensive project and status information for auto-pause feature."""
+        try:
+            status_data = engine.get_auto_pause_status()
+            return AutoPauseStatusResponse(**status_data)
+        except Exception as exc:
+            # Return error status with safe defaults
+            return AutoPauseStatusResponse(
+                auto_pause_enabled=False,
+                should_pause=False,
+                active_projects_count=0,
+                future_projects_count=0,
+                current_week=0,
+                reason="Status check failed",
+                error=str(exc)
+            )
+
+    @app.post(f"{API_PREFIX}/simulation/auto-pause/toggle", response_model=AutoPauseStatusResponse)
+    def toggle_auto_pause(
+        payload: AutoPauseToggleRequest,
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> AutoPauseStatusResponse:
+        """Toggle auto-pause setting and return updated status information."""
+        try:
+            status_data = engine.set_auto_pause(payload.enabled)
+            return AutoPauseStatusResponse(**status_data)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to toggle auto-pause: {str(exc)}"
+            ) from exc
+
+    # Backward compatibility endpoint (deprecated)
     @app.get(f"{API_PREFIX}/simulation/auto-pause-status")
-    def get_auto_pause_status(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
-        """Get information about auto-pause on project end status."""
+    def get_auto_pause_status_legacy(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Get information about auto-pause on project end status (legacy endpoint)."""
         return engine.get_auto_pause_status()
 
     @app.post(f"{API_PREFIX}/simulation/advance", response_model=SimulationAdvanceResult)

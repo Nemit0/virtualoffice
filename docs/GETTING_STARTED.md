@@ -41,8 +41,8 @@ echo "OPENAI_API_KEY=your-api-key-here" > .env
 # Optional: Enable Korean localization
 echo "VDOS_LOCALE=ko" >> .env
 
-# Optional: Enable auto-pause when projects complete
-echo "VDOS_AUTO_PAUSE_ON_PROJECT_END=true" >> .env
+# Optional: Disable auto-pause when projects complete (enabled by default)
+echo "VDOS_AUTO_PAUSE_ON_PROJECT_END=false" >> .env
 ```
 
 **Note**: While the OpenAI package is installed, AI features will gracefully degrade to stub implementations if no API key is provided.
@@ -52,7 +52,7 @@ echo "VDOS_AUTO_PAUSE_ON_PROJECT_END=true" >> .env
 - Korean-localized persona generation with workplace-appropriate terminology
 - Korean timezone (`Asia/Seoul`) and work hours (`09:00-18:00`) defaults
 
-**Auto-Pause**: Set `VDOS_AUTO_PAUSE_ON_PROJECT_END=true` to automatically stop auto-tick when all projects complete, preventing simulations from running indefinitely after work is done.
+**Auto-Pause**: Auto-pause is enabled by default (`VDOS_AUTO_PAUSE_ON_PROJECT_END=true`) to automatically stop auto-tick when all projects complete, preventing simulations from running indefinitely after work is done. Set to `false` to disable this behavior.
 - Consistent Korean experience across all AI-generated content
 
 ## Quick Start Options

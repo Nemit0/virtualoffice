@@ -4,6 +4,7 @@ let selectedPeople = new Set();
 let refreshIntervalId = null;
 let currentRefreshInterval = 60000; // Start with 1 minute
 let isSimulationRunning = false;
+let autoRefreshEnabled = true; // Auto-refresh toggle state
 let projects = []; // Array of project objects
 let people_cache = []; // Cache of all people for project team selection
 let emailMonitorPersonId = null;
@@ -136,6 +137,22 @@ async function refreshState() {
     document.getElementById('tick-interval').value = intervalData.tick_interval_seconds;
   } catch (err) {
     console.error('Failed to fetch tick interval:', err);
+  }
+
+  // Fetch and display auto-pause status
+  try {
+    const autoPauseStatus = await fetchJson(`${API_PREFIX}/simulation/auto-pause/status`);
+    updateAutoPauseDisplay(autoPauseStatus);
+  } catch (err) {
+    console.error('Failed to fetch auto-pause status:', err);
+    // Set default values if API call fails
+    updateAutoPauseDisplay({
+      auto_pause_enabled: false,
+      active_projects_count: 0,
+      future_projects_count: 0,
+      should_pause: false,
+      reason: 'Status unavailable'
+    });
   }
 
   // Update refresh interval based on simulation state
@@ -610,6 +627,228 @@ async function updateTickInterval() {
   }
 }
 
+async function toggleAutoPause() {
+  const toggleEl = document.getElementById('auto-pause-toggle');
+  if (!toggleEl) return;
+  
+  const enabled = toggleEl.checked;
+  
+  // Log the toggle action for debugging
+  console.log('[AUTO-PAUSE] User toggled auto-pause:', {
+    requested_state: enabled,
+    timestamp: new Date().toISOString()
+  });
+  
+  try {
+    setStatus('Updating auto-pause setting...');
+    const result = await fetchJson(`${API_PREFIX}/simulation/auto-pause/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    
+    // Log the server response
+    console.log('[AUTO-PAUSE] Server response to toggle:', {
+      requested: enabled,
+      actual: result.auto_pause_enabled,
+      success: result.auto_pause_enabled === enabled,
+      full_response: result,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Update the toggle to reflect the actual server state
+    toggleEl.checked = result.auto_pause_enabled;
+    
+    const statusMsg = result.auto_pause_enabled ? 'Auto-pause enabled' : 'Auto-pause disabled';
+    setStatus(statusMsg);
+    
+    // Update the auto-pause display immediately
+    updateAutoPauseDisplay(result);
+    
+  } catch (err) {
+    // Log the error for debugging
+    console.error('[AUTO-PAUSE] Failed to toggle auto-pause:', {
+      requested_state: enabled,
+      error: err.message || String(err),
+      timestamp: new Date().toISOString()
+    });
+    
+    // Revert the toggle on error
+    toggleEl.checked = !enabled;
+    setStatus(err.message || String(err), true);
+  }
+}
+
+function toggleAutoRefresh() {
+  const toggleEl = document.getElementById('auto-refresh-toggle');
+  if (!toggleEl) return;
+  
+  autoRefreshEnabled = toggleEl.checked;
+  
+  // Store preference in localStorage for persistence
+  localStorage.setItem('vdos-auto-refresh-enabled', autoRefreshEnabled.toString());
+  
+  console.log('[AUTO-REFRESH] User toggled auto-refresh:', {
+    enabled: autoRefreshEnabled,
+    timestamp: new Date().toISOString()
+  });
+  
+  if (autoRefreshEnabled) {
+    // Re-enable auto-refresh with current interval
+    setRefreshInterval(currentRefreshInterval);
+    setupChatAutoRefresh();
+    setStatus('Auto-refresh enabled');
+  } else {
+    // Disable all auto-refresh intervals
+    if (refreshIntervalId !== null) {
+      clearInterval(refreshIntervalId);
+      refreshIntervalId = null;
+    }
+    if (chatState.autoRefreshInterval) {
+      clearInterval(chatState.autoRefreshInterval);
+      chatState.autoRefreshInterval = null;
+    }
+    setStatus('Auto-refresh disabled');
+  }
+}
+
+function loadAutoRefreshPreference() {
+  // Load preference from localStorage
+  const saved = localStorage.getItem('vdos-auto-refresh-enabled');
+  if (saved !== null) {
+    autoRefreshEnabled = saved === 'true';
+  }
+  
+  // Update toggle to match preference
+  const toggleEl = document.getElementById('auto-refresh-toggle');
+  if (toggleEl) {
+    toggleEl.checked = autoRefreshEnabled;
+  }
+  
+  console.log('[AUTO-REFRESH] Loaded preference:', {
+    enabled: autoRefreshEnabled,
+    source: saved !== null ? 'localStorage' : 'default'
+  });
+}
+
+function updateAutoPauseDisplay(autoPauseStatus) {
+  // Comprehensive logging for auto-pause status debugging
+  console.log('[AUTO-PAUSE] Status update:', {
+    enabled: autoPauseStatus.auto_pause_enabled,
+    should_pause: autoPauseStatus.should_pause,
+    active_projects: autoPauseStatus.active_projects_count,
+    future_projects: autoPauseStatus.future_projects_count,
+    current_week: autoPauseStatus.current_week,
+    current_tick: autoPauseStatus.current_tick,
+    current_day: autoPauseStatus.current_day,
+    reason: autoPauseStatus.reason,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Check for auto-pause state changes and log them
+  const currentState = {
+    enabled: autoPauseStatus.auto_pause_enabled,
+    should_pause: autoPauseStatus.should_pause,
+    active_count: autoPauseStatus.active_projects_count || 0,
+    future_count: autoPauseStatus.future_projects_count || 0
+  };
+  
+  if (lastAutoPauseState) {
+    if (currentState.should_pause !== lastAutoPauseState.should_pause) {
+      if (currentState.should_pause) {
+        console.warn('[AUTO-PAUSE] 🛑 Auto-pause condition triggered!', {
+          week: autoPauseStatus.current_week,
+          tick: autoPauseStatus.current_tick,
+          reason: autoPauseStatus.reason,
+          completed_projects: 'All projects completed',
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        console.log('[AUTO-PAUSE] ✅ Auto-pause condition cleared', {
+          week: autoPauseStatus.current_week,
+          active_projects: currentState.active_count,
+          future_projects: currentState.future_count,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+    
+    if (currentState.active_count !== lastAutoPauseState.active_count) {
+      console.log('[AUTO-PAUSE] Active projects changed:', {
+        from: lastAutoPauseState.active_count,
+        to: currentState.active_count,
+        week: autoPauseStatus.current_week,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    if (currentState.future_count !== lastAutoPauseState.future_count) {
+      console.log('[AUTO-PAUSE] Future projects changed:', {
+        from: lastAutoPauseState.future_count,
+        to: currentState.future_count,
+        week: autoPauseStatus.current_week,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+  
+  // Store current state for next comparison
+  lastAutoPauseState = currentState;
+  
+  // Update auto-pause toggle to match server state
+  const toggleEl = document.getElementById('auto-pause-toggle');
+  if (toggleEl) {
+    toggleEl.checked = autoPauseStatus.auto_pause_enabled;
+  }
+  
+  // Update status display
+  const autoPauseEl = document.getElementById('state-auto-pause');
+  if (autoPauseEl) {
+    autoPauseEl.textContent = autoPauseStatus.auto_pause_enabled ? 'Enabled' : 'Disabled';
+    autoPauseEl.className = autoPauseStatus.auto_pause_enabled ? 'enabled' : 'disabled';
+  }
+  
+  // Update project counts
+  const activeProjectsEl = document.getElementById('state-active-projects');
+  if (activeProjectsEl) {
+    const count = autoPauseStatus.active_projects_count || 0;
+    activeProjectsEl.textContent = count.toString();
+    activeProjectsEl.className = (count === 0 && autoPauseStatus.auto_pause_enabled) ? 'warning' : '';
+  }
+  
+  const futureProjectsEl = document.getElementById('state-future-projects');
+  if (futureProjectsEl) {
+    const count = autoPauseStatus.future_projects_count || 0;
+    futureProjectsEl.textContent = count.toString();
+    futureProjectsEl.className = (count === 0 && autoPauseStatus.auto_pause_enabled) ? 'warning' : '';
+  }
+  
+  // Show/hide warning based on auto-pause conditions
+  const warningEl = document.getElementById('auto-pause-warning');
+  const warningTextEl = document.getElementById('auto-pause-warning-text');
+  
+  if (warningEl && warningTextEl) {
+    const shouldShowWarning = autoPauseStatus.auto_pause_enabled && 
+                             autoPauseStatus.should_pause && 
+                             autoPauseStatus.reason;
+    
+    if (shouldShowWarning) {
+      warningTextEl.textContent = autoPauseStatus.reason;
+      warningEl.style.display = 'flex';
+      warningEl.classList.remove('hidden');
+      
+      // Log warning display for debugging
+      console.warn('[AUTO-PAUSE] Displaying warning to user:', autoPauseStatus.reason);
+      
+      // Announce warning to screen readers
+      announceToScreenReader(`Auto-pause warning: ${autoPauseStatus.reason}`);
+    } else {
+      warningEl.style.display = 'none';
+      warningEl.classList.add('hidden');
+    }
+  }
+}
+
 function populatePersonaForm(persona) {
   document.getElementById('persona-name').value = persona.name || '';
   document.getElementById('persona-role').value = persona.role || '';
@@ -862,7 +1101,7 @@ function renderProjects() {
 }
 
 function setRefreshInterval(intervalMs) {
-  if (currentRefreshInterval === intervalMs) {
+  if (currentRefreshInterval === intervalMs && refreshIntervalId !== null) {
     return; // No change needed
   }
 
@@ -871,11 +1110,16 @@ function setRefreshInterval(intervalMs) {
   // Clear existing interval
   if (refreshIntervalId !== null) {
     clearInterval(refreshIntervalId);
+    refreshIntervalId = null;
   }
 
-  // Set new interval
-  refreshIntervalId = setInterval(refreshAll, intervalMs);
-  console.log(`Dashboard refresh interval set to ${intervalMs / 1000}s`);
+  // Only set new interval if auto-refresh is enabled
+  if (autoRefreshEnabled) {
+    refreshIntervalId = setInterval(refreshAll, intervalMs);
+    console.log(`Dashboard refresh interval set to ${intervalMs / 1000}s`);
+  } else {
+    console.log('Dashboard auto-refresh is disabled');
+  }
 }
 
 function init() {
@@ -888,6 +1132,8 @@ function init() {
   document.getElementById('auto-stop-btn').addEventListener('click', stopAutoTicks);
   document.getElementById('refresh-btn').addEventListener('click', refreshAll);
   document.getElementById('tick-interval').addEventListener('change', updateTickInterval);
+  document.getElementById('auto-pause-toggle').addEventListener('change', toggleAutoPause);
+  document.getElementById('auto-refresh-toggle').addEventListener('change', toggleAutoRefresh);
   document.getElementById('persona-generate-btn').addEventListener('click', generatePersona);
   document.getElementById('persona-create-btn').addEventListener('click', createPersona);
   document.getElementById('persona-clear-btn').addEventListener('click', clearPersonaForm);
@@ -898,6 +1144,9 @@ function init() {
   document.getElementById('import-personas-btn').addEventListener('click', importPersonas);
   document.getElementById('export-projects-btn').addEventListener('click', exportProjects);
   document.getElementById('import-projects-btn').addEventListener('click', importProjects);
+
+  // Load auto-refresh preference from localStorage
+  loadAutoRefreshPreference();
 
   // Initial refresh
   refreshAll();
@@ -3079,8 +3328,8 @@ function setupChatAutoRefresh() {
     chatState.autoRefreshInterval = null;
   }
   
-  // Set up auto-refresh if simulation is running
-  if (isSimulationRunning) {
+  // Set up auto-refresh if simulation is running and auto-refresh is enabled
+  if (isSimulationRunning && autoRefreshEnabled) {
     chatState.autoRefreshInterval = setInterval(async () => {
       // Only refresh if chat tab is visible and not currently loading
       if (chatMonitorPersonId && 
@@ -6565,6 +6814,309 @@ function announceToScreenReader(message) {
   setTimeout(() => {
     document.body.removeChild(announcement);
   }, 1000);
+}
+
+// Auto-pause toggle function
+async function toggleAutoPause() {
+  const toggleEl = document.getElementById('auto-pause-toggle');
+  if (!toggleEl) return;
+  
+  const enabled = toggleEl.checked;
+  
+  try {
+    setStatus('Updating auto-pause setting...');
+    const result = await fetchJson(`${API_PREFIX}/simulation/auto-pause/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    
+    // Update the toggle to reflect the actual server state
+    toggleEl.checked = result.auto_pause_enabled;
+    
+    const statusMsg = result.auto_pause_enabled ? 'Auto-pause enabled' : 'Auto-pause disabled';
+    setStatus(statusMsg);
+    
+    // Update the auto-pause display immediately
+    updateAutoPauseDisplay(result);
+    
+    // Announce change to screen readers
+    announceToScreenReader(statusMsg);
+    
+  } catch (err) {
+    // Revert the toggle on error
+    toggleEl.checked = !enabled;
+    setStatus(err.message || String(err), true);
+    announceToScreenReader('Failed to update auto-pause setting');
+  }
+}
+
+// Toast notification system
+let toastContainer = null;
+let lastAutoPauseState = null;
+
+function createToastContainer() {
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    toastContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    `;
+    document.body.appendChild(toastContainer);
+  }
+  return toastContainer;
+}
+
+function showToast(message, type = 'info', duration = 5000) {
+  const container = createToastContainer();
+  
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.style.cssText = `
+    background: ${type === 'warning' ? '#f59e0b' : type === 'error' ? '#dc2626' : '#2563eb'};
+    color: white;
+    padding: 12px 16px;
+    border-radius: 6px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-width: 350px;
+    word-wrap: break-word;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    transform: translateX(100%);
+    opacity: 0;
+  `;
+  toast.textContent = message;
+  
+  // Add close functionality
+  toast.addEventListener('click', () => {
+    removeToast(toast);
+  });
+  
+  container.appendChild(toast);
+  
+  // Animate in
+  setTimeout(() => {
+    toast.style.transform = 'translateX(0)';
+    toast.style.opacity = '1';
+  }, 10);
+  
+  // Auto-remove after duration
+  setTimeout(() => {
+    removeToast(toast);
+  }, duration);
+  
+  // Announce to screen readers
+  announceToScreenReader(message);
+}
+
+function removeToast(toast) {
+  if (toast && toast.parentNode) {
+    toast.style.transform = 'translateX(100%)';
+    toast.style.opacity = '0';
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 300);
+  }
+}
+
+// Generate detailed warning message for approaching auto-pause conditions
+function generateAutoPauseWarningMessage(autoPauseStatus) {
+  const activeCount = autoPauseStatus.active_projects_count || 0;
+  const futureCount = autoPauseStatus.future_projects_count || 0;
+  const currentWeek = autoPauseStatus.current_week || 0;
+  
+  if (!autoPauseStatus.auto_pause_enabled) {
+    return null;
+  }
+  
+  // Critical warning - auto-pause will trigger
+  if (autoPauseStatus.should_pause) {
+    return {
+      level: 'critical',
+      title: 'Auto-pause will trigger',
+      message: autoPauseStatus.reason || 'All projects have been completed',
+      guidance: 'Auto-tick will be automatically disabled. You can restart it manually or add new projects to continue.'
+    };
+  }
+  
+  // Warning - no active projects but future projects exist
+  if (activeCount === 0 && futureCount > 0) {
+    return {
+      level: 'warning',
+      title: 'No active projects',
+      message: `No projects are active in week ${currentWeek}, but ${futureCount} future project${futureCount > 1 ? 's' : ''} scheduled`,
+      guidance: 'Simulation will continue until future projects start or complete.'
+    };
+  }
+  
+  // Warning - approaching completion
+  if (activeCount === 1 && futureCount === 0) {
+    return {
+      level: 'warning',
+      title: 'Last active project',
+      message: `Only 1 project remains active in week ${currentWeek}`,
+      guidance: 'Auto-pause will trigger when this project completes. Consider adding new projects to continue simulation.'
+    };
+  }
+  
+  // Info - low project count
+  if (activeCount <= 2 && futureCount === 0) {
+    return {
+      level: 'info',
+      title: 'Few projects remaining',
+      message: `${activeCount} project${activeCount > 1 ? 's' : ''} active in week ${currentWeek}`,
+      guidance: 'Consider planning additional projects to maintain simulation continuity.'
+    };
+  }
+  
+  return null;
+}
+
+// Update auto-pause display elements
+function updateAutoPauseDisplay(autoPauseStatus) {
+  // Check for auto-pause state changes to trigger notifications
+  const currentState = {
+    enabled: autoPauseStatus.auto_pause_enabled,
+    shouldPause: autoPauseStatus.should_pause,
+    activeProjects: autoPauseStatus.active_projects_count || 0,
+    futureProjects: autoPauseStatus.future_projects_count || 0,
+    reason: autoPauseStatus.reason
+  };
+  
+  // Detect auto-pause trigger events
+  if (lastAutoPauseState) {
+    // Auto-pause was triggered (simulation was paused due to auto-pause)
+    if (!lastAutoPauseState.shouldPause && currentState.shouldPause && currentState.enabled) {
+      const message = `Auto-pause triggered: ${currentState.reason}`;
+      showToast(message, 'warning', 8000);
+      
+      // Update status message in header
+      setStatus(message, false);
+      
+      console.log('Auto-pause event:', {
+        reason: currentState.reason,
+        activeProjects: currentState.activeProjects,
+        futureProjects: currentState.futureProjects,
+        simulationWeek: autoPauseStatus.current_week
+      });
+    }
+    
+    // Warning when approaching auto-pause conditions
+    else if (currentState.enabled && currentState.activeProjects === 0 && currentState.futureProjects === 0 && 
+             (lastAutoPauseState.activeProjects > 0 || lastAutoPauseState.futureProjects > 0)) {
+      showToast('Warning: No projects remaining. Auto-pause may trigger soon.', 'warning', 6000);
+    }
+    
+    // Show toast for project count changes that might affect auto-pause
+    else if (currentState.enabled && currentState.activeProjects !== lastAutoPauseState.activeProjects) {
+      if (currentState.activeProjects === 1 && currentState.futureProjects === 0) {
+        showToast('Warning: Only 1 active project remains. Auto-pause will trigger when it completes.', 'warning', 6000);
+      } else if (currentState.activeProjects === 0 && currentState.futureProjects > 0) {
+        showToast(`Info: No active projects in current week. ${currentState.futureProjects} future project${currentState.futureProjects > 1 ? 's' : ''} scheduled.`, 'info', 5000);
+      }
+    }
+  }
+  
+  // Store current state for next comparison
+  lastAutoPauseState = { ...currentState };
+  
+  // Update auto-pause toggle to match server state
+  const toggleEl = document.getElementById('auto-pause-toggle');
+  if (toggleEl) {
+    toggleEl.checked = autoPauseStatus.auto_pause_enabled;
+  }
+  
+  // Update status display
+  const autoPauseEl = document.getElementById('state-auto-pause');
+  if (autoPauseEl) {
+    autoPauseEl.textContent = autoPauseStatus.auto_pause_enabled ? 'Enabled' : 'Disabled';
+    autoPauseEl.className = autoPauseStatus.auto_pause_enabled ? 'enabled' : 'disabled';
+  }
+  
+  // Update project counts with enhanced warning indicators
+  const activeProjectsEl = document.getElementById('state-active-projects');
+  if (activeProjectsEl) {
+    const count = autoPauseStatus.active_projects_count || 0;
+    activeProjectsEl.textContent = count.toString();
+    
+    // Enhanced warning classes based on project count and auto-pause status
+    let className = '';
+    if (autoPauseStatus.auto_pause_enabled) {
+      if (count === 0) {
+        className = 'critical';
+      } else if (count === 1 && (autoPauseStatus.future_projects_count || 0) === 0) {
+        className = 'warning';
+      } else if (count <= 2 && (autoPauseStatus.future_projects_count || 0) === 0) {
+        className = 'info';
+      }
+    }
+    activeProjectsEl.className = className;
+    
+    // Add title attribute for additional context
+    if (count === 0) {
+      activeProjectsEl.title = 'No active projects - auto-pause may trigger';
+    } else if (count === 1) {
+      activeProjectsEl.title = 'Last active project - auto-pause will trigger when complete';
+    } else {
+      activeProjectsEl.title = `${count} active projects in current simulation week`;
+    }
+  }
+  
+  const futureProjectsEl = document.getElementById('state-future-projects');
+  if (futureProjectsEl) {
+    const count = autoPauseStatus.future_projects_count || 0;
+    futureProjectsEl.textContent = count.toString();
+    
+    // Warning class when no future projects and auto-pause enabled
+    const className = (count === 0 && autoPauseStatus.auto_pause_enabled && 
+                      (autoPauseStatus.active_projects_count || 0) <= 1) ? 'warning' : '';
+    futureProjectsEl.className = className;
+    
+    // Add title attribute for additional context
+    if (count === 0) {
+      futureProjectsEl.title = 'No future projects scheduled';
+    } else {
+      futureProjectsEl.title = `${count} project${count > 1 ? 's' : ''} scheduled to start in future weeks`;
+    }
+  }
+  
+  // Enhanced warning display with detailed information
+  const warningEl = document.getElementById('auto-pause-warning');
+  const warningTextEl = document.getElementById('auto-pause-warning-text');
+  
+  if (warningEl && warningTextEl) {
+    const warningInfo = generateAutoPauseWarningMessage(autoPauseStatus);
+    
+    if (warningInfo) {
+      // Update warning panel content with detailed information
+      warningTextEl.innerHTML = `
+        <strong>${warningInfo.title}</strong><br>
+        ${warningInfo.message}<br>
+        <small style="opacity: 0.8; font-size: 12px;">${warningInfo.guidance}</small>
+      `;
+      
+      // Update warning panel styling based on severity
+      warningEl.className = `auto-pause-warning ${warningInfo.level}`;
+      warningEl.style.display = 'flex';
+      warningEl.classList.remove('hidden');
+      
+      // Announce warning to screen readers with full context
+      announceToScreenReader(`${warningInfo.title}: ${warningInfo.message}. ${warningInfo.guidance}`);
+    } else {
+      warningEl.style.display = 'none';
+      warningEl.classList.add('hidden');
+    }
+  }
 }
 
 // Initialize touch gestures when chat tab is loaded

@@ -444,6 +444,9 @@ virtualoffice/
 ├── tests/                      # Comprehensive test suite
 │   ├── conftest.py             # Test configuration
 │   ├── test_*.py               # Individual test modules
+│   ├── test_auto_pause_integration.py # Auto-pause integration tests
+│   ├── test_auto_pause_unit.py # Auto-pause unit tests
+│   ├── test_auto_pause_workflow_integration.py # Workflow tests
 │   └── virtualoffice.py        # Test utilities
 ├── docs/                       # Documentation
 │   ├── README.md               # Documentation index
@@ -543,8 +546,42 @@ MIT (placeholder—adjust as needed).
 ✅ **Multi-Project Support**: Configure multiple projects with different teams and timelines via web UI
 ✅ **Team Organization**: Group personas into teams with flexible assignment and filtering
 ✅ **Production Features**: Token tracking, event system, adaptive refresh rates, comprehensive testing
+✅ **Auto-Pause System**: Intelligent simulation lifecycle management with comprehensive integration testing
 ✅ **Configurable Architecture**: Server ports and API keys configurable via `.env` file
 
 The system successfully generates realistic workplace communication patterns and is ready for use in testing downstream tools, research, and development scenarios.
 
 **Quick Start**: Run `briefcase dev` to automatically start all servers and open the web dashboard - start your first simulation in minutes!
+
+## Testing and Validation
+
+VDOS includes a comprehensive test suite ensuring reliability and correctness across all components:
+
+### Auto-Pause Integration Testing
+- **Complete workflow validation**: End-to-end testing of auto-pause triggering when all projects complete
+- **Multi-project scenarios**: Testing overlapping, sequential, and gap project timelines
+- **API endpoint testing**: Full validation of request/response handling and error cases
+- **State persistence**: Testing session-level configuration changes and persistence
+- **Future project detection**: Validation that future projects prevent premature auto-pause
+
+### Test Suite Organization
+```bash
+# Run the complete test suite
+pytest tests/
+
+# Run specific auto-pause tests
+pytest tests/test_auto_pause_integration.py -v
+pytest tests/test_auto_pause_unit.py -v
+pytest tests/test_auto_pause_workflow_integration.py -v
+
+# Run with coverage reporting
+pytest tests/ --cov=src/virtualoffice
+```
+
+### Key Test Files
+- `tests/test_auto_pause_integration.py` - Comprehensive integration tests for auto-pause functionality
+- `tests/test_auto_pause_unit.py` - Unit tests for individual auto-pause components
+- `tests/test_auto_pause_workflow_integration.py` - Workflow-specific integration tests
+- `tests/test_sim_manager.py` - Simulation engine and manager tests
+- `tests/test_email_server.py` - Email service endpoint tests
+- `tests/test_chat_server.py` - Chat service endpoint tests

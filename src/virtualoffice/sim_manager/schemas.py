@@ -199,3 +199,18 @@ class StatusOverrideResponse(BaseModel):
     message: str
 
 
+# --- Auto-pause control (toggle and status) ---
+class AutoPauseToggleRequest(BaseModel):
+    enabled: bool = Field(..., description="Whether to enable or disable auto-pause")
+
+
+class AutoPauseStatusResponse(BaseModel):
+    auto_pause_enabled: bool = Field(..., description="Current auto-pause setting")
+    should_pause: bool = Field(..., description="Whether auto-pause conditions are met")
+    active_projects_count: int = Field(..., description="Number of active projects for current week")
+    future_projects_count: int = Field(..., description="Number of projects scheduled to start in future")
+    current_week: int = Field(..., description="Current simulation week")
+    reason: str = Field(..., description="Explanation of auto-pause status")
+    error: str | None = Field(default=None, description="Error message if status check failed")
+
+

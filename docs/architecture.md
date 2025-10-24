@@ -98,10 +98,19 @@ VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a sh
 
 **Key Files**:
 - `app.py` - FastAPI application (515 lines)
-- `engine.py` - Core simulation engine (2360 lines)
+- `engine.py` - Core simulation engine (3000+ lines)
 - `planner.py` - GPT and Stub planners (546 lines)
 - `gateways.py` - HTTP clients for email/chat (110 lines)
-- `schemas.py` - Pydantic models (171 lines)
+- `schemas.py` - Pydantic models (217 lines)
+
+**Auto-Pause Methods**:
+- `set_auto_pause(enabled: bool)` - Toggle auto-pause setting at runtime with comprehensive status return
+- `get_auto_pause_status()` - Get detailed auto-pause status including project counts and reasoning
+
+**Auto-Pause API Endpoints**:
+- `GET /api/v1/simulation/auto-pause/status` - Get comprehensive auto-pause status with project information
+- `POST /api/v1/simulation/auto-pause/toggle` - Toggle auto-pause setting and return updated status
+- `GET /api/v1/simulation/auto-pause-status` - Legacy endpoint (deprecated)
 
 **Database Tables**:
 - `people` - Virtual worker personas
@@ -409,7 +418,7 @@ When a worker receives a message:
 | `VDOS_LOCALE` | en | Locale (en or ko) - Enhanced Korean support |
 | `VDOS_CONTACT_COOLDOWN_TICKS` | 10 | Min ticks between contacts |
 | `VDOS_MAX_HOURLY_PLANS_PER_MINUTE` | 10 | Planning rate limit |
-| `VDOS_AUTO_PAUSE_ON_PROJECT_END` | false | Auto-pause when all projects complete |
+| `VDOS_AUTO_PAUSE_ON_PROJECT_END` | true | Auto-pause when all projects complete |
 | `OPENAI_API_KEY` | - | OpenAI API key (optional) |
 
 ### Model Configuration
@@ -507,11 +516,44 @@ When `GPTPlanner` fails:
 - Contact cooldown: 10 ticks between same sender/recipient pairs
 
 ### Auto-Pause on Project Completion
-When `VDOS_AUTO_PAUSE_ON_PROJECT_END=true`, the simulation automatically pauses auto-tick when:
+When `VDOS_AUTO_PAUSE_ON_PROJECT_END=true` (default), the simulation automatically pauses auto-tick when:
 - No projects are currently active in the current simulation week
 - No projects are scheduled to start in future weeks
 
-This prevents simulations from running indefinitely after all work is completed, providing intelligent lifecycle management while maintaining backward compatibility (disabled by default).
+This prevents simulations from running indefinitely after all work is completed, providing intelligent lifecycle management. The auto-pause setting can be toggled at runtime via the `set_auto_pause()` method, which overrides the environment variable for the current session.
+
+**Enhanced Implementation Features:**
+- **Session-level configuration**: Runtime toggle overrides environment variable for current session
+- **Comprehensive status reporting**: Detailed project status, counts, and pause reasoning
+- **Enhanced project lifecycle calculations**: Accurate week calculation with edge case handling
+- **Multi-project scenario handling**: Supports overlapping, sequential, and gap scenarios
+- **Comprehensive logging**: Detailed auto-pause events with project information
+- **Error handling**: Graceful fallback with detailed error messages and safe defaults
+- **API endpoints**: REST endpoints for status checking and runtime configuration
+- **Frontend integration**: JavaScript functions for UI interaction and real-time updates
+- **Backward compatibility**: Legacy endpoint maintained, environment variable still respected
+
+**Project Lifecycle Calculations:**
+- **Current week**: `max(1, ((current_tick - 1) // hours_per_day // 5) + 1)`
+- **Project end week**: `start_week + duration_weeks - 1`
+- **Active projects**: Projects where `start_week <= current_week <= end_week`
+- **Future projects**: Projects where `start_week > current_week`
+- **Auto-pause trigger**: `active_projects == 0 AND future_projects == 0`
+
+**Logging and Debugging:**
+- Comprehensive auto-pause trigger logging with project details
+- Frontend console logging for debugging UI interactions
+- State change detection and logging for active/future project counts
+- Error logging with fallback to prevent simulation halt
+
+**Testing and Validation:**
+- **Integration Testing**: Complete end-to-end workflow validation in `tests/test_auto_pause_integration.py`
+- **Multi-Project Scenarios**: Comprehensive testing of overlapping, sequential, and gap project timelines
+- **API Endpoint Testing**: Full validation of request/response handling and error cases
+- **State Persistence**: Testing of session-level configuration changes and persistence
+- **Error Handling**: Edge case testing and graceful degradation validation
+- **Future Project Detection**: Testing that future projects prevent premature auto-pause
+- **Auto-Tick Integration**: Validation that auto-pause correctly stops auto-tick when triggered
 
 ### Caching
 - Project plan cached in `_project_plan_cache`

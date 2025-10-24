@@ -78,6 +78,139 @@ GET /api/v1/simulation
 }
 ```
 
+#### Get Auto-Pause Status
+```http
+GET /api/v1/simulation/auto-pause/status
+```
+
+**Response Model**: `AutoPauseStatusResponse`
+
+**Response (enabled with active projects):**
+```json
+{
+  "auto_pause_enabled": true,
+  "should_pause": false,
+  "active_projects_count": 2,
+  "future_projects_count": 1,
+  "current_week": 2,
+  "current_tick": 90,
+  "current_day": 9,
+  "reason": "2 active project(s) in week 2: Dashboard MVP, Mobile App",
+  "error": null
+}
+```
+
+**Response (enabled, should pause):**
+```json
+{
+  "auto_pause_enabled": true,
+  "should_pause": true,
+  "active_projects_count": 0,
+  "future_projects_count": 0,
+  "current_week": 3,
+  "current_tick": 135,
+  "current_day": 14,
+  "reason": "All 2 project(s) completed, no future projects (week 3, tick 135)",
+  "error": null
+}
+```
+
+**Response (disabled):**
+```json
+{
+  "auto_pause_enabled": false,
+  "should_pause": false,
+  "active_projects_count": 0,
+  "future_projects_count": 0,
+  "current_week": 0,
+  "reason": "Auto-pause on project end is disabled",
+  "error": null
+}
+```
+
+**Response (error case):**
+```json
+{
+  "auto_pause_enabled": true,
+  "should_pause": false,
+  "active_projects_count": 0,
+  "future_projects_count": 0,
+  "current_week": 0,
+  "current_tick": 0,
+  "current_day": 0,
+  "error": "Database connection failed",
+  "reason": "Failed to check project status: Database connection failed"
+}
+```
+
+#### Toggle Auto-Pause Setting
+```http
+POST /api/v1/simulation/auto-pause/toggle
+Content-Type: application/json
+
+{
+  "enabled": true
+}
+```
+
+**Request Model**: `AutoPauseToggleRequest`
+**Response Model**: `AutoPauseStatusResponse`
+
+**Response:**
+```json
+{
+  "auto_pause_enabled": true,
+  "should_pause": false,
+  "active_projects_count": 2,
+  "future_projects_count": 1,
+  "current_week": 2,
+  "current_tick": 90,
+  "current_day": 9,
+  "reason": "2 active project(s) in week 2: Dashboard MVP, Mobile App",
+  "error": null
+}
+```
+
+**Error Response:**
+```json
+{
+  "detail": "Failed to toggle auto-pause: Database connection failed"
+}
+```
+
+#### Legacy Auto-Pause Status (Deprecated)
+```http
+GET /api/v1/simulation/auto-pause-status
+```
+
+**Status**: Deprecated - Use `GET /api/v1/simulation/auto-pause/status` instead
+
+**Response**: Raw dictionary format (unstructured)
+
+### Auto-Pause Integration Testing
+
+The auto-pause functionality includes comprehensive integration tests that validate:
+
+- **Complete workflow testing**: End-to-end auto-pause triggering when projects complete
+- **Manual toggle operations**: Runtime configuration changes and state persistence
+- **Multi-project scenarios**: Overlapping timelines and future project detection
+- **API endpoint validation**: Request/response handling and error cases
+- **Error handling**: Edge cases and recovery scenarios
+
+**Test Coverage**:
+- Project lifecycle calculations with accurate week/tick conversions
+- Auto-tick integration with intelligent stopping behavior
+- Session-level configuration persistence across API calls
+- Multi-project timeline scenarios (overlapping, sequential, gaps)
+- Future project detection preventing premature auto-pause
+- Comprehensive API endpoint testing with validation
+- Error handling and graceful degradation
+
+**Test Files**:
+- `tests/test_auto_pause_integration.py` - Complete integration test suite
+- `tests/test_auto_pause_unit.py` - Unit tests for individual components
+- `tests/test_auto_pause_workflow_integration.py` - Workflow-specific tests
+
 #### Advance Simulation
 ```http
 POST /api/v1/simulation/advance

@@ -303,6 +303,22 @@ class SimulationEngine:
         self._planning_executor: ThreadPoolExecutor | None = None
         if self._max_planning_workers > 1:
             self._planning_executor = ThreadPoolExecutor(max_workers=self._max_planning_workers, thread_name_prefix="planner")
+        
+        # Auto-pause configuration - default to enabled with validation
+        try:
+            env_auto_pause = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "true").strip().lower()
+            if env_auto_pause in {"1", "true", "yes", "on"}:
+                self._auto_pause_enabled = True
+            elif env_auto_pause in {"0", "false", "no", "off"}:
+                self._auto_pause_enabled = False
+            else:
+                logger.warning(f"Invalid VDOS_AUTO_PAUSE_ON_PROJECT_END value '{env_auto_pause}', defaulting to enabled")
+                self._auto_pause_enabled = True
+            logger.info(f"Auto-pause on project end initialized: {'enabled' if self._auto_pause_enabled else 'disabled'}")
+        except Exception as exc:
+            logger.error(f"Failed to parse auto-pause configuration, defaulting to enabled: {exc}")
+            self._auto_pause_enabled = True
+        
         # Initialise DB and runtime state
         execute_script(SIM_SCHEMA)
         self._apply_migrations()
@@ -1923,46 +1939,132 @@ class SimulationEngine:
             sim_time=self._format_sim_time(status.current_tick),
         )
 
+    def set_auto_pause(self, enabled: bool) -> dict[str, Any]:
+        """Toggle auto-pause setting at runtime and return comprehensive status information.
+        
+        Args:
+            enabled: Whether to enable auto-pause functionality
+            
+        Returns:
+            Dictionary containing updated auto-pause status and configuration
+        """
+        try:
+            # Update session-level configuration
+            self._auto_pause_enabled = enabled
+            
+            # Log the configuration change
+            logger.info(f"Auto-pause setting updated to: {'enabled' if enabled else 'disabled'}")
+            
+            # Return comprehensive status information
+            return self.get_auto_pause_status()
+            
+        except Exception as exc:
+            logger.error(f"Failed to update auto-pause setting: {exc}")
+            return {
+                "auto_pause_enabled": getattr(self, '_auto_pause_enabled', None),
+                "error": str(exc),
+                "reason": f"Failed to update auto-pause setting: {exc}"
+            }
+
     def get_auto_pause_status(self) -> dict[str, Any]:
-        """Get information about auto-pause status and reasons."""
-        auto_pause_enabled = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "false").lower() == "true"
+        """Get information about auto-pause status and reasons with enhanced project lifecycle calculations."""
+        # Check session-level setting first, then fall back to environment variable
+        if hasattr(self, '_auto_pause_enabled'):
+            auto_pause_enabled = self._auto_pause_enabled
+        else:
+            auto_pause_enabled = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "true").lower() == "true"
         
         if not auto_pause_enabled:
             return {
                 "auto_pause_enabled": False,
-                "reason": "Auto-pause on project end is disabled",
-                "active_projects": None,
-                "future_projects": None
+                "should_pause": False,
+                "active_projects_count": 0,
+                "future_projects_count": 0,
+                "current_week": 0,
+                "reason": "Auto-pause on project end is disabled"
             }
         
         try:
-            active_projects = self.get_active_projects_with_assignments()
-            
-            # Check for future projects
+            # Enhanced current week calculation with validation
             status = self._fetch_state()
-            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
-            current_week = (current_day // 5) + 1
+            if status.current_tick <= 0:
+                current_day = 0
+                current_week = 1
+            else:
+                # Ensure hours_per_day is at least 1 to prevent division by zero
+                hours_per_day = max(1, self.hours_per_day)
+                current_day = (status.current_tick - 1) // hours_per_day
+                current_week = max(1, (current_day // 5) + 1)
             
+            # Get active projects using verified calculation (start_week <= current_week <= end_week)
+            active_projects = self.get_active_projects_with_assignments(current_week)
+            
+            # Check for future projects with enhanced validation
             with get_connection() as conn:
                 future_projects = conn.execute(
                     "SELECT COUNT(*) as count FROM project_plans WHERE start_week > ?",
                     (current_week,)
                 ).fetchone()
             
-            should_pause = len(active_projects) == 0 and future_projects["count"] == 0
+            future_count = future_projects["count"] if future_projects else 0
+            should_pause = len(active_projects) == 0 and future_count == 0
+            
+            # Enhanced reason with comprehensive project information
+            if should_pause:
+                # Get completed projects for detailed logging
+                with get_connection() as conn:
+                    completed_projects = conn.execute(
+                        """SELECT project_name, start_week, duration_weeks,
+                           (start_week + duration_weeks - 1) as end_week
+                           FROM project_plans 
+                           WHERE (start_week + duration_weeks - 1) < ?
+                           ORDER BY end_week DESC""",
+                        (current_week,)
+                    ).fetchall()
+                
+                completed_count = len(completed_projects)
+                reason = f"All {completed_count} project(s) completed, no future projects (week {current_week}, tick {status.current_tick})"
+                
+                # Log the auto-pause condition for debugging
+                logger.debug(f"Auto-pause condition met: {reason}")
+                
+            elif len(active_projects) > 0:
+                active_names = [p.get("project_name", "Unknown") for p in active_projects[:3]]
+                reason = f"{len(active_projects)} active project(s) in week {current_week}: {', '.join(active_names)}{'...' if len(active_projects) > 3 else ''}"
+                
+            else:
+                # Get next future project details
+                with get_connection() as conn:
+                    next_future = conn.execute(
+                        """SELECT project_name, start_week FROM project_plans 
+                           WHERE start_week > ? ORDER BY start_week ASC LIMIT 1""",
+                        (current_week,)
+                    ).fetchone()
+                
+                next_project_info = f" (next: '{next_future['project_name']}' in week {next_future['start_week']})" if next_future else ""
+                reason = f"No active projects in week {current_week}, but {future_count} future project(s) exist{next_project_info}"
             
             return {
                 "auto_pause_enabled": True,
                 "should_pause": should_pause,
                 "active_projects_count": len(active_projects),
-                "future_projects_count": future_projects["count"],
+                "future_projects_count": future_count,
                 "current_week": current_week,
-                "reason": "No active or future projects remaining" if should_pause else "Projects still exist"
+                "current_tick": status.current_tick,
+                "current_day": current_day,
+                "reason": reason
             }
             
         except Exception as exc:
+            logger.error(f"Failed to check project status for auto-pause: {exc}")
             return {
                 "auto_pause_enabled": True,
+                "should_pause": False,
+                "active_projects_count": 0,
+                "future_projects_count": 0,
+                "current_week": 0,
+                "current_tick": 0,
+                "current_day": 0,
                 "error": str(exc),
                 "reason": f"Failed to check project status: {exc}"
             }
@@ -1994,29 +2096,99 @@ class SimulationEngine:
                 break
             
             # Check if auto-pause on project completion is enabled
-            auto_pause_on_completion = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "false").lower() == "true"
+            auto_pause_on_completion = getattr(self, '_auto_pause_enabled', True)
             if auto_pause_on_completion:
                 try:
-                    active_projects = self.get_active_projects_with_assignments()
+                    # Enhanced project lifecycle calculations with edge case handling
+                    if state.current_tick <= 0:
+                        current_day = 0
+                        current_week = 1
+                    else:
+                        # Ensure hours_per_day is at least 1 to prevent division by zero
+                        hours_per_day = max(1, self.hours_per_day)
+                        current_day = (state.current_tick - 1) // hours_per_day
+                        current_week = max(1, (current_day // 5) + 1)
+                    
+                    # Get active projects for current week using enhanced calculation
+                    active_projects = self.get_active_projects_with_assignments(current_week)
+                    
                     if not active_projects:
-                        # Check if there are any future projects that haven't started yet
-                        current_day = (state.current_tick - 1) // self.hours_per_day if state.current_tick > 0 else 0
-                        current_week = (current_day // 5) + 1
-                        
+                        # Enhanced multi-project scenario handling
                         with get_connection() as conn:
+                            # Check for future projects that haven't started yet
                             future_projects = conn.execute(
                                 "SELECT COUNT(*) as count FROM project_plans WHERE start_week > ?",
                                 (current_week,)
                             ).fetchone()
+                            
+                            # Also get details of future projects for better logging
+                            future_project_details = conn.execute(
+                                """SELECT project_name, start_week, duration_weeks, 
+                                   (start_week + duration_weeks - 1) as end_week 
+                                   FROM project_plans WHERE start_week > ? 
+                                   ORDER BY start_week ASC""",
+                                (current_week,)
+                            ).fetchall()
                         
-                        if future_projects["count"] == 0:
-                            logger.info("No active or future projects remaining; automatically pausing auto-tick.")
+                        future_count = future_projects["count"] if future_projects else 0
+                        
+                        if future_count == 0:
+                            # Comprehensive logging for auto-pause trigger
+                            with get_connection() as conn:
+                                # Get all completed projects for logging
+                                completed_projects = conn.execute(
+                                    """SELECT project_name, start_week, duration_weeks,
+                                       (start_week + duration_weeks - 1) as end_week
+                                       FROM project_plans 
+                                       WHERE (start_week + duration_weeks - 1) < ?
+                                       ORDER BY end_week DESC""",
+                                    (current_week,)
+                                ).fetchall()
+                                
+                                total_projects = conn.execute(
+                                    "SELECT COUNT(*) as count FROM project_plans"
+                                ).fetchone()["count"]
+                            
+                            completed_count = len(completed_projects)
+                            completed_names = [p["project_name"] for p in completed_projects[:5]]  # Show first 5
+                            
+                            logger.info(
+                                f"🛑 AUTO-PAUSE TRIGGERED: All projects completed! "
+                                f"Week {current_week}, Tick {state.current_tick}, Day {current_day}. "
+                                f"Completed {completed_count}/{total_projects} projects: "
+                                f"{', '.join(completed_names)}{'...' if completed_count > 5 else ''}. "
+                                f"No active or future projects remaining. Pausing auto-tick."
+                            )
+                            
+                            # Also log to console for frontend debugging
+                            print(f"[AUTO-PAUSE] Week {current_week}: All {completed_count} projects completed, pausing simulation")
+                            
                             self._set_auto_tick(False)
                             break
                         else:
-                            logger.info(f"No active projects, but {future_projects['count']} future projects exist; continuing auto-tick.")
+                            # Enhanced logging for multi-project scenarios
+                            future_project_names = [p["project_name"] for p in future_project_details[:3]]  # Show first 3
+                            next_start_week = min(p["start_week"] for p in future_project_details)
+                            logger.debug(
+                                f"Auto-pause check: No active projects in week {current_week}, "
+                                f"but {future_count} future project(s) exist (next starts week {next_start_week}): "
+                                f"{', '.join(future_project_names)}{'...' if len(future_project_details) > 3 else ''}. "
+                                f"Continuing auto-tick."
+                            )
+                    else:
+                        # Enhanced logging for active projects
+                        active_project_names = [p.get("project_name", "Unknown") for p in active_projects[:3]]  # Show first 3
+                        logger.debug(
+                            f"Auto-pause check: {len(active_projects)} active project(s) in week {current_week}: "
+                            f"{', '.join(active_project_names)}{'...' if len(active_projects) > 3 else ''}. "
+                            f"Continuing auto-tick."
+                        )
+                        
                 except Exception as exc:
-                    logger.warning(f"Failed to check active projects for auto-pause: {exc}")
+                    logger.error(
+                        f"Auto-pause check failed at tick {state.current_tick}: {exc}. "
+                        f"Continuing auto-tick to prevent simulation halt."
+                    )
             
             try:
                 self.advance(1, "auto")
