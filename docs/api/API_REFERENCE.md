@@ -403,6 +403,77 @@ Content-Type: application/json
 }
 ```
 
+### Chat Monitoring
+
+#### Monitor Chat Messages for Person
+```http
+GET /api/v1/monitor/chat/messages/{person_id}?scope=all&limit=50&since_id=0
+```
+
+**Parameters:**
+- `person_id` (path): ID of the person to monitor
+- `scope` (query): Filter scope - `all`, `dms`, or `rooms` (default: `all`)
+- `limit` (query): Maximum number of messages to return (default: 50)
+- `since_id` (query): Return messages with ID greater than this value (default: 0)
+
+**Response:**
+```json
+{
+  "dms": [
+    {
+      "id": 1,
+      "sender": "alice",
+      "recipient": "bob",
+      "body": "Can you review the auth PR?",
+      "sent_at": "2024-01-15T14:30:00Z"
+    }
+  ],
+  "rooms": [
+    {
+      "id": 2,
+      "room_id": 1,
+      "room_slug": "dashboard-team",
+      "sender": "alice",
+      "body": "Authentication module is ready!",
+      "mentions": ["bob"],
+      "sent_at": "2024-01-15T14:35:00Z"
+    }
+  ]
+}
+```
+
+#### Monitor Room Messages
+```http
+GET /api/v1/monitor/chat/room/{room_slug}/messages?limit=50&since_id=0
+```
+
+**Parameters:**
+- `room_slug` (path): Slug identifier of the room
+- `limit` (query): Maximum number of messages to return (default: 50)
+- `since_id` (query): Return messages with ID greater than this value (default: 0)
+
+**Response:**
+```json
+[
+  {
+    "id": 2,
+    "room_id": 1,
+    "sender": "alice",
+    "body": "Authentication module is ready for testing!",
+    "mentions": ["bob", "charlie"],
+    "sent_at": "2024-01-15T14:30:00Z"
+  },
+  {
+    "id": 3,
+    "room_id": 1,
+    "sender": "bob",
+    "body": "Great! I'll test it now.",
+    "mentions": [],
+    "sent_at": "2024-01-15T14:32:00Z"
+  }
+]
+```
+
 ### Reports and Analytics
 
 #### Get Simulation Reports
@@ -513,6 +584,25 @@ GET /mailboxes/{address}/drafts
 
 ## Chat Server API
 
+### Create User
+```http
+PUT /users/{handle}
+Content-Type: application/json
+
+{
+  "display_name": "Alice Johnson"
+}
+```
+
+**Response:**
+```json
+{
+  "handle": "alice",
+  "display_name": "Alice Johnson",
+  "created_at": "2024-01-15T10:00:00Z"
+}
+```
+
 ### Create Room
 ```http
 POST /rooms
@@ -521,7 +611,8 @@ Content-Type: application/json
 {
   "slug": "dashboard-team",
   "name": "Dashboard Team",
-  "is_dm": false
+  "is_dm": false,
+  "participants": ["alice", "bob", "charlie"]
 }
 ```
 
@@ -538,7 +629,7 @@ Content-Type: application/json
 
 ### Post Message to Room
 ```http
-POST /rooms/{room_id}/messages
+POST /rooms/{room_slug}/messages
 Content-Type: application/json
 
 {
@@ -552,7 +643,7 @@ Content-Type: application/json
 ```json
 {
   "id": 1,
-  "room_id": 1,
+  "room_slug": "dashboard-team",
   "sender": "alice",
   "body": "Authentication module is ready for testing!",
   "mentions": ["bob", "charlie"],
@@ -562,7 +653,7 @@ Content-Type: application/json
 
 ### Send Direct Message
 ```http
-POST /dm
+POST /dms
 Content-Type: application/json
 
 {
@@ -572,9 +663,72 @@ Content-Type: application/json
 }
 ```
 
+**Response:**
+```json
+{
+  "id": 1,
+  "sender": "alice",
+  "recipient": "bob",
+  "body": "Can you review the auth PR when you have a moment?",
+  "room_slug": "dm:alice:bob",
+  "sent_at": "2024-01-15T14:30:00Z"
+}
+```
+
+### Get User Rooms
+```http
+GET /users/{handle}/rooms
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "slug": "project-alpha",
+    "name": "Project Alpha",
+    "is_dm": false,
+    "participants": ["alice", "bob", "charlie"],
+    "created_at": "2024-01-15T10:00:00Z"
+  }
+]
+```
+
+### Get User Direct Messages
+```http
+GET /users/{handle}/dms
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "sender": "bob",
+    "recipient": "alice", 
+    "body": "Sure, I'll take a look today",
+    "room_slug": "dm:alice:bob",
+    "sent_at": "2024-01-15T14:32:00Z"
+  }
+]
+```
+
 ### Get Room Messages
 ```http
-GET /rooms/{room_id}/messages?limit=50&since_id=0
+GET /rooms/{room_slug}/messages?limit=50&since_id=0
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "room_slug": "project-alpha",
+    "sender": "alice",
+    "body": "Hey team, let's start the project discussion",
+    "sent_at": "2024-01-15T14:30:00Z"
+  }
+]
 ```
 
 ### Get DM History

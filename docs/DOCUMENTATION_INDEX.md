@@ -23,12 +23,13 @@ This documentation was generated on 2025-10-17 to provide a comprehensive guide 
 
 **Contains**:
 - System architecture overview with diagrams
-- Component architecture for all 5 main modules:
+- Component architecture for all 6 main modules:
   - Email Server (Port 8000)
   - Chat Server (Port 8001)
   - Simulation Manager (Port 8015)
   - Virtual Workers
   - PySide6 GUI
+  - **Web Dashboard Interface** (Browser-based monitoring)
 - Complete database schema documentation
 - Data flow diagrams (Mermaid format)
 - Communication patterns and protocols

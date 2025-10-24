@@ -75,6 +75,7 @@ python -m virtualoffice
 - Persona creation and management
 - Real-time logs and reports
 - Token usage monitoring
+- **Web Dashboard Access**: Navigate to `http://127.0.0.1:8015` for browser-based interface
 
 **First steps in the GUI:**
 1. Click "Start" for each service (Email, Chat, Simulation)
@@ -118,7 +119,28 @@ uvicorn virtualoffice.servers.chat:app --host 127.0.0.1 --port 8001 --reload
 uvicorn virtualoffice.sim_manager:create_app --host 127.0.0.1 --port 8015 --reload
 ```
 
-Then use the API directly or run simulation scripts.
+Then use the API directly, run simulation scripts, or access the web dashboard at `http://127.0.0.1:8015`.
+
+### Option 4: Web Dashboard Interface
+
+Access the browser-based interface for monitoring and visualization:
+
+```bash
+# Start services (any method above)
+# Then navigate to: http://127.0.0.1:8015
+
+# The web dashboard provides:
+# - Real-time chat monitoring with conversation sidebar
+# - Email client interface with inbox/sent management  
+# - Responsive design for desktop and mobile
+# - Professional messaging interface similar to Slack/Discord
+```
+
+**Web Dashboard Features:**
+- **Chat Tab**: View conversations from any persona's perspective with real-time updates
+- **Email Tab**: Browse inbox and sent emails with search and threading
+- **Controls Tab**: Full simulation management (same as GUI)
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
 
 ## Your First Simulation
 

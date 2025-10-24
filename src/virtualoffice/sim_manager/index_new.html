@@ -355,22 +355,121 @@
     </section>
 
     <!-- Chat Tab -->
-    <section id="tab-chat" class="tabbed-section" style="display: none;">
-      <h2>Chat</h2>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="chat-person-select">Persona</label>
-          <select id="chat-person-select"></select>
+    <section id="tab-chat" class="tabbed-section" style="display: none;" role="tabpanel" aria-labelledby="tab-chat-button">
+      <h2 id="chat-tab-heading">Chat</h2>
+      
+      <!-- Chat Client Header -->
+      <div class="chat-client-header" role="toolbar" aria-label="Chat client controls">
+        <div class="chat-client-controls">
+          <div class="form-group">
+            <label for="chat-person-select">Persona</label>
+            <select id="chat-person-select" aria-describedby="chat-person-help">
+              <option value="">Select a persona...</option>
+            </select>
+            <div id="chat-person-help" class="sr-only">Choose which persona's chat conversations to view</div>
+          </div>
+        </div>
+        
+        <div class="chat-client-actions">
+          <button id="chat-sidebar-toggle" class="chat-sidebar-toggle" aria-describedby="chat-sidebar-toggle-help">
+            <span class="toggle-icon" aria-hidden="true">☰</span> Menu
+          </button>
+          <div id="chat-sidebar-toggle-help" class="sr-only">Toggle conversation sidebar</div>
+          <button id="chat-refresh-btn" class="secondary" aria-describedby="chat-refresh-help">
+            <span aria-hidden="true">🔄</span> Refresh
+          </button>
+          <div id="chat-refresh-help" class="sr-only">Refresh chat conversations</div>
+          <div class="chat-status-indicator" role="status" aria-live="polite">
+            <span id="chat-last-refresh">Never refreshed</span>
+          </div>
         </div>
       </div>
-      <div class="controls-grid">
-        <div class="card">
-          <h3>DMs</h3>
-          <div id="chat-dms-list" class="vertical-list"></div>
-        </div>
-        <div class="card">
-          <h3>Rooms</h3>
-          <div id="chat-rooms-list" class="vertical-list"></div>
+
+      <!-- Chat Client Body - Two Pane Layout -->
+      <div class="chat-client-body" role="main" aria-label="Chat client interface">
+        <!-- Mobile sidebar overlay -->
+        <div class="chat-sidebar-overlay" id="chat-sidebar-overlay" aria-hidden="true"></div>
+        <div class="chat-client-layout" id="chat-client-layout">
+          <!-- Chat Sidebar Pane -->
+          <div class="chat-sidebar-pane" role="region" aria-labelledby="chat-sidebar-heading">
+            <div class="chat-sidebar">
+              <div class="chat-sidebar-header">
+                <h3 id="chat-sidebar-heading" class="sr-only">Conversations</h3>
+                <div class="chat-search-container">
+                  <input type="text" id="chat-search" class="chat-search-input" placeholder="Search conversations..." aria-label="Search conversations" />
+                  <button id="chat-search-clear" class="chat-search-clear" aria-label="Clear search" style="display: none;">×</button>
+                </div>
+              </div>
+              <div class="chat-sidebar-content">
+                <div class="conversation-section" id="rooms-section">
+                  <h4 class="section-title">
+                    <span class="section-icon" aria-hidden="true">#</span>
+                    Rooms 
+                    <span class="section-count" id="rooms-count">(0)</span>
+                  </h4>
+                  <div class="conversation-list" id="chat-rooms-list" role="list" aria-label="Chat rooms">
+                    <!-- Room conversation items will be populated here -->
+                  </div>
+                </div>
+                <div class="conversation-section" id="dms-section">
+                  <h4 class="section-title">
+                    <span class="section-icon" aria-hidden="true">@</span>
+                    Direct Messages 
+                    <span class="section-count" id="dms-count">(0)</span>
+                  </h4>
+                  <div class="conversation-list" id="chat-dms-list" role="list" aria-label="Direct messages">
+                    <!-- DM conversation items will be populated here -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Message Pane -->
+          <div class="chat-message-pane" role="region" aria-labelledby="chat-message-heading">
+            <div class="chat-message-view">
+              <div class="chat-message-header">
+                <div class="conversation-title">
+                  <h3 id="chat-message-heading" class="conversation-name">Select a conversation</h3>
+                  <div class="conversation-meta">
+                    <span class="participant-list"></span>
+                    <span class="message-count"></span>
+                  </div>
+                </div>
+                <div class="message-actions">
+                  <div class="message-search-container">
+                    <input type="text" id="message-search" class="message-search" placeholder="Search in conversation..." aria-label="Search messages in current conversation" />
+                    <div class="message-search-controls" id="message-search-controls" style="display: none;">
+                      <span class="search-results-count" id="search-results-count"></span>
+                      <button id="search-prev-btn" class="search-nav-btn" aria-label="Previous search result" title="Previous (Shift+Enter)">↑</button>
+                      <button id="search-next-btn" class="search-nav-btn" aria-label="Next search result" title="Next (Enter)">↓</button>
+                      <button id="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear (Escape)">✕</button>
+                    </div>
+                  </div>
+                  <button id="message-refresh-btn" class="message-refresh-btn secondary" aria-label="Refresh messages">🔄</button>
+                </div>
+              </div>
+              
+              <div class="chat-message-content">
+                <div class="message-thread" id="message-thread" role="log" aria-live="polite" aria-label="Message thread">
+                  <!-- Message bubbles will be populated here -->
+                  <div class="message-thread-placeholder">
+                    <div class="placeholder-icon" aria-hidden="true">💬</div>
+                    <div class="placeholder-text">
+                      <h4>No conversation selected</h4>
+                      <p>Select a conversation from the sidebar to view messages</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="chat-message-footer">
+                <div class="message-status">
+                  Last updated: <span id="chat-message-last-refresh">Never</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

@@ -749,6 +749,32 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
         return result
 
+    @app.get(f"{API_PREFIX}/monitor/chat/room/{{room_slug}}/messages")
+    def monitor_room_messages(
+        room_slug: str,
+        limit: int | None = Query(default=100, ge=1, le=1000),
+        since_id: int | None = Query(default=None),
+        since_timestamp: str | None = Query(default=None),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> list[dict]:
+        """Return messages for a specific chat room via the chat server."""
+        chat_client = getattr(engine.chat_gateway, "client", None)
+        if chat_client is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Chat client unavailable")
+
+        params = {"limit": limit}
+        if since_id is not None:
+            params["since_id"] = since_id
+        if since_timestamp is not None:
+            params["since_timestamp"] = since_timestamp
+
+        try:
+            response = chat_client.get(f"/rooms/{room_slug}/messages", params=params)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
+
     # --- Export/Import endpoints ---
     @app.get(f"{API_PREFIX}/export/personas")
     def export_personas(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:

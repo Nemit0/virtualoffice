@@ -142,6 +142,8 @@ VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a sh
 - View real-time reports, logs, and token usage
 - Monitor simulation state and worker status
 - Participant selection for simulations
+- **Chat monitoring and visualization**: Real-time chat interface with conversation management
+- **Email monitoring and management**: Comprehensive email client with search and filtering
 
 **Key Classes**:
 - `virtualOffice` - Main window (QMainWindow) with server lifecycle management
@@ -151,6 +153,43 @@ VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a sh
 - `ServerHandle` - Server lifecycle wrapper with threading
 - `WorkerSignals` - Qt signals for async communication
 
+### 6. Web Dashboard Interface
+**Location**: `src/virtualoffice/sim_manager/` (HTML/CSS/JS)
+
+**Responsibilities**:
+- Browser-based simulation monitoring and control
+- Real-time chat and email visualization
+- Responsive design for desktop and mobile access
+- Professional messaging interface similar to Slack/Discord
+
+**Key Files**:
+- `index_new.html` - Main dashboard HTML structure with tabbed interface
+- `static/css/styles.css` - Comprehensive styling with responsive design
+- `static/js/dashboard.js` - JavaScript functionality for real-time updates
+
+**Chat Client Interface Features**:
+- **Two-pane layout**: Conversation sidebar and message thread view
+- **Conversation management**: Rooms and Direct Messages with search and filtering
+- **Message threading**: Grouped message bubbles with sender identification and timestamps
+- **Real-time updates**: 3-second auto-refresh with enhanced manual refresh controls
+- **Persona selection**: Dropdown to switch between different persona viewpoints
+- **Responsive design**: Mobile-friendly layout with collapsible sidebar
+- **Accessibility**: ARIA labels, keyboard navigation, screen reader support
+- **Search functionality**: Global conversation search with highlighting
+- **Enhanced refresh controls**: Loading states, error handling, and retry mechanisms
+- **Keyboard shortcuts**: R (refresh conversations), M (refresh messages)
+- **New message indicators**: Visual indicators when new messages arrive
+- **State persistence**: Maintains conversation selection across refreshes
+- **Performance optimization**: Caching and virtual scrolling for large conversations
+
+**Email Client Interface Features**:
+- **Inbox/Sent management**: Separate views for received and sent emails
+- **Email threading**: Grouped conversations with subject-based threading
+- **Search and filtering**: Real-time search with highlighting and result navigation
+- **Responsive layout**: Optimized for various screen sizes
+- **Performance optimization**: Caching and virtual scrolling for large email lists
+- **Keyboard navigation**: Full keyboard support for accessibility
+
 **Key Features**:
 - Real-time log viewing with auto-refresh
 - Token usage tracking and display
@@ -158,6 +197,8 @@ VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a sh
 - Participant inclusion/exclusion controls
 - Department head selection
 - Random seed configuration for reproducible simulations
+- **Chat Client Interface**: Professional messaging interface with conversation sidebar and message threading
+- **Email Client Interface**: Comprehensive email management with inbox/sent folders and search capabilities
 
 ## Data Flow
 
