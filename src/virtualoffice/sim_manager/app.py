@@ -824,7 +824,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         }
         
         for person in people:
-            # Convert PersonRead to export format (exclude id and persona_markdown)
+            # Convert PersonRead to export format (exclude id only, include persona_markdown)
             persona_data = {
                 "name": person.name,
                 "role": person.role,
@@ -844,7 +844,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 "schedule": [{"start": block.start, "end": block.end, "activity": block.activity} 
                            for block in person.schedule] if person.schedule else [],
                 "event_playbook": dict(person.event_playbook) if person.event_playbook else {},
-                "statuses": list(person.statuses) if person.statuses else []
+                "statuses": list(person.statuses) if person.statuses else [],
+                "persona_markdown": person.persona_markdown
             }
             export_data["personas"].append(persona_data)
         

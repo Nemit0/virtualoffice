@@ -28,14 +28,14 @@ def test_build_worker_markdown_includes_core_sections():
         schedule=schedule,
         planning_guidelines=("Limit context switches","Close the hour with inbox zero"),
         event_playbook={"client_change": ("Acknowledge scope shift", "Replan backlog")},
-        statuses=("Working", "Away"),
+        statuses=("근무중", "자리비움"),
     )
 
     assert "# Minseo Lee ? Engineering Manager" in markdown
     assert "| 09:00 | 10:00 | Team stand-up |" in markdown
     assert "Limit context switches" in markdown
     assert "**client_change**" in markdown
-    assert "Working" in markdown and "Vacation" not in markdown
+    assert "근무중" in markdown and "휴가" not in markdown
 
 
 def test_virtual_worker_uses_defaults_when_optional_data_missing():

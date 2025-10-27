@@ -37,12 +37,12 @@ def render_minute_schedule(blocks: Sequence[ScheduleBlock], granularity: int = 1
 
 
 DEFAULT_STATUSES: Sequence[str] = (
-    "Working",
-    "Away",
-    "OffDuty",
-    "Overtime",
-    "SickLeave",
-    "Vacation",
+    "근무중",
+    "자리비움",
+    "퇴근",
+    "야근",
+    "병가",
+    "휴가",
 )
 
 
@@ -85,7 +85,7 @@ def _schedule_table(blocks: Sequence[ScheduleBlock]) -> str:
 
 def _render_event_playbook(playbook: Mapping[str, Sequence[str]] | None) -> str:
     if not playbook:
-        return "- Document new playbook entries as scenarios emerge."
+        return "- 시나리오가 발생할 때 새로운 대응 매뉴얼 항목을 문서화합니다."
     sections = []
     for event_name, steps in playbook.items():
         header = f"- **{event_name}**"
@@ -106,9 +106,9 @@ def build_worker_markdown(
     planning_section = _format_bullets(
         planning_guidelines
         or (
-            "Review hourly plan for upcoming dependencies.",
-            "Log sent emails and chat updates before status changes.",
-            "Queue follow-ups for any blocked tasks before daily report.",
+            "향후 의존성에 대한 시간별 계획을 검토합니다.",
+            "상태 변경 전에 발송된 이메일과 채팅 업데이트를 기록합니다.",
+            "일일 보고서 작성 전에 차단된 작업에 대한 후속 조치를 대기열에 추가합니다.",
         )
     )
 
@@ -140,18 +140,18 @@ def build_worker_markdown(
     template += "\n\n## Daily Schedule Blueprint\n"
     template += "| Start | End | Focus |\n| ----- | --- | ----- |\n"
     template += f"{schedule_rows}\n"
-    template += "\n## Status Vocabulary\n"
+    template += "\n## 상태 어휘\n"
     template += _format_bullets(active_statuses)
-    template += "\n\n## Hourly Planning Ritual\n"
+    template += "\n\n## 시간별 계획 수립 절차\n"
     template += planning_section
-    template += "\n\n## Event Playbook\n"
+    template += "\n\n## 이벤트 대응 매뉴얼\n"
     template += _render_event_playbook(event_playbook)
-    template += "\n\n## Daily Report Checklist\n"
+    template += "\n\n## 일일 보고서 체크리스트\n"
     template += _format_bullets(
         (
-            "Summarise progress versus daily goals.",
-            "Call out blockers with owner and next action.",
-            "Note cross-team asks that need follow-up tomorrow.",
+            "일일 목표 대비 진행 상황을 요약합니다.",
+            "담당자와 다음 조치가 포함된 차단 요소를 명시합니다.",
+            "내일 후속 조치가 필요한 팀 간 요청 사항을 기록합니다.",
         )
     )
     template += "\n"
