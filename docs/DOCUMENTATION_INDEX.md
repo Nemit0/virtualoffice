@@ -96,7 +96,7 @@ docs/
 │   └── sim-manager-api.md                    # (To be created)
 ├── workflows/                                 # Workflow documentation (directory created)
 │   ├── testing.md                           # ✓ Created - Comprehensive testing documentation
-│   ├── simulation-lifecycle.md               # (To be created)
+│   ├── simulation-lifecycle.md               # ✓ Created - Simulation flow across lifecycle + planning orchestrator
 │   ├── worker-behavior.md                    # (To be created)
 │   ├── token-tracking.md                     # (To be created)
 │   └── multi-project.md                      # (To be created)
@@ -127,7 +127,7 @@ If you're integrating with VDOS services:
 ### For Running Simulations
 If you want to run simulations:
 1. `docs/README.md#quick-start` - Get started quickly
-2. `docs/workflows/simulation-lifecycle.md` - How simulations work (to be created)
+2. `docs/workflows/simulation-lifecycle.md` - How simulations work
 3. `docs/workflows/worker-behavior.md` - How workers behave (to be created)
 4. `docs/scripts/simulation-scripts.md` - Pre-built simulation scripts (to be created)
 
