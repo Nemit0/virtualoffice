@@ -182,7 +182,7 @@ If you're adding features:
 - Chat Server: `src/virtualoffice/servers/chat/`
 - Simulation Manager: `src/virtualoffice/sim_manager/`
 - Virtual Workers: `src/virtualoffice/virtualWorkers/`
-- GUI Application: `src/virtualoffice/app.py`
+- Web Dashboard: `src/virtualoffice/sim_manager/index_new.html`
 - Common Utilities: `src/virtualoffice/common/`
 - Utils: `src/virtualoffice/utils/`
 
@@ -229,6 +229,16 @@ Each module needs detailed documentation including:
 - ✅ **virtual_worker_context.md**: Complete documentation for VirtualWorker Context Classes including PlanningContext, DailyPlanningContext, EventContext, ReportContext, EventResponse, integration patterns, and localization support
 - ✅ **localization.md**: Comprehensive documentation for the localization system including LocalizationManager class, supported locales, integration examples, Korean persona integration testing, and extension guidelines
 - ✅ **planner.md**: Complete documentation for the planner system including GPTPlanner, StubPlanner, persona integration, localization support, and planning workflows
+
+**New Module Documentation to review (refactor additions):**
+- ➕ **people_repository.md**: People CRUD + schedules, row↔model mapping
+- ➕ **plan_store.md**: Worker plan storage and queries
+- ➕ **report_store.md**: Daily/hourly/simulation report persistence and queries
+- ➕ **metrics.md**: Thread-safe bounded metrics recorder for planner usage
+- ➕ **planner_service.md**: Planner invocation service with strict/fallback and metrics
+- ➕ **planning_orchestrator.md**: Orchestrates daily/hourly planning and reports
+- ➕ **worker_registry.md**: VirtualWorker creation/sync with lazy imports
+- ➕ **lifecycle.md**: Start/stop/reset/auto-ticks and auto-pause logic
 
 **Completed Workflow Documentation:**
 - ✅ **testing.md**: Comprehensive testing documentation including test suite organization, Korean persona integration tests, performance testing, integration tests, and debugging guidelines

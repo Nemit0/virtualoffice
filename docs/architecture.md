@@ -2,12 +2,12 @@
 
 ## System Overview
 
-VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a shared SQLite database. The simulation engine has been refactored into modular components for improved maintainability and testability.
+VDOS is a three-tier architecture with FastAPI services, a Web Dashboard, and a shared SQLite database. The simulation engine has been refactored into modular components for improved maintainability and testability.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│                    PySide6 GUI Dashboard                       │
-│                  (src/virtualoffice/app.py)                    │
+│                        Web Dashboard                           │
+│       (src/virtualoffice/sim_manager/index_new.html)           │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐   │
 │  │   Server     │  │  Simulation  │  │     Persona       │   │
@@ -30,7 +30,7 @@ VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a sh
          │                 │                  │
          │                 │           ┌──────▼──────────────────┐
          │                 │           │ SimulationEngine        │
-         │                 │           │ (Orchestrator <500 LOC) │
+         │                 │           │   (Facade/Orchestrator) │
          │                 │           └──────┬──────────────────┘
          │                 │                  │
          │                 │    ┌─────────────┼─────────────┐
@@ -69,7 +69,7 @@ VDOS is a three-tier architecture with FastAPI services, a PySide6 GUI, and a sh
 
 ### Refactored Architecture Benefits
 
-**Modularity**: Engine reduced from 2360+ lines to <500 lines orchestrator
+**Modularity**: Engine acts as a thin facade; core responsibilities live in focused modules
 **Testability**: Each module has comprehensive unit tests with >90% coverage
 **Maintainability**: Clear separation of concerns and single responsibilities
 **Extensibility**: Easy to add new features without modifying core engine
