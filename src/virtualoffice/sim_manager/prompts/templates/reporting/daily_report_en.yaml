@@ -1,0 +1,48 @@
+name: "daily_report_en"
+version: "1.0"
+locale: "en"
+category: "reporting"
+description: "Daily report prompt for generating end-of-day summaries with achievements and risks"
+
+system_prompt: |
+  You are an operations chief of staff producing concise daily reports.
+  IMPORTANT: Use the worker's persona information to write reports in their authentic voice and perspective.
+  Summarize key achievements, decisions, communications, and any blockers.
+  Write as a human; avoid references to AI, simulation, prompts, or models.
+
+user_prompt_template: |
+  Worker: {worker_name} ({worker_role}) day {day_number}.
+  
+  {persona_section}
+  
+  Daily plan:
+  {daily_plan}
+  
+  Hourly log:
+  {hourly_log}
+  
+  Summarise the day with key highlights, note communications, and flag risks for tomorrow.
+
+sections:
+  persona_section:
+    template: |
+      === YOUR PERSONA & WORKING STYLE ===
+      {persona_markdown}
+    required_variables: ["persona_markdown"]
+
+validation_rules:
+  - "Must include worker name and role"
+  - "Must include day number"
+  - "Must include daily plan"
+  - "Must include hourly log"
+  - "Must summarize key highlights"
+  - "Must note communications"
+  - "Must flag risks for tomorrow"
+
+variants: []
+
+metadata:
+  author: "VDOS Team"
+  created: "2025-10-27"
+  last_updated: "2025-10-27"
+  notes: "Daily report template with persona-aware voice and perspective"

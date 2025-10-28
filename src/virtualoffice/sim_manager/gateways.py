@@ -98,6 +98,15 @@ class ChatGateway:
     def send_dm(self, sender: str, recipient: str, body: str) -> dict:
         raise NotImplementedError
 
+    def create_room(self, name: str, participants: list[str], slug: str | None = None) -> dict:
+        raise NotImplementedError
+
+    def send_room_message(self, room_slug: str, sender: str, body: str, *, sent_at_iso: str | None = None) -> dict:
+        raise NotImplementedError
+
+    def get_room_info(self, room_slug: str) -> dict:
+        raise NotImplementedError
+
 
 class HttpChatGateway(ChatGateway):
     def __init__(self, base_url: str, client: httpx.Client | None = None):
@@ -123,6 +132,36 @@ class HttpChatGateway(ChatGateway):
         if sent_at_iso:
             payload["sent_at_iso"] = sent_at_iso
         response = self.client.post("/dms", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def create_room(self, name: str, participants: list[str], slug: str | None = None) -> dict:
+        """Create a group chat room with specified participants."""
+        payload = {
+            "name": name,
+            "participants": participants,
+        }
+        if slug:
+            payload["slug"] = slug
+        response = self.client.post("/rooms", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def send_room_message(self, room_slug: str, sender: str, body: str, *, sent_at_iso: str | None = None) -> dict:
+        """Send a message to a group chat room."""
+        payload = {
+            "sender": sender,
+            "body": body,
+        }
+        if sent_at_iso:
+            payload["sent_at_iso"] = sent_at_iso
+        response = self.client.post(f"/rooms/{room_slug}/messages", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def get_room_info(self, room_slug: str) -> dict:
+        """Get room information including participants."""
+        response = self.client.get(f"/rooms/{room_slug}")
         response.raise_for_status()
         return response.json()
 

@@ -49,10 +49,59 @@ In many orgs, the **data you want to analyze doesn’t exist yet** or can’t be
 
 ## System architecture
 
+### Modular Architecture (Refactored Engine)
+
+VDOS has been refactored from a monolithic 2360+ line engine into a modular, maintainable architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     SimulationEngine                         │
+│                    (Orchestrator <500 lines)                 │
+│  - Coordinates modules                                       │
+│  - Manages lifecycle                                         │
+└────────┬────────────────────────────────────────────────────┘
+         │
+         ├──────────┬──────────┬──────────┬──────────┬─────────
+         │          │          │          │          │
+    ┌────▼───┐ ┌───▼────┐ ┌───▼────┐ ┌──▼─────┐ ┌──▼────────┐
+    │ State  │ │  Tick  │ │ Event  │ │ Comms  │ │  Project  │
+    │Manager │ │Manager │ │ System │ │  Hub   │ │  Manager  │
+    └────┬───┘ └────────┘ └────────┘ └────────┘ └───────────┘
+         │
+    ┌────▼──────────────────────────────────────────┐
+    │        WorkerRuntime (per worker)             │
+    │  - Individual worker state                     │
+    │  - Message queue                               │
+    └────┬──────────────────────────────────────────┘
+         │
+    ┌────▼──────────────────────────────────────────┐
+    │           VirtualWorker                        │
+    │  - Owns persona                                │
+    │  - Plans autonomously                          │
+    │  - Uses PromptManager                          │
+    └────┬──────────────────────────────────────────┘
+         │
+    ┌────▼──────────────────────────────────────────┐
+    │         PromptManager + Templates             │
+    │  - YAML-based templates                        │
+    │  - Context builders                            │
+    │  - A/B testing support                         │
+    └───────────────────────────────────────────────┘
+```
+
+**Core Modules:**
+- **SimulationState**: Database operations and state persistence
+- **TickManager**: Time advancement and work hours calculation
+- **EventSystem**: Event injection and processing
+- **CommunicationHub**: Email/chat coordination and scheduling
+- **WorkerRuntime**: Per-worker state and message queuing
+- **ProjectManager**: Project plans and team assignments
+- **PromptManager**: Centralized YAML-based prompt templates with versioning
 
 **Implementation stance**
 - Each server is a standalone FastAPI app exposing REST endpoints.
-- Agents are headless workers (async tasks) that call those endpoints.
+- Core simulation logic is modularized into focused, testable components.
+- Virtual workers are autonomous agents that plan and communicate using AI.
 - A single process can host all services for simplicity in dev; split later if needed.
 
 ---
@@ -226,6 +275,7 @@ Environment variables (see `.env.template` for full list):
 - `VDOS_WORKDAY_END` (default `18:00`)
 - `VDOS_DEFAULT_BREAK_PATTERN` (e.g., `25/5, 90/lunch/60`)
 - `VDOS_LOCALE_TZ` (default `Asia/Seoul`)
+- `VDOS_LOCALE` (default `en`) – Language locale (`en` for English, `ko` for Korean with comprehensive localization)
 
 ---
 
@@ -311,6 +361,35 @@ curl -X POST http://127.0.0.1:8015/api/v1/simulation/advance -H "Content-Type: a
   -d '{ "ticks": 480, "reason": "manual test" }'
 ```
 
+### 5) Developer Notes: Refactored Architecture
+
+VDOS has been refactored into a modular architecture for better maintainability:
+
+**Core Modules** (in `src/virtualoffice/sim_manager/core/`):
+- `simulation_state.py` - Database operations and state persistence
+- `tick_manager.py` - Time advancement and work hours
+- `event_system.py` - Event injection and processing
+- `communication_hub.py` - Email/chat coordination
+- `worker_runtime.py` - Per-worker state management
+- `project_manager.py` - Project plans and assignments
+
+**Prompt Management** (in `src/virtualoffice/sim_manager/prompts/`):
+- `prompt_manager.py` - YAML template loading and caching
+- `context_builder.py` - Context aggregation for prompts
+- `metrics_collector.py` - Performance tracking
+- `templates/` - YAML prompt templates (planning, reporting, events)
+
+**Enhanced Workers** (in `src/virtualoffice/virtualWorkers/`):
+- `virtual_worker.py` - Autonomous worker with planning capabilities
+- `planner_mixin.py` - Planning methods
+- `context_classes.py` - Context dataclasses for planning
+
+For detailed documentation, see:
+- `docs/architecture.md` - Complete architecture overview
+- `docs/guides/migration_guide.md` - Migration guide for refactored engine
+- `docs/guides/template_authoring.md` - Creating custom prompt templates
+- `docs/modules/` - Individual module documentation
+
 ---
 
 ## Seeding dummy personas & a project
@@ -367,12 +446,57 @@ curl -X POST http://127.0.0.1:8015/api/v1/projects/seed \
 
 ## Extending with AI
 
-* **Plan synthesis**: use an LLM prompt to transform role+skills+project context into hourly plans.
-* **Persona generation**: GPT-4o assisted creation of realistic worker profiles with Korean localization support.
-* **Drafting messages**: generate polite, role-consistent emails/chats; keep a “tone” profile per person.
-* **Report generation**: summarize completed/blocked/next; enforce consistent rubric.
-* **Event realism**: sample distributions for delays, misunderstanding probability, and rework rates.
-* **Korean localization**: Set `VDOS_LOCALE=ko` for natural Korean workplace communication across all AI features.
+### Prompt Management System
+
+VDOS includes a centralized prompt management system for AI-powered features:
+
+* **YAML-based templates**: All LLM prompts are defined in versioned YAML templates
+* **Template categories**: Planning (hourly, daily), reporting, events, communication
+* **Localization support**: Separate templates for English (`_en.yaml`) and Korean (`_ko.yaml`)
+* **A/B testing**: Support for prompt variants with performance metrics
+* **Context-aware prompts**: Automatic context building with persona, team, project info
+* **Metrics collection**: Track token usage, duration, and success rates per template
+
+### AI Features
+
+* **Plan synthesis**: LLM transforms role+skills+project context into hourly plans using template-based prompts
+* **Persona generation**: GPT-4o assisted creation of realistic worker profiles with Korean localization support
+* **Worker-driven planning**: Virtual workers autonomously plan and adapt using PromptManager
+* **Drafting messages**: Generate polite, role-consistent emails/chats with personality preservation
+* **Report generation**: Summarize completed/blocked/next tasks with consistent rubrics
+* **Event reactions**: Workers respond to simulation events with context-aware adjustments
+* **Korean localization**: Set `VDOS_LOCALE=ko` for natural Korean workplace communication across all AI features
+
+### Template Authoring
+
+Create custom prompt templates in `src/virtualoffice/sim_manager/prompts/templates/`:
+
+```yaml
+name: "hourly_planning_en"
+version: "1.0"
+locale: "en"
+category: "planning"
+
+system_prompt: |
+  You act as an operations coach who reshapes hourly schedules.
+
+user_prompt_template: |
+  Worker: {worker_name} ({worker_role}) at tick {tick}.
+  {persona_section}
+  {team_roster_section}
+  
+  Plan the next few hours with realistic tasks.
+
+sections:
+  persona_section:
+    template: "=== YOUR PERSONA ===\n{persona_markdown}"
+    required_variables: ["persona_markdown"]
+
+validation_rules:
+  - "Must include scheduled communications section"
+```
+
+See `docs/guides/template_authoring.md` for complete guide.
 
 > Keep a deterministic seed for reproducibility.
 
@@ -424,16 +548,34 @@ virtualoffice/
 │   │   └── chat/               # Chat server (app.py, models.py)
 │   ├── sim_manager/            # Simulation engine and web dashboard
 │   │   ├── app.py              # Simulation API endpoints
-│   │   ├── engine.py           # Core simulation engine (2360+ lines)
+│   │   ├── engine.py           # Refactored orchestrator (<500 lines)
 │   │   ├── planner.py          # GPT and Stub planners
 │   │   ├── gateways.py         # HTTP client adapters
 │   │   ├── schemas.py          # Request/response models
+│   │   ├── core/               # NEW: Core simulation modules
+│   │   │   ├── simulation_state.py  # State persistence & DB
+│   │   │   ├── tick_manager.py      # Tick advancement & timing
+│   │   │   ├── event_system.py      # Event injection & processing
+│   │   │   ├── communication_hub.py # Email/chat coordination
+│   │   │   ├── worker_runtime.py    # Worker runtime state
+│   │   │   └── project_manager.py   # Project & planning coordination
+│   │   ├── prompts/            # NEW: Centralized prompt system
+│   │   │   ├── prompt_manager.py    # Template loading & caching
+│   │   │   ├── context_builder.py   # Context aggregation
+│   │   │   ├── metrics_collector.py # Performance tracking
+│   │   │   └── templates/           # YAML prompt templates
+│   │   │       ├── planning/        # Hourly/daily planning templates
+│   │   │       ├── reporting/       # Daily report templates
+│   │   │       └── events/          # Event reaction templates
 │   │   ├── index_new.html      # Web dashboard interface
 │   │   └── static/             # Dashboard assets (JS, CSS)
 │   │       ├── js/dashboard.js # Dashboard client-side logic
 │   │       └── css/styles.css  # Dashboard styling
 │   ├── virtualWorkers/         # AI persona system
-│   │   └── worker.py           # Worker persona and markdown builder
+│   │   ├── worker.py           # Worker persona and markdown builder
+│   │   ├── virtual_worker.py   # NEW: Enhanced autonomous worker
+│   │   ├── planner_mixin.py    # NEW: Planning methods
+│   │   └── context_classes.py  # NEW: Context dataclasses
 │   ├── common/                 # Shared utilities
 │   │   └── db.py               # SQLite connection helpers
 │   ├── utils/                  # Helper functions
@@ -443,10 +585,38 @@ virtualoffice/
 │   └── vdos.db                 # SQLite database file
 ├── tests/                      # Comprehensive test suite
 │   ├── conftest.py             # Test configuration
+│   ├── core/                   # NEW: Core module tests
+│   │   ├── test_simulation_state.py
+│   │   ├── test_tick_manager.py
+│   │   ├── test_event_system.py
+│   │   ├── test_communication_hub.py
+│   │   ├── test_worker_runtime.py
+│   │   └── test_project_manager.py
+│   ├── prompts/                # NEW: Prompt system tests
+│   │   ├── test_prompt_manager.py
+│   │   └── test_context_builder.py
+│   ├── integration/            # NEW: Integration tests
+│   │   ├── test_long_simulation.py
+│   │   └── test_multi_project.py
+│   ├── performance/            # NEW: Performance benchmarks
+│   │   ├── test_tick_advancement.py
+│   │   ├── test_parallel_planning.py
+│   │   ├── test_memory_usage.py
+│   │   └── test_template_loading.py
 │   ├── test_*.py               # Individual test modules
 │   ├── test_auto_pause_integration.py # Auto-pause integration tests
 │   ├── test_auto_pause_unit.py # Auto-pause unit tests
 │   ├── test_auto_pause_workflow_integration.py # Workflow tests
+│   ├── test_virtual_worker_enhanced.py # Enhanced VirtualWorker tests
+│   ├── integration/            # Integration tests (Phase 5)
+│   │   ├── __init__.py         # Integration test package
+│   │   ├── test_long_simulation.py # 1-week and 4-week simulation tests
+│   │   └── test_multi_project.py # Multi-project scenario tests
+│   ├── performance/            # Performance benchmarks (Phase 5)
+│   │   ├── test_tick_advancement.py # Tick advancement performance
+│   │   ├── test_parallel_planning.py # Parallel planning benchmarks
+│   │   ├── test_memory_usage.py # Memory profiling
+│   │   └── test_template_loading.py # Template caching performance
 │   └── virtualoffice.py        # Test utilities
 ├── docs/                       # Documentation
 │   ├── README.md               # Documentation index
@@ -541,6 +711,9 @@ MIT (placeholder—adjust as needed).
 **VDOS is feature-complete and production-ready!** All major milestones have been achieved:
 
 ✅ **Full System Implementation**: Complete CRUD operations, REST APIs, and simulation engine
+✅ **Modular Architecture**: Refactored from 2360+ line monolith to focused, testable modules (<500 line orchestrator)
+✅ **Prompt Management System**: Centralized YAML-based templates with versioning and A/B testing
+✅ **Worker-Driven Planning**: Autonomous virtual workers with context-aware AI planning
 ✅ **Advanced Planning**: Multi-level planning hierarchy with AI-powered generation
 ✅ **Web Dashboard**: Browser-based interface with real-time monitoring and comprehensive controls
 ✅ **Multi-Project Support**: Configure multiple projects with different teams and timelines via web UI

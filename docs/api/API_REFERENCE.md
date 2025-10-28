@@ -303,6 +303,73 @@ GET /api/v1/people
 GET /api/v1/people/{id}
 ```
 
+#### Generate Persona with AI
+```http
+POST /api/v1/personas/generate
+Content-Type: application/json
+
+{
+  "prompt": "Full stack developer with React and Python experience"
+}
+```
+
+**Locale Behavior:**
+- Respects `VDOS_LOCALE` environment variable
+- `VDOS_LOCALE=en` (default): Generates English personas with English names
+- `VDOS_LOCALE=ko`: Generates Korean personas with Korean names and content
+
+**Response (English locale):**
+```json
+{
+  "persona": {
+    "name": "Alex Chen",
+    "role": "Full Stack Developer",
+    "timezone": "UTC",
+    "work_hours": "09:00-17:00",
+    "break_frequency": "50/10 cadence",
+    "communication_style": "Async",
+    "email_address": "alex.chen@vdos.local",
+    "chat_handle": "alexchen",
+    "is_department_head": false,
+    "skills": ["Python", "React", "PostgreSQL"],
+    "personality": ["Analytical", "Collaborative"],
+    "schedule": [
+      {"start": "09:00", "end": "10:00", "activity": "Daily standup"}
+    ]
+  },
+  "tokens_used": 450
+}
+```
+
+**Response (Korean locale with `VDOS_LOCALE=ko`):**
+```json
+{
+  "persona": {
+    "name": "김지훈",
+    "role": "풀스택 개발자",
+    "timezone": "Asia/Seoul",
+    "work_hours": "09:00-18:00",
+    "break_frequency": "50/10 cadence",
+    "communication_style": "비동기",
+    "email_address": "kim.dev@vdos.local",
+    "chat_handle": "kimdev",
+    "is_department_head": false,
+    "skills": ["Python", "React", "PostgreSQL"],
+    "personality": ["분석적", "협력적"],
+    "schedule": [
+      {"start": "09:00", "end": "10:00", "activity": "일일 스탠드업"}
+    ]
+  },
+  "tokens_used": 480
+}
+```
+
+**Notes:**
+- Requires `OPENAI_API_KEY` environment variable
+- Uses GPT-4o for persona generation
+- Generated persona can be directly used with `POST /api/v1/people`
+- Korean locale ensures authentic Korean workplace terminology and names
+
 #### Get Daily Reports
 ```http
 GET /api/v1/people/{id}/daily-reports?limit=10

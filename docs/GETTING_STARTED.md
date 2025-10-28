@@ -51,9 +51,10 @@ echo "VDOS_AUTO_PAUSE_ON_PROJECT_END=false" >> .env
 - Natural Korean communication patterns and strict language enforcement
 - Korean-localized persona generation with workplace-appropriate terminology
 - Korean timezone (`Asia/Seoul`) and work hours (`09:00-18:00`) defaults
+- Centralized localization system managing all hardcoded strings and templates
+- Consistent Korean experience across all AI-generated content
 
 **Auto-Pause**: Auto-pause is enabled by default (`VDOS_AUTO_PAUSE_ON_PROJECT_END=true`) to automatically stop auto-tick when all projects complete, preventing simulations from running indefinitely after work is done. Set to `false` to disable this behavior.
-- Consistent Korean experience across all AI-generated content
 
 ## Quick Start Options
 
@@ -276,15 +277,67 @@ When you run simulations, you'll find generated content in:
 - Check that simulation has advanced enough ticks
 - Verify project summary provides clear work context
 
+## Advanced Features
+
+### Prompt Management System
+
+VDOS includes a centralized prompt management system for AI-powered features:
+
+**Key Features:**
+- **YAML-based templates**: All LLM prompts defined in versioned YAML templates
+- **Template categories**: Planning (hourly, daily), reporting, events, communication
+- **Localization support**: Separate templates for English (`_en.yaml`) and Korean (`_ko.yaml`)
+- **A/B testing**: Support for prompt variants with performance metrics
+- **Context-aware prompts**: Automatic context building with persona, team, project info
+- **Metrics collection**: Track token usage, duration, and success rates per template
+
+**Template Location**: `src/virtualoffice/sim_manager/prompts/templates/`
+
+**Creating Custom Templates:**
+
+See `docs/guides/template_authoring.md` for a complete guide on creating custom prompt templates.
+
+Example template structure:
+```yaml
+name: "hourly_planning_en"
+version: "1.0"
+locale: "en"
+category: "planning"
+
+system_prompt: |
+  You act as an operations coach who reshapes hourly schedules.
+
+user_prompt_template: |
+  Worker: {worker_name} ({worker_role}) at tick {tick}.
+  {persona_section}
+  {team_roster_section}
+  
+  Plan the next few hours with realistic tasks.
+
+sections:
+  persona_section:
+    template: "=== YOUR PERSONA ===\n{persona_markdown}"
+    required_variables: ["persona_markdown"]
+
+validation_rules:
+  - "Must include scheduled communications section"
+```
+
+**Documentation:**
+- `docs/modules/prompt_system.md` - Complete prompt system reference
+- `docs/guides/template_authoring.md` - Template creation guide
+- `docs/modules/virtual_worker_context.md` - Context classes documentation
+
 ## Next Steps
 
 Once you have a basic simulation running:
 
 1. **Explore the GUI**: Try different persona configurations and project types
-2. **Read the Architecture**: Understand how the components work together
+2. **Read the Architecture**: Understand how the components work together (`docs/architecture.md`)
 3. **Customize Personas**: Create personas that match your use case
-4. **Analyze Output**: Use the generated data for your downstream applications
-5. **Extend the System**: Add new event types or planning strategies
+4. **Customize Prompts**: Create custom prompt templates for specialized scenarios
+5. **Analyze Output**: Use the generated data for your downstream applications
+6. **Extend the System**: Add new event types or planning strategies
 
 ## Getting Help
 
@@ -293,4 +346,61 @@ Once you have a basic simulation running:
 - Look at the test files for usage examples
 - Examine the simulation scripts for complete workflows
 
-The VDOS system is designed to be both powerful and approachable. Start with the GUI to understand the concepts, then move to programmatic control as your needs grow.
+The VDOS system is designed to be both powerful and approachable. Start with the GUI to understand the concepts, then move to programmatic control as your needs grow.## Te
+sting and Validation
+
+VDOS includes comprehensive testing to ensure reliability and correctness:
+
+### Running Tests
+
+```bash
+# Run the complete test suite
+pytest tests/
+
+# Run specific auto-pause integration tests
+pytest tests/test_auto_pause_integration.py -v
+
+# Run with coverage reporting
+pytest tests/ --cov=src/virtualoffice
+```
+
+### Auto-Pause Testing
+
+The auto-pause functionality includes extensive integration tests that validate:
+
+- **Complete workflow**: End-to-end auto-pause triggering when projects complete
+- **Multi-project scenarios**: Overlapping, sequential, and gap project timelines
+- **API endpoints**: Request/response handling and error cases
+- **State persistence**: Session-level configuration changes
+- **Future project detection**: Prevention of premature auto-pause
+
+### Test Coverage
+
+Key test files provide comprehensive coverage:
+- `tests/test_auto_pause_integration.py` - Integration tests for auto-pause workflow
+- `tests/test_auto_pause_unit.py` - Unit tests for individual components
+- `tests/test_sim_manager.py` - Simulation engine tests
+- `tests/test_email_server.py` - Email service tests
+- `tests/test_chat_server.py` - Chat service tests
+
+## Next Steps
+
+- Explore the [API Reference](api/API_REFERENCE.md) for detailed endpoint documentation
+- Review [Architecture](architecture.md) for system design details
+- Check out simulation scripts in the `scripts/` directory for advanced examples
+- Run the test suite to validate your installation
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Services won't start**: Check that ports 8000, 8001, and 8015 are available
+2. **AI features not working**: Verify your OpenAI API key is set correctly
+3. **Database errors**: Ensure the SQLite database file has proper permissions
+4. **Test failures**: Run `pytest tests/ -v` to see detailed error information
+
+### Getting Help
+
+- Check the logs in `virtualoffice.log` for detailed error information
+- Review the comprehensive test suite for usage examples
+- Examine the `agent_reports/` directory for implementation details

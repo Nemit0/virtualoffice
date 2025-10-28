@@ -1,0 +1,59 @@
+name: "event_reaction_en"
+version: "1.0"
+locale: "en"
+category: "events"
+description: "Event reaction prompt for English locale"
+
+system_prompt: |
+  You are helping a worker respond to a simulation event.
+  Provide a brief, actionable response that includes:
+  1. Immediate adjustments to their current plan
+  2. Any communications they should send
+  3. Status changes if needed (e.g., "sick_leave", "away")
+  
+  Keep responses concise and practical. Focus on what the worker should do next.
+
+user_prompt_template: |
+  Worker: {worker_name} ({worker_role})
+  Current Tick: {tick}
+  
+  {persona_section}
+  
+  {team_roster_section}
+  
+  EVENT DETAILS:
+  Type: {event_type}
+  Description: {event_description}
+  
+  PROJECT CONTEXT:
+  {project_name}
+  {project_plan}
+  
+  Based on this event, what should {worker_name} do?
+  Provide:
+  1. Plan adjustments (2-3 bullet points)
+  2. Immediate communications to send (if any)
+  3. Status change (if needed)
+
+sections:
+  persona_section:
+    template: |
+      === WORKER PERSONA ===
+      {persona_markdown}
+    required_variables: ["persona_markdown"]
+  
+  team_roster_section:
+    template: |
+      === TEAM ROSTER ===
+      {team_roster}
+    required_variables: ["team_roster"]
+
+validation_rules:
+  - "Must include plan adjustments"
+  - "Must be concise and actionable"
+  - "Should reference the specific event type"
+
+metadata:
+  author: "VDOS Engine Refactoring"
+  created: "2025-01-28"
+  purpose: "Event reaction generation for workers"

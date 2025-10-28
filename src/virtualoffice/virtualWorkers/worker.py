@@ -7,8 +7,10 @@ from typing import Iterable, Mapping, Sequence
 try:
     from ..utils.completion_util import generate_text
 except ModuleNotFoundError:  # pragma: no cover - fallback when optional deps missing
+
     def generate_text(*args, **kwargs):  # type: ignore[override]
         raise RuntimeError("OpenAI client is not installed; install optional dependencies to enable text generation.")
+
 
 def _to_minutes(value: str) -> int:
     hour, minute = value.split(":", 1)

@@ -1,0 +1,59 @@
+name: "event_reaction_ko"
+version: "1.0"
+locale: "ko"
+category: "events"
+description: "한국어 이벤트 반응 프롬프트"
+
+system_prompt: |
+  당신은 작업자가 시뮬레이션 이벤트에 대응하도록 돕고 있습니다.
+  다음을 포함하는 간결하고 실행 가능한 응답을 제공하세요:
+  1. 현재 계획에 대한 즉각적인 조정
+  2. 보내야 할 커뮤니케이션
+  3. 필요한 경우 상태 변경 (예: "병가", "자리비움")
+  
+  응답은 간결하고 실용적으로 유지하세요. 작업자가 다음에 해야 할 일에 집중하세요.
+
+user_prompt_template: |
+  작업자: {worker_name} ({worker_role})
+  현재 틱: {tick}
+  
+  {persona_section}
+  
+  {team_roster_section}
+  
+  이벤트 세부사항:
+  유형: {event_type}
+  설명: {event_description}
+  
+  프로젝트 컨텍스트:
+  {project_name}
+  {project_plan}
+  
+  이 이벤트를 기반으로 {worker_name}는 무엇을 해야 합니까?
+  다음을 제공하세요:
+  1. 계획 조정 (2-3개 항목)
+  2. 즉시 보낼 커뮤니케이션 (있는 경우)
+  3. 상태 변경 (필요한 경우)
+
+sections:
+  persona_section:
+    template: |
+      === 작업자 페르소나 ===
+      {persona_markdown}
+    required_variables: ["persona_markdown"]
+  
+  team_roster_section:
+    template: |
+      === 팀 명단 ===
+      {team_roster}
+    required_variables: ["team_roster"]
+
+validation_rules:
+  - "계획 조정을 포함해야 함"
+  - "간결하고 실행 가능해야 함"
+  - "특정 이벤트 유형을 참조해야 함"
+
+metadata:
+  author: "VDOS 엔진 리팩토링"
+  created: "2025-01-28"
+  purpose: "작업자를 위한 이벤트 반응 생성"

@@ -22,6 +22,9 @@ def _reload_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def sim_client(tmp_path, monkeypatch):
+    # Set locale to English for tests to avoid Korean name validation issues
+    monkeypatch.setenv("VDOS_LOCALE", "en")
+    
     with _reload_db(tmp_path, monkeypatch):
         email_app_module = importlib.import_module("virtualoffice.servers.email.app")
         chat_app_module = importlib.import_module("virtualoffice.servers.chat.app")
@@ -608,8 +611,8 @@ def test_simulation_reset_endpoint(sim_client):
 
 def test_generate_persona_endpoint(sim_client, monkeypatch):
     client, _, _ = sim_client
-    from virtualoffice.sim_manager import app as sim_app
-
+    
+    # English persona (fixture sets locale to "en")
     def fake_generate(messages, model):
         return (
             '{"name":"Auto Dev","role":"Engineer","timezone":"UTC","work_hours":"09:00-17:00","break_frequency":"50/10 cadence","communication_style":"Async","email_address":"auto.dev@vdos.local","chat_handle":"autodev","is_department_head":false,"skills":["Python"],"personality":["Helpful"],"schedule":[{"start":"09:00","end":"10:00","activity":"Plan"}]}'
@@ -617,7 +620,10 @@ def test_generate_persona_endpoint(sim_client, monkeypatch):
             0,
         )
 
-    monkeypatch.setattr(sim_app, "_generate_persona_text", fake_generate, raising=False)
+    # Patch the function in the module where it's defined
+    import sys
+    app_module = sys.modules['virtualoffice.sim_manager.app']
+    monkeypatch.setattr(app_module, "_generate_persona_text", fake_generate)
 
     resp = client.post(
         "/api/v1/personas/generate",
@@ -627,3 +633,138 @@ def test_generate_persona_endpoint(sim_client, monkeypatch):
     payload = resp.json()["persona"]
     assert payload["name"] == "Auto Dev"
     assert payload["skills"] == ["Python"]
+
+
+def test_generate_korean_persona_endpoint(tmp_path, monkeypatch):
+    """Test Korean persona generation with Korean locale."""
+    # Set Korean locale
+    monkeypatch.setenv("VDOS_LOCALE", "ko")
+    
+    with _reload_db(tmp_path, monkeypatch):
+        email_app_module = importlib.import_module("virtualoffice.servers.email.app")
+        chat_app_module = importlib.import_module("virtualoffice.servers.chat.app")
+        sim_app_module = importlib.import_module("virtualoffice.sim_manager.app")
+        sim_engine_module = importlib.import_module("virtualoffice.sim_manager.engine")
+
+        importlib.reload(email_app_module)
+        importlib.reload(chat_app_module)
+        importlib.reload(sim_app_module)
+        importlib.reload(sim_engine_module)
+
+        if hasattr(email_app_module, "initialise"):
+            email_app_module.initialise()
+        if hasattr(chat_app_module, "initialise"):
+            chat_app_module.initialise()
+
+        email_http = TestClient(email_app_module.app)
+        chat_http = TestClient(chat_app_module.app)
+
+        SimulationEngine = sim_engine_module.SimulationEngine
+        create_app = sim_app_module.create_app
+
+        class TestEmailGateway:
+            def ensure_mailbox(self, address: str, display_name: str | None = None) -> None:
+                payload = {"display_name": display_name} if display_name else None
+                response = email_http.put(f"/mailboxes/{address}", json=payload)
+                assert response.status_code in (200, 201)
+
+            def send_email(self, sender: str, to, subject: str, body: str, cc=None, bcc=None, thread_id=None, sent_at_iso=None) -> dict:
+                response = email_http.post(
+                    "/emails/send",
+                    json={
+                        "sender": sender,
+                        "to": list(to),
+                        "cc": list(cc or []),
+                        "bcc": list(bcc or []),
+                        "subject": subject,
+                        "body": body,
+                        "thread_id": thread_id,
+                    },
+                )
+                assert response.status_code == 201
+                return response.json()
+
+            def close(self) -> None:
+                email_http.close()
+
+        class TestChatGateway:
+            def ensure_user(self, handle: str, display_name: str | None = None) -> None:
+                payload = {"display_name": display_name} if display_name else None
+                response = chat_http.put(f"/users/{handle}", json=payload)
+                assert response.status_code in (200, 201)
+
+            def send_dm(self, sender: str, recipient: str, body: str, sent_at_iso=None) -> dict:
+                response = chat_http.post(
+                    "/dms",
+                    json={"sender": sender, "recipient": recipient, "body": body},
+                )
+                assert response.status_code == 201
+                return response.json()
+            
+            def send_room_message(self, room_slug: str, sender: str, body: str, sent_at_iso=None) -> dict:
+                response = chat_http.post(
+                    f"/rooms/{room_slug}/messages",
+                    json={"sender": sender, "body": body},
+                )
+                assert response.status_code == 201
+                return response.json()
+
+            def close(self) -> None:
+                chat_http.close()
+
+        class TestPlanner:
+            def generate_project_plan(self, **kwargs) -> PlanResult:
+                return PlanResult(content="Project plan stub", model_used="stub-project", tokens_used=1)
+
+            def generate_daily_plan(self, **kwargs) -> PlanResult:
+                worker = kwargs["worker"]
+                day_index = kwargs.get("day_index", 0)
+                return PlanResult(content=f"Daily plan for {worker.name} day {day_index}", model_used="stub-daily", tokens_used=1)
+
+            def generate_hourly_plan(self, **kwargs) -> PlanResult:
+                worker = kwargs["worker"]
+                tick = kwargs.get("tick", 0)
+                reason = kwargs.get("context_reason", "manual")
+                return PlanResult(content=f"Hourly plan tick {tick} for {worker.name} ({reason})", model_used="stub-hourly", tokens_used=1)
+
+            def generate_daily_report(self, **kwargs) -> PlanResult:
+                worker = kwargs["worker"]
+                day_index = kwargs.get("day_index", 0)
+                return PlanResult(content=f"Daily report for {worker.name} day {day_index}", model_used="stub-daily-report", tokens_used=1)
+
+            def generate_simulation_report(self, **kwargs) -> PlanResult:
+                total_ticks = kwargs.get("total_ticks", 0)
+                return PlanResult(content=f"Simulation report after {total_ticks} ticks", model_used="stub-simulation", tokens_used=1)
+                
+        email_gateway = TestEmailGateway()
+        chat_gateway = TestChatGateway()
+        planner = TestPlanner()
+        engine = SimulationEngine(email_gateway=email_gateway, chat_gateway=chat_gateway, planner=planner, hours_per_day=2, tick_interval_seconds=0.02)
+        app = create_app(engine)
+        client = TestClient(app)
+        
+        try:
+            # Korean persona
+            def fake_generate(messages, model):
+                return (
+                    '{"name":"김개발","role":"소프트웨어 엔지니어","timezone":"Asia/Seoul","work_hours":"09:00-18:00","break_frequency":"50/10 cadence","communication_style":"비동기","email_address":"kim.dev@vdos.local","chat_handle":"kimdev","is_department_head":false,"skills":["Python","FastAPI"],"personality":["협력적","꼼꼼함"],"schedule":[{"start":"09:00","end":"10:00","activity":"일일 계획"}]}'
+                    ,
+                    0,
+                )
+
+            # Patch the function
+            import sys
+            app_module = sys.modules['virtualoffice.sim_manager.app']
+            monkeypatch.setattr(app_module, "_generate_persona_text", fake_generate)
+
+            resp = client.post(
+                "/api/v1/personas/generate",
+                json={"prompt": "풀스택 개발자"},
+            )
+            assert resp.status_code == 200
+            payload = resp.json()["persona"]
+            assert payload["name"] == "김개발"
+            assert payload["skills"] == ["Python", "FastAPI"]
+        finally:
+            client.close()
+            engine.close()
