@@ -525,51 +525,15 @@ class SimulationEngine:
         return plan
 
     def _generate_daily_plan(self, person: PersonRead, project_plan: dict[str, Any], day_index: int) -> PlanResult:
-        # Get all active people for team roster
         team = self._get_active_people()
-
-        # Use VirtualWorker if available, otherwise fall back to direct planner call
-        worker = self.workers.get(person.id)
-        if worker:
-            # Lazy import to avoid circular dependency
-            from virtualoffice.virtualWorkers.context_classes import DailyPlanningContext
-            
-            # Build DailyPlanningContext for VirtualWorker
-            daily_context = DailyPlanningContext(
-                project_plan=project_plan["plan"],
-                day_index=day_index,
-                duration_weeks=self.project_duration_weeks,
-                team=team,
-                locale=self._locale,
-                model_hint=self._planner_model_hint,
-            )
-            try:
-                result = worker.plan_daily(daily_context)
-            except Exception as exc:
-                raise RuntimeError(f"Unable to generate daily plan for {person.name}: {exc}") from exc
-        else:
-            # Fallback to direct planner call for backward compatibility
-            try:
-                result = self._call_planner(
-                    "generate_daily_plan",
-                    worker=person,
-                    project_plan=project_plan["plan"],
-                    day_index=day_index,
-                    duration_weeks=self.project_duration_weeks,
-                    team=team,
-                    model_hint=self._planner_model_hint,
-                )
-            except PlanningError as exc:
-                raise RuntimeError(f"Unable to generate daily plan for {person.name}: {exc}") from exc
-
-        self._store_worker_plan(
-            person_id=person.id,
-            tick=day_index,
-            plan_type="daily",
-            result=result,
-            context=f"day_index={day_index}",
+        return self.planning_orchestrator.generate_daily_plan(
+            person=person,
+            project_plan=project_plan,
+            day_index=day_index,
+            duration_weeks=self.project_duration_weeks,
+            team=team,
+            model_hint=self._planner_model_hint,
         )
-        return result
 
     def _generate_hourly_plans_parallel(
         self,
@@ -577,58 +541,12 @@ class SimulationEngine:
             tuple[PersonRead, dict[str, Any], str, int, str, list[str] | None, list[dict[str, Any]] | None]
         ],
     ) -> list[tuple[PersonRead, PlanResult]]:
-        """
-        Generate hourly plans for multiple workers in parallel.
-
-        Args:
-            planning_tasks: List of (person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects)
-
-        Returns:
-            List of (person, PlanResult) tuples in same order as input
-        """
-        if not self._planning_executor or len(planning_tasks) <= 1:
-            # Fall back to sequential planning
-            results = []
-            for task in planning_tasks:
-                person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects = task
-                try:
-                    result = self._generate_hourly_plan(
-                        person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects
-                    )
-                    results.append((person, result))
-                except Exception as exc:
-                    logger.error(f"Sequential planning failed for {person.name}: {exc}")
-                    results.append((person, PlanResult(content="", model_used="error", tokens_used=0)))
-            return results
-
-        # Submit all planning tasks in parallel
-        futures = []
-        for task in planning_tasks:
-            person, project_plan, daily_plan_text, tick, reason, adjustments, all_active_projects = task
-            future = self._planning_executor.submit(
-                self._generate_hourly_plan,
-                person,
-                project_plan,
-                daily_plan_text,
-                tick,
-                reason,
-                adjustments,
-                all_active_projects,
-            )
-            futures.append((person, future))
-
-        # Collect results in order
-        results = []
-        for person, future in futures:
-            try:
-                result = future.result(timeout=240)  # 4 minute timeout per plan
-                results.append((person, result))
-            except Exception as exc:
-                logger.error(f"Parallel planning failed for {person.name}: {exc}")
-                # Return empty plan to maintain order
-                results.append((person, PlanResult(content="", model_used="error", tokens_used=0)))
-
-        return results
+        return self.planning_orchestrator.generate_hourly_plans_parallel(
+            planning_tasks,
+            executor=self._planning_executor,
+            team_provider=lambda: self._get_active_people(),
+            model_hint=self._planner_model_hint,
+        )
 
     def _generate_hourly_plan(
         self,
@@ -640,70 +558,18 @@ class SimulationEngine:
         adjustments: list[str] | None = None,
         all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
-        # Get all active people for team roster
         team = self._get_active_people()
-
-        # Get recent emails for this person (for threading context)
-        recent_emails = self.communication_hub.get_recent_emails_for_person(person.id, limit=10)
-
-        # Use VirtualWorker if available, otherwise fall back to direct planner call
-        worker = self.workers.get(person.id)
-        if worker:
-            # Lazy import to avoid circular dependency
-            from virtualoffice.virtualWorkers.context_classes import PlanningContext
-            
-            # Build PlanningContext for VirtualWorker
-            planning_context = PlanningContext(
-                project_plan=project_plan["plan"],
-                daily_plan=daily_plan_text,
-                tick=tick,
-                reason=reason,
-                team=team,
-                recent_emails=recent_emails,
-                all_active_projects=all_active_projects,
-                locale=self._locale,
-                model_hint=self._planner_model_hint,
-            )
-            try:
-                result = worker.plan_next_hour(planning_context)
-            except Exception as exc:
-                raise RuntimeError(f"Unable to generate hourly plan for {person.name}: {exc}") from exc
-        else:
-            # Fallback to direct planner call for backward compatibility
-            try:
-                result = self._call_planner(
-                    "generate_hourly_plan",
-                    worker=person,
-                    project_plan=project_plan["plan"],
-                    daily_plan=daily_plan_text,
-                    tick=tick,
-                    context_reason=reason,
-                    team=team,
-                    model_hint=self._planner_model_hint,
-                    all_active_projects=all_active_projects,
-                    recent_emails=recent_emails,
-                )
-            except PlanningError as exc:
-                raise RuntimeError(f"Unable to generate hourly plan for {person.name}: {exc}") from exc
-
-        context = f"reason={reason}"
-        content_result = result
-        if adjustments:
-            bullets = "\n".join(f"- {item}" for item in adjustments)
-            loc_manager = get_current_locale_manager()
-            adjustments_header = loc_manager.get_text("live_collaboration_adjustments")
-            content = f"{result.content}\n\n{adjustments_header}:\n{bullets}"
-            content_result = PlanResult(content=content, model_used=result.model_used, tokens_used=result.tokens_used)
-            context += f";adjustments={len(adjustments)}"
-
-        self._store_worker_plan(
-            person_id=person.id,
+        return self.planning_orchestrator.generate_hourly_plan(
+            person=person,
+            project_plan=project_plan,
+            daily_plan_text=daily_plan_text,
             tick=tick,
-            plan_type="hourly",
-            result=content_result,
-            context=context,
+            reason=reason,
+            team=team,
+            model_hint=self._planner_model_hint,
+            adjustments=adjustments,
+            all_active_projects=all_active_projects,
         )
-        return content_result
 
     def _store_worker_plan(
         self,
@@ -778,42 +644,9 @@ class SimulationEngine:
         person: PersonRead,
         hour_index: int,
     ) -> dict[str, Any]:
-        """Generate a summary for a completed hour."""
-        existing = self._fetch_hourly_summary(person.id, hour_index)
-        if existing:
-            return existing
-
-        # Get all hourly plans for this hour
-        start_tick = hour_index * 60 + 1
-        end_tick = (hour_index + 1) * 60
-        hourly_rows = self.plan_store.list_hourly_plans_in_range(person.id, start_tick, end_tick)
-
-        if not hourly_rows:
-            # No plans for this hour, skip summary
-            return {
-                "person_id": person.id,
-                "hour_index": hour_index,
-                "summary": "",
-                "model_used": "none",
-                "tokens_used": 0,
-            }
-
-        hourly_plans = "\n".join(f"Tick {row['tick']}: {row['content'][:200]}..." for row in hourly_rows)
-
-        try:
-            result = self._call_planner(
-                "generate_hourly_summary",
-                worker=person,
-                hour_index=hour_index,
-                hourly_plans=hourly_plans,
-                model_hint=self._planner_model_hint,
-            )
-        except PlanningError as exc:
-            logger.warning(f"Unable to generate hourly summary for {person.name} hour {hour_index}: {exc}")
-            # Store a stub summary instead of failing
-            result = PlanResult(content=f"Hour {hour_index + 1} activities", model_used="stub", tokens_used=0)
-
-        return self._store_hourly_summary(person_id=person.id, hour_index=hour_index, result=result)
+        return self.planning_orchestrator.generate_hourly_summary(
+            person=person, hour_index=hour_index, model_hint=self._planner_model_hint
+        )
 
     def _fetch_daily_report(self, person_id: int, day_index: int) -> dict[str, Any] | None:
         return self.report_store.get_daily_report(person_id, day_index)
@@ -828,76 +661,12 @@ class SimulationEngine:
         if existing:
             return existing
         daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
-
-        # Use hourly summaries instead of all tick logs
-        start_hour = day_index * (self.hours_per_day // 60)
-        end_hour = (day_index + 1) * (self.hours_per_day // 60)
-        # Collect any pre-existing hourly summaries for the day
-        # (leave generation fallback below unchanged)
-        with get_connection() as conn:
-            summary_rows = conn.execute(
-                "SELECT hour_index, summary FROM hourly_summaries WHERE person_id = ? AND hour_index BETWEEN ? AND ? ORDER BY hour_index",
-                (person.id, start_hour, end_hour - 1),
-            ).fetchall()
-
-        if summary_rows:
-            hourly_summary = "\n".join(f"Hour {row['hour_index'] + 1}: {row['summary']}" for row in summary_rows)
-        else:
-            # Fallback: generate hourly summaries now if they don't exist
-            hourly_summary_lines = []
-            for h in range(start_hour, end_hour):
-                summary = self._generate_hourly_summary(person, h)
-                if summary.get("summary"):
-                    hourly_summary_lines.append(f"Hour {h + 1}: {summary['summary']}")
-            hourly_summary = (
-                "\n".join(hourly_summary_lines)
-                if hourly_summary_lines
-                else get_current_locale_manager().get_text("no_hourly_activities")
-            )
-        schedule_blocks = [ScheduleBlock(block.start, block.end, block.activity) for block in person.schedule or []]
-        minute_schedule = render_minute_schedule(schedule_blocks)
-
-        # Use VirtualWorker if available, otherwise fall back to direct planner call
-        worker = self.workers.get(person.id)
-        if worker:
-            # Lazy import to avoid circular dependency
-            from virtualoffice.virtualWorkers.context_classes import ReportContext
-            
-            # Build ReportContext for VirtualWorker
-            report_context = ReportContext(
-                project_plan=project_plan["plan"],
-                day_index=day_index,
-                daily_plan=daily_plan_text,
-                hourly_log=hourly_summary,
-                minute_schedule=minute_schedule,
-                locale=self._locale,
-                model_hint=self._planner_model_hint,
-            )
-            try:
-                result = worker.generate_daily_report(report_context)
-            except Exception as exc:
-                raise RuntimeError(f"Unable to generate daily report for {person.name}: {exc}") from exc
-        else:
-            # Fallback to direct planner call for backward compatibility
-            try:
-                result = self._call_planner(
-                    "generate_daily_report",
-                    worker=person,
-                    project_plan=project_plan["plan"],
-                    day_index=day_index,
-                    daily_plan=daily_plan_text,
-                    hourly_log=hourly_summary,
-                    minute_schedule=minute_schedule,
-                    model_hint=self._planner_model_hint,
-                )
-            except PlanningError as exc:
-                raise RuntimeError(f"Unable to generate daily report for {person.name}: {exc}") from exc
-
-        return self._store_daily_report(
-            person_id=person.id,
+        return self.planning_orchestrator.generate_daily_report(
+            person=person,
             day_index=day_index,
-            schedule_outline=minute_schedule,
-            result=result,
+            project_plan=project_plan,
+            daily_plan_text=daily_plan_text,
+            model_hint=self._planner_model_hint,
         )
 
     def _store_daily_report(
