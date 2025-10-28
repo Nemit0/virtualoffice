@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import hashlib
 import logging
 import random
 import time
@@ -205,6 +204,7 @@ class SimulationEngine:
             hours_per_day=self.hours_per_day,
             locale=self._locale,
             rnd=self._random,
+            initial_auto_pause_enabled=getattr(self, "_auto_pause_enabled", True),
             list_people_fn=self.list_people,
             set_active_ids_fn=lambda ids: setattr(self, "_active_person_ids", ids),
             get_active_ids_fn=lambda: getattr(self, "_active_person_ids", None),
@@ -275,27 +275,7 @@ class SimulationEngine:
         current_day = (status.current_tick - 1) // max(1, self.hours_per_day)
         return max(1, (current_day // 5) + 1)
 
-    def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        summary: dict[str, Any] = {}
-        worker = kwargs.get("worker")
-        if worker is not None:
-            summary["worker"] = getattr(worker, "name", worker)
-        department_head = kwargs.get("department_head")
-        if department_head is not None:
-            summary["department_head"] = getattr(department_head, "name", department_head)
-        project_name = kwargs.get("project_name")
-        if project_name:
-            summary["project_name"] = project_name
-        day_index = kwargs.get("day_index")
-        if day_index is not None:
-            summary["day_index"] = day_index
-        tick = kwargs.get("tick")
-        if tick is not None:
-            summary["tick"] = tick
-        model_hint = kwargs.get("model_hint")
-        if model_hint:
-            summary["model_hint"] = model_hint
-        return summary
+    # (planner context summary moved into PlannerService)
 
     def get_planner_metrics(self, limit: int = 50) -> list[dict[str, Any]]:
         # Delegate to planner service metrics
@@ -847,137 +827,12 @@ class SimulationEngine:
         return self.lifecycle.stop_auto_ticks()
 
     def set_auto_pause(self, enabled: bool) -> dict[str, Any]:
-        """Toggle auto-pause setting at runtime and return comprehensive status information.
-
-        Args:
-            enabled: Whether to enable auto-pause functionality
-
-        Returns:
-            Dictionary containing updated auto-pause status and configuration
-        """
-        try:
-            # Update session-level configuration
-            self._auto_pause_enabled = enabled
-
-            # Log the configuration change
-            logger.info(f"Auto-pause setting updated to: {'enabled' if enabled else 'disabled'}")
-
-            # Return comprehensive status information
-            return self.get_auto_pause_status()
-
-        except Exception as exc:
-            logger.error(f"Failed to update auto-pause setting: {exc}")
-            return {
-                "auto_pause_enabled": getattr(self, "_auto_pause_enabled", None),
-                "error": str(exc),
-                "reason": f"Failed to update auto-pause setting: {exc}",
-            }
+        """Toggle auto-pause and return updated status (delegates to lifecycle)."""
+        return self.lifecycle.set_auto_pause(enabled)
 
     def get_auto_pause_status(self) -> dict[str, Any]:
-        """Get information about auto-pause status and reasons with enhanced project lifecycle calculations."""
-        # Check session-level setting first, then fall back to environment variable
-        if hasattr(self, "_auto_pause_enabled"):
-            auto_pause_enabled = self._auto_pause_enabled
-        else:
-            auto_pause_enabled = os.getenv("VDOS_AUTO_PAUSE_ON_PROJECT_END", "true").lower() == "true"
-
-        if not auto_pause_enabled:
-            return {
-                "auto_pause_enabled": False,
-                "should_pause": False,
-                "active_projects_count": 0,
-                "future_projects_count": 0,
-                "current_week": 0,
-                "reason": "Auto-pause on project end is disabled",
-            }
-
-        try:
-            # Enhanced current week calculation with validation
-            status = self.state.get_current_state()
-            if status.current_tick <= 0:
-                current_day = 0
-                current_week = 1
-            else:
-                # Ensure hours_per_day is at least 1 to prevent division by zero
-                hours_per_day = max(1, self.hours_per_day)
-                current_day = (status.current_tick - 1) // hours_per_day
-                current_week = max(1, (current_day // 5) + 1)
-
-            # Get active projects using verified calculation (start_week <= current_week <= end_week)
-            active_projects = self.get_active_projects_with_assignments(current_week)
-
-            # Check for future projects with enhanced validation
-            with get_connection() as conn:
-                future_projects = conn.execute(
-                    "SELECT COUNT(*) as count FROM project_plans WHERE start_week > ?", (current_week,)
-                ).fetchone()
-
-            future_count = future_projects["count"] if future_projects else 0
-            should_pause = len(active_projects) == 0 and future_count == 0
-
-            # Enhanced reason with comprehensive project information
-            if should_pause:
-                # Get completed projects for detailed logging
-                with get_connection() as conn:
-                    completed_projects = conn.execute(
-                        """SELECT project_name, start_week, duration_weeks,
-                           (start_week + duration_weeks - 1) as end_week
-                           FROM project_plans
-                           WHERE (start_week + duration_weeks - 1) < ?
-                           ORDER BY end_week DESC""",
-                        (current_week,),
-                    ).fetchall()
-
-                completed_count = len(completed_projects)
-                reason = f"All {completed_count} project(s) completed, no future projects (week {current_week}, tick {status.current_tick})"
-
-                # Log the auto-pause condition for debugging
-                logger.debug(f"Auto-pause condition met: {reason}")
-
-            elif len(active_projects) > 0:
-                active_names = [p.get("project_name", "Unknown") for p in active_projects[:3]]
-                reason = f"{len(active_projects)} active project(s) in week {current_week}: {', '.join(active_names)}{'...' if len(active_projects) > 3 else ''}"
-
-            else:
-                # Get next future project details
-                with get_connection() as conn:
-                    next_future = conn.execute(
-                        """SELECT project_name, start_week FROM project_plans
-                           WHERE start_week > ? ORDER BY start_week ASC LIMIT 1""",
-                        (current_week,),
-                    ).fetchone()
-
-                next_project_info = (
-                    f" (next: '{next_future['project_name']}' in week {next_future['start_week']})"
-                    if next_future
-                    else ""
-                )
-                reason = f"No active projects in week {current_week}, but {future_count} future project(s) exist{next_project_info}"
-
-            return {
-                "auto_pause_enabled": True,
-                "should_pause": should_pause,
-                "active_projects_count": len(active_projects),
-                "future_projects_count": future_count,
-                "current_week": current_week,
-                "current_tick": status.current_tick,
-                "current_day": current_day,
-                "reason": reason,
-            }
-
-        except Exception as exc:
-            logger.error(f"Failed to check project status for auto-pause: {exc}")
-            return {
-                "auto_pause_enabled": True,
-                "should_pause": False,
-                "active_projects_count": 0,
-                "future_projects_count": 0,
-                "current_week": 0,
-                "current_tick": 0,
-                "current_day": 0,
-                "error": str(exc),
-                "reason": f"Failed to check project status: {exc}",
-            }
+        """Auto-pause status/details (delegates to lifecycle)."""
+        return self.lifecycle.get_auto_pause_status()
 
     def set_tick_interval(self, interval_seconds: float) -> dict[str, Any]:
         result = self.lifecycle.set_tick_interval(interval_seconds)
@@ -1559,44 +1414,20 @@ class SimulationEngine:
 
     def reset(self) -> SimulationState:
         """Reset simulation state while preserving personas."""
-        # Stop auto-ticks BEFORE acquiring lock to avoid deadlock
-        self.stop_auto_ticks()
-        with self.tick_manager.get_advance_lock():
-            # Delegate simulation state reset to StateManager
-            self.state.reset_simulation()
-            # Clear ProjectManager cache
-            self.project_manager.clear_cache()
-            self._planner_model_hint = None
+        state = self.lifecycle.reset()
+        # Clear project cache and engine-level hints/metrics
+        self.project_manager.clear_cache()
+        self._planner_model_hint = None
+        with self._planner_metrics_lock:
             self._planner_metrics.clear()
-            self.project_duration_weeks = 4
-            self._reset_runtime_state()
-            people = self.list_people()
-            self.tick_manager.update_work_windows(people)
-            status = self.state.get_current_state()
-            return SimulationState(
-                current_tick=status.current_tick,
-                is_running=status.is_running,
-                auto_tick=status.auto_tick,
-                sim_time=self.tick_manager.format_sim_time(status.current_tick),
-            )
+        self.project_duration_weeks = 4
+        return state
 
     def reset_full(self) -> SimulationState:
         """Resets simulation state and deletes all personas."""
         return self.lifecycle.reset_full()
 
-    def _derive_seed(self, request: SimulationStartRequest | None) -> int:
-        if request and request.random_seed is not None:
-            return request.random_seed
-        # For multi-project mode, use first project name; otherwise use single project name
-        if request and request.projects:
-            project_name = request.projects[0].project_name
-        elif request and request.project_name:
-            project_name = request.project_name
-        else:
-            project_name = "vdos-default"
-        base = project_name.encode("utf-8")
-        digest = hashlib.sha256(base).digest()
-        return int.from_bytes(digest[:8], "big")
+    # (seed derivation moved to lifecycle)
 
     def _maybe_generate_events(
         self, people: Sequence[PersonRead], tick: int, project_plan: dict[str, Any]
@@ -1619,44 +1450,9 @@ class SimulationEngine:
         self.email_gateway.ensure_mailbox(self.sim_manager_email, "Simulation Manager")
         self.chat_gateway.ensure_user(self.sim_manager_handle, "Simulation Manager")
 
-    def _row_to_person(self, row) -> PersonRead:
-        person_id = row["id"]
-        schedule = self._fetch_schedule(person_id)
-        # Check if team_name column exists (for backward compatibility)
-        try:
-            team_name = row["team_name"]
-        except (KeyError, IndexError):
-            team_name = None
-        return PersonRead(
-            id=person_id,
-            name=row["name"],
-            role=row["role"],
-            timezone=row["timezone"],
-            work_hours=row["work_hours"],
-            break_frequency=row["break_frequency"],
-            communication_style=row["communication_style"],
-            email_address=row["email_address"],
-            chat_handle=row["chat_handle"],
-            is_department_head=bool(row["is_department_head"]),
-            team_name=team_name,
-            skills=json.loads(row["skills"]),
-            personality=json.loads(row["personality"]),
-            objectives=json.loads(row["objectives"]),
-            metrics=json.loads(row["metrics"]),
-            schedule=[ScheduleBlockIn(**block) for block in schedule],
-            planning_guidelines=json.loads(row["planning_guidelines"]),
-            event_playbook=json.loads(row["event_playbook"]),
-            statuses=json.loads(row["statuses"]),
-            persona_markdown=row["persona_markdown"],
-        )
+    # (row mapping moved to PeopleRepository)
 
-    def _fetch_schedule(self, person_id: int) -> List[dict]:
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT start, end, activity FROM schedule_blocks WHERE person_id = ? ORDER BY id",
-                (person_id,),
-            ).fetchall()
-        return [{"start": row["start"], "end": row["end"], "activity": row["activity"]} for row in rows]
+    # (schedule fetch moved to PeopleRepository)
 
     def _to_persona(self, payload: PersonCreate) -> WorkerPersona:
         return WorkerPersona(

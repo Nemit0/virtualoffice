@@ -253,6 +253,13 @@ class SimulationState:
             if "start_week" not in project_columns:
                 conn.execute("ALTER TABLE project_plans ADD COLUMN start_week INTEGER NOT NULL DEFAULT 1")
 
+            # Normalize legacy rows: ensure skills/personality are non-empty arrays
+            try:
+                conn.execute("UPDATE people SET skills='[\"Generalist\"]' WHERE TRIM(COALESCE(skills,'')) IN ('', '[]')")
+                conn.execute("UPDATE people SET personality='[\"Helpful\"]' WHERE TRIM(COALESCE(personality,'')) IN ('', '[]')")
+            except Exception:
+                pass
+
     def _ensure_state_row(self) -> None:
         """Ensure simulation_state table has the singleton row."""
         with get_connection() as conn:
