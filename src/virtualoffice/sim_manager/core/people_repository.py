@@ -108,6 +108,14 @@ class PeopleRepository:
             team_name = row["team_name"]
         except (KeyError, IndexError):
             team_name = None
+        # Coerce empty arrays to safe defaults to satisfy schema validators
+        skills = json.loads(row["skills"]) if row["skills"] else []
+        if not skills:
+            skills = ["Generalist"]
+        personality = json.loads(row["personality"]) if row["personality"] else []
+        if not personality:
+            personality = ["Helpful"]
+
         return PersonRead(
             id=person_id,
             name=row["name"],
@@ -120,8 +128,8 @@ class PeopleRepository:
             chat_handle=row["chat_handle"],
             is_department_head=bool(row["is_department_head"]),
             team_name=team_name,
-            skills=json.loads(row["skills"]),
-            personality=json.loads(row["personality"]),
+            skills=skills,
+            personality=personality,
             objectives=json.loads(row["objectives"]),
             metrics=json.loads(row["metrics"]),
             schedule=[ScheduleBlockIn(**block) for block in schedule],
@@ -138,4 +146,3 @@ class PeopleRepository:
                 (person_id,),
             ).fetchall()
         return [{"start": row["start"], "end": row["end"], "activity": row["activity"]} for row in rows]
-
