@@ -36,9 +36,7 @@ from .core.people_repository import PeopleRepository
 from .core.plan_store import PlanStore
 from .core.report_store import ReportStore
 from .core.planner_service import PlannerService
-from .core.people_repository import PeopleRepository
-from .core.plan_store import PlanStore
-from .core.report_store import ReportStore
+from .core.worker_registry import WorkerRegistry
 from .gateways import ChatGateway, EmailGateway
 from .planner import GPTPlanner, PlanResult, Planner, PlanningError, StubPlanner
 from .prompts import PromptManager, ContextBuilder
@@ -118,8 +116,14 @@ class SimulationEngine:
         self.prompt_manager = PromptManager(str(template_dir), locale=self._locale)
         self.context_builder = ContextBuilder(locale=self._locale)
 
-        # Virtual workers dictionary (type hint uses string to avoid circular import)
-        self.workers: dict[int, "VirtualWorker"] = {}
+        # Virtual worker registry encapsulates lazy imports and wiring
+        self.worker_registry = WorkerRegistry(
+            prompt_manager=self.prompt_manager,
+            context_builder=self.context_builder,
+            planner=self.planner,
+        )
+        # Back-compat alias
+        self.workers: dict[int, "VirtualWorker"] = self.worker_registry.workers
 
         self._planner_metrics: deque[dict[str, Any]] = deque(maxlen=200)
         # Locale (simple toggle for certain strings)
@@ -181,61 +185,13 @@ class SimulationEngine:
         self._sync_virtual_workers()
 
     def _sync_virtual_workers(self) -> None:
-        """
-        Synchronize VirtualWorker instances with database personas.
-        
-        Creates VirtualWorker instances for any personas that don't have one yet.
-        This is called during initialization and when personas are loaded.
-        
-        Only creates VirtualWorkers if the planner supports the new interface
-        (has generate_with_messages method).
-        """
-        # Check if planner supports new interface
-        if not hasattr(self.planner, 'generate_with_messages'):
-            logger.info("Planner does not support generate_with_messages, skipping VirtualWorker creation")
-            return
-        
-        # Lazy import to avoid circular dependency
-        from virtualoffice.virtualWorkers.virtual_worker import VirtualWorker
-            
-        people = self.list_people()
-        for person in people:
-            if person.id not in self.workers:
-                # Reconstruct persona from PersonRead
-                persona = self._to_persona_from_person_read(person)
-                schedule = person.schedule or []
-                
-                # Create VirtualWorker instance
-                worker = VirtualWorker(
-                    persona=persona,
-                    prompt_manager=self.prompt_manager,
-                    context_builder=self.context_builder,
-                    planner=self.planner,
-                    schedule=schedule,
-                    planning_guidelines=person.planning_guidelines,
-                    event_playbook=person.event_playbook,
-                    statuses=person.statuses,
-                )
-                self.workers[person.id] = worker
+        """Ensure registry has workers for all current personas."""
+        self.worker_registry.sync_workers(self.list_people())
 
     def _to_persona_from_person_read(self, person: PersonRead) -> WorkerPersona:
-        """Convert PersonRead back to WorkerPersona."""
-        return WorkerPersona(
-            name=person.name,
-            role=person.role,
-            email_address=person.email_address,
-            chat_handle=person.chat_handle,
-            timezone=person.timezone,
-            work_hours=person.work_hours,
-            break_frequency=person.break_frequency,
-            communication_style=person.communication_style,
-            skills=person.skills,
-            personality=person.personality,
-            objectives=person.objectives,
-            metrics=person.metrics,
-            is_department_head=person.is_department_head,
-            team_name=person.team_name,
-        )
+        # Back-compat shim: delegate to worker registry
+        from virtualoffice.virtualWorkers.worker import WorkerPersona  # type: ignore
+        return self.worker_registry._to_persona(person)  # type: ignore[attr-defined]
 
     def _reset_tick_sends(self) -> None:
         """Delegate to CommunicationHub."""
@@ -355,22 +311,9 @@ class SimulationEngine:
         person = self.get_person(person_id)
         self.worker_runtime_manager.get_runtime(person)
 
-        # Create VirtualWorker instance if planner supports new interface
-        if hasattr(self.planner, 'generate_with_messages'):
-            # Lazy import to avoid circular dependency
-            from virtualoffice.virtualWorkers.virtual_worker import VirtualWorker
-            
-            worker = VirtualWorker(
-                persona=persona,
-                prompt_manager=self.prompt_manager,
-                context_builder=self.context_builder,
-                planner=self.planner,
-                schedule=schedule,
-                planning_guidelines=payload.planning_guidelines,
-                event_playbook=payload.event_playbook,
-                statuses=payload.statuses,
-            )
-            self.workers[person.id] = worker
+        # Register VirtualWorker instance if supported
+        if self.worker_registry.supports_virtual_workers():
+            self.worker_registry.ensure_worker(person)
 
         return person
 
