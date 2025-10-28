@@ -35,6 +35,10 @@ from .core.project_manager import ProjectManager
 from .core.people_repository import PeopleRepository
 from .core.plan_store import PlanStore
 from .core.report_store import ReportStore
+from .core.planner_service import PlannerService
+from .core.people_repository import PeopleRepository
+from .core.plan_store import PlanStore
+from .core.report_store import ReportStore
 from .gateways import ChatGateway, EmailGateway
 from .planner import GPTPlanner, PlanResult, Planner, PlanningError, StubPlanner
 from .prompts import PromptManager, ContextBuilder
@@ -162,6 +166,13 @@ class SimulationEngine:
         except Exception as exc:
             logger.error(f"Failed to parse auto-pause configuration, defaulting to enabled: {exc}")
             self._auto_pause_enabled = True
+
+        # Planner service (fallback handling + metrics)
+        self.planner_service = PlannerService(
+            planner=self.planner,
+            stub_planner=self._stub_planner,
+            strict=self._planner_strict,
+        )
 
         # Initialise DB and runtime state
         self.state.initialize_database()
@@ -297,11 +308,8 @@ class SimulationEngine:
         return summary
 
     def get_planner_metrics(self, limit: int = 50) -> list[dict[str, Any]]:
-        with self._planner_metrics_lock:
-            data = list(self._planner_metrics)
-        if limit <= 0:
-            return data
-        return data[-limit:]
+        # Delegate to planner service metrics
+        return self.planner_service.get_metrics(limit)
 
     # ------------------------------------------------------------------
     # People management
@@ -379,84 +387,8 @@ class SimulationEngine:
     # ------------------------------------------------------------------
     # Planning lifecycle
     def _call_planner(self, method_name: str, **kwargs) -> PlanResult:
-        planner = self.planner
-        method = getattr(planner, method_name)
-        planner_name = planner.__class__.__name__
-        fallback_name = self._stub_planner.__class__.__name__
-        context = self._planner_context_summary(kwargs)
-        start = time.perf_counter()
-        logger.info("Planner %s using %s starting with context=%s", method_name, planner_name, context)
-        try:
-            result = method(**kwargs)
-        except PlanningError as exc:
-            duration = time.perf_counter() - start
-            if isinstance(planner, StubPlanner):
-                logger.error("Stub planner %s failed after %.2fs: %s", method_name, duration, exc)
-                raise
-            if self._planner_strict:
-                logger.error(
-                    "Planner %s using %s failed after %.2fs and strict mode is enabled: %s",
-                    method_name,
-                    planner_name,
-                    duration,
-                    exc,
-                )
-                raise RuntimeError(f"Planning failed ({method_name}): {exc}") from exc
-            logger.warning(
-                "Planner %s using %s failed after %.2fs: %s. Falling back to stub planner.",
-                method_name,
-                planner_name,
-                duration,
-                exc,
-            )
-            fallback_method = getattr(self._stub_planner, method_name)
-            fallback_start = time.perf_counter()
-            fallback_result = fallback_method(**kwargs)
-            fallback_duration = time.perf_counter() - fallback_start
-            logger.info(
-                "Stub planner %s succeeded in %.2fs (model=%s)",
-                fallback_name,
-                fallback_duration,
-                getattr(fallback_result, "model_used", "vdos-stub"),
-            )
-            entry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "method": method_name,
-                "planner": planner_name,
-                "result_planner": fallback_name,
-                "model": getattr(fallback_result, "model_used", "vdos-stub"),
-                "duration_ms": round(duration * 1000, 2),
-                "fallback_duration_ms": round(fallback_duration * 1000, 2),
-                "fallback": True,
-                "error": str(exc),
-                "context": context,
-            }
-            with self._planner_metrics_lock:
-                self._planner_metrics.append(entry)
-            return fallback_result
-        else:
-            duration = time.perf_counter() - start
-            logger.info(
-                "Planner %s using %s succeeded in %.2fs (model=%s)",
-                method_name,
-                planner_name,
-                duration,
-                getattr(result, "model_used", "unknown"),
-            )
-            entry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "method": method_name,
-                "planner": planner_name,
-                "result_planner": planner_name,
-                "model": getattr(result, "model_used", "unknown"),
-                "duration_ms": round(duration * 1000, 2),
-                "fallback_duration_ms": None,
-                "fallback": False,
-                "context": context,
-            }
-            with self._planner_metrics_lock:
-                self._planner_metrics.append(entry)
-            return result
+        # Delegate to PlannerService (handles fallback + metrics)
+        return self.planner_service.call(method_name, **kwargs)
 
     # ------------------------------------------------------------------
     def get_project_plan(self) -> dict[str, Any] | None:
