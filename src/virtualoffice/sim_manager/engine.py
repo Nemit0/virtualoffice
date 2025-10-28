@@ -32,6 +32,9 @@ from .core.event_system import EventSystem, InboundMessage
 from .core.communication_hub import CommunicationHub
 from .core.worker_runtime import WorkerRuntimeManager
 from .core.project_manager import ProjectManager
+from .core.people_repository import PeopleRepository
+from .core.plan_store import PlanStore
+from .core.report_store import ReportStore
 from .gateways import ChatGateway, EmailGateway
 from .planner import GPTPlanner, PlanResult, Planner, PlanningError, StubPlanner
 from .prompts import PromptManager, ContextBuilder
@@ -99,6 +102,11 @@ class SimulationEngine:
 
         # Initialize project manager
         self.project_manager = ProjectManager()
+
+        # Persistence repositories/stores
+        self.people_repo = PeopleRepository()
+        self.plan_store = PlanStore()
+        self.report_store = ReportStore()
 
         # Initialize prompt system
         template_dir = Path(__file__).parent / "prompts" / "templates"
@@ -330,52 +338,8 @@ class SimulationEngine:
             event_playbook=payload.event_playbook,
             statuses=payload.statuses,
         )
-
-        skills_json = json.dumps(list(payload.skills))
-        personality_json = json.dumps(list(payload.personality))
-        objectives_json = json.dumps(list(payload.objectives or []))
-        metrics_json = json.dumps(list(payload.metrics or []))
-        planning_json = json.dumps(list(payload.planning_guidelines or []))
-        playbook_json = json.dumps(payload.event_playbook or {})
-        statuses_json = json.dumps(list(payload.statuses or []))
-
-        with get_connection() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO people (
-                    name, role, timezone, work_hours, break_frequency,
-                    communication_style, email_address, chat_handle, is_department_head, team_name, skills,
-                    personality, objectives, metrics, persona_markdown,
-                    planning_guidelines, event_playbook, statuses
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    payload.name,
-                    payload.role,
-                    payload.timezone,
-                    payload.work_hours,
-                    payload.break_frequency,
-                    payload.communication_style,
-                    payload.email_address,
-                    payload.chat_handle,
-                    1 if payload.is_department_head else 0,
-                    payload.team_name,
-                    skills_json,
-                    personality_json,
-                    objectives_json,
-                    metrics_json,
-                    persona_markdown,
-                    planning_json,
-                    playbook_json,
-                    statuses_json,
-                ),
-            )
-            person_id = cursor.lastrowid
-            if schedule:
-                conn.executemany(
-                    "INSERT INTO schedule_blocks(person_id, start, end, activity) VALUES (?, ?, ?, ?)",
-                    [(person_id, block.start, block.end, block.activity) for block in schedule],
-                )
+        # Persist person and schedule via repository
+        person_id = self.people_repo.insert(payload, persona_markdown, schedule)
 
         self.email_gateway.ensure_mailbox(payload.email_address, payload.name)
         self.chat_gateway.ensure_user(payload.chat_handle, payload.name)
@@ -403,25 +367,14 @@ class SimulationEngine:
         return person
 
     def list_people(self) -> List[PersonRead]:
-        with get_connection() as conn:
-            rows = conn.execute("SELECT * FROM people ORDER BY id").fetchall()
-        return [self._row_to_person(row) for row in rows]
+        return self.people_repo.list_people()
 
     def get_person(self, person_id: int) -> PersonRead:
-        with get_connection() as conn:
-            row = conn.execute("SELECT * FROM people WHERE id = ?", (person_id,)).fetchone()
-        if not row:
-            raise ValueError("Person not found")
-        return self._row_to_person(row)
+        return self.people_repo.get_person(person_id)
 
     def delete_person_by_name(self, name: str) -> bool:
-        with get_connection() as conn:
-            row = conn.execute("SELECT id FROM people WHERE name = ?", (name,)).fetchone()
-            if not row:
-                return False
-            conn.execute("DELETE FROM people WHERE id = ?", (row["id"],))
         # Runtime will be removed on next sync_runtimes call
-        return True
+        return self.people_repo.delete_by_name(name)
 
     # ------------------------------------------------------------------
     # Planning lifecycle
@@ -542,18 +495,7 @@ class SimulationEngine:
         limit: int | None = None,
     ) -> List[dict[str, Any]]:
         self.get_person(person_id)
-        query = "SELECT * FROM worker_plans WHERE person_id = ?"
-        params: list[Any] = [person_id]
-        if plan_type:
-            query += " AND plan_type = ?"
-            params.append(plan_type)
-        query += " ORDER BY id DESC"
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-        with get_connection() as conn:
-            rows = conn.execute(query, tuple(params)).fetchall()
-        return [self._row_to_worker_plan(row) for row in rows]
+        return self.plan_store.list_worker_plans(person_id, plan_type, limit)
 
     def list_daily_reports(
         self,
@@ -562,28 +504,10 @@ class SimulationEngine:
         limit: int | None = None,
     ) -> List[dict[str, Any]]:
         self.get_person(person_id)
-        query = "SELECT * FROM daily_reports WHERE person_id = ?"
-        params: list[Any] = [person_id]
-        if day_index is not None:
-            query += " AND day_index = ?"
-            params.append(day_index)
-        query += " ORDER BY id DESC"
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-        with get_connection() as conn:
-            rows = conn.execute(query, tuple(params)).fetchall()
-        return [self._row_to_daily_report(row) for row in rows]
+        return self.report_store.list_daily_reports(person_id, day_index, limit)
 
     def list_simulation_reports(self, limit: int | None = None) -> List[dict[str, Any]]:
-        query = "SELECT * FROM simulation_reports ORDER BY id DESC"
-        params: list[Any] = []
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-        with get_connection() as conn:
-            rows = conn.execute(query, tuple(params)).fetchall()
-        return [self._row_to_simulation_report(row) for row in rows]
+        return self.report_store.list_simulation_reports(limit)
 
     def _initialise_project_plan(self, request: SimulationStartRequest, team: Sequence[PersonRead]) -> None:
         if not team:
@@ -914,27 +838,9 @@ class SimulationEngine:
         result: PlanResult,
         context: str | None,
     ) -> dict[str, Any]:
-        with get_connection() as conn:
-            # Verify person exists before attempting insert
-            person_exists = conn.execute("SELECT id FROM people WHERE id = ?", (person_id,)).fetchone()
-            if not person_exists:
-                logger.error(f"Cannot store worker plan: person_id {person_id} does not exist in database")
-                raise ValueError(f"Person ID {person_id} not found in database")
-
-            cursor = conn.execute(
-                "INSERT INTO worker_plans(person_id, tick, plan_type, content, model_used, tokens_used, context) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    person_id,
-                    tick,
-                    plan_type,
-                    result.content,
-                    result.model_used,
-                    result.tokens_used,
-                    context,
-                ),
-            )
-            row = conn.execute("SELECT * FROM worker_plans WHERE id = ?", (cursor.lastrowid,)).fetchone()
-        return self._row_to_worker_plan(row)
+        # Ensure person exists
+        self.get_person(person_id)
+        return self.plan_store.put_worker_plan(person_id, tick, plan_type, result, context)
 
     def _row_to_worker_plan(self, row) -> dict[str, Any]:
         return {
@@ -956,16 +862,7 @@ class SimulationEngine:
         tick: int | None = None,
         exact_tick: bool = False,
     ) -> dict[str, Any] | None:
-        query = "SELECT * FROM worker_plans WHERE person_id = ? AND plan_type = ?"
-        params: list[Any] = [person_id, plan_type]
-        if tick is not None:
-            comparator = "=" if exact_tick else "<="
-            query += f" AND tick {comparator} ?"
-            params.append(tick)
-        query += " ORDER BY id DESC LIMIT 1"
-        with get_connection() as conn:
-            row = conn.execute(query, tuple(params)).fetchone()
-        return self._row_to_worker_plan(row) if row else None
+        return self.plan_store.get_worker_plan(person_id, plan_type, tick, exact_tick)
 
     def _ensure_daily_plan(self, person: PersonRead, day_index: int, project_plan: dict[str, Any]) -> str:
         existing = self._fetch_worker_plan(person.id, "daily", tick=day_index, exact_tick=True)
@@ -991,21 +888,7 @@ class SimulationEngine:
         return "\n".join(filtered[:max_lines])
 
     def _fetch_hourly_summary(self, person_id: int, hour_index: int) -> dict[str, Any] | None:
-        with get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM hourly_summaries WHERE person_id = ? AND hour_index = ?",
-                (person_id, hour_index),
-            ).fetchone()
-        if not row:
-            return None
-        return {
-            "id": row["id"],
-            "person_id": row["person_id"],
-            "hour_index": row["hour_index"],
-            "summary": row["summary"],
-            "model_used": row["model_used"],
-            "tokens_used": row["tokens_used"],
-        }
+        return self.report_store.get_hourly_summary(person_id, hour_index)
 
     def _store_hourly_summary(
         self,
@@ -1013,20 +896,7 @@ class SimulationEngine:
         hour_index: int,
         result: PlanResult,
     ) -> dict[str, Any]:
-        with get_connection() as conn:
-            cursor = conn.execute(
-                "INSERT OR REPLACE INTO hourly_summaries(person_id, hour_index, summary, model_used, tokens_used) VALUES (?, ?, ?, ?, ?)",
-                (person_id, hour_index, result.content, result.model_used, result.tokens_used or 0),
-            )
-            row_id = cursor.lastrowid
-        return {
-            "id": row_id,
-            "person_id": person_id,
-            "hour_index": hour_index,
-            "summary": result.content,
-            "model_used": result.model_used,
-            "tokens_used": result.tokens_used or 0,
-        }
+        return self.report_store.put_hourly_summary(person_id, hour_index, result)
 
     def _generate_hourly_summary(
         self,
@@ -1041,11 +911,7 @@ class SimulationEngine:
         # Get all hourly plans for this hour
         start_tick = hour_index * 60 + 1
         end_tick = (hour_index + 1) * 60
-        with get_connection() as conn:
-            hourly_rows = conn.execute(
-                "SELECT tick, content FROM worker_plans WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ? ORDER BY tick",
-                (person.id, start_tick, end_tick),
-            ).fetchall()
+        hourly_rows = self.plan_store.list_hourly_plans_in_range(person.id, start_tick, end_tick)
 
         if not hourly_rows:
             # No plans for this hour, skip summary
@@ -1075,12 +941,7 @@ class SimulationEngine:
         return self._store_hourly_summary(person_id=person.id, hour_index=hour_index, result=result)
 
     def _fetch_daily_report(self, person_id: int, day_index: int) -> dict[str, Any] | None:
-        with get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM daily_reports WHERE person_id = ? AND day_index = ? ORDER BY id DESC LIMIT 1",
-                (person_id, day_index),
-            ).fetchone()
-        return self._row_to_daily_report(row) if row else None
+        return self.report_store.get_daily_report(person_id, day_index)
 
     def _generate_daily_report(
         self,
@@ -1096,6 +957,8 @@ class SimulationEngine:
         # Use hourly summaries instead of all tick logs
         start_hour = day_index * (self.hours_per_day // 60)
         end_hour = (day_index + 1) * (self.hours_per_day // 60)
+        # Collect any pre-existing hourly summaries for the day
+        # (leave generation fallback below unchanged)
         with get_connection() as conn:
             summary_rows = conn.execute(
                 "SELECT hour_index, summary FROM hourly_summaries WHERE person_id = ? AND hour_index BETWEEN ? AND ? ORDER BY hour_index",
@@ -1169,20 +1032,7 @@ class SimulationEngine:
         schedule_outline: str,
         result: PlanResult,
     ) -> dict[str, Any]:
-        with get_connection() as conn:
-            cursor = conn.execute(
-                "INSERT INTO daily_reports(person_id, day_index, report, schedule_outline, model_used, tokens_used) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    person_id,
-                    day_index,
-                    result.content,
-                    schedule_outline,
-                    result.model_used,
-                    result.tokens_used,
-                ),
-            )
-            row = conn.execute("SELECT * FROM daily_reports WHERE id = ?", (cursor.lastrowid,)).fetchone()
-        return self._row_to_daily_report(row)
+        return self.report_store.put_daily_report(person_id, day_index, schedule_outline, result)
 
     def _row_to_daily_report(self, row) -> dict[str, Any] | None:
         if row is None:
@@ -1259,33 +1109,14 @@ class SimulationEngine:
         )
 
     def list_daily_reports_for_summary(self) -> str:
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT person_id, day_index, report FROM daily_reports ORDER BY person_id, day_index"
-            ).fetchall()
-        if not rows:
-            return "No daily reports were generated."
-        parts = []
-        for row in rows:
-            parts.append(f"Person {row['person_id']} Day {row['day_index']}: {row['report']}")
-        return "\n".join(parts)
+        return self.report_store.list_daily_reports_for_summary()
 
     def _store_simulation_report(self, total_ticks: int, result: PlanResult) -> dict[str, Any]:
-        with get_connection() as conn:
-            cursor = conn.execute(
-                "INSERT INTO simulation_reports(report, model_used, tokens_used, total_ticks) VALUES (?, ?, ?, ?)",
-                (
-                    result.content,
-                    result.model_used,
-                    result.tokens_used,
-                    total_ticks,
-                ),
-            )
-            row = conn.execute("SELECT * FROM simulation_reports WHERE id = ?", (cursor.lastrowid,)).fetchone()
-        return self._row_to_simulation_report(row)
+        return self.report_store.put_simulation_report(total_ticks, result)
 
     def _row_to_simulation_report(self, row) -> dict[str, Any]:
-        return {
+        # Kept for backward compatibility; unused after extraction.
+        return None if row is None else {
             "id": row["id"],
             "report": row["report"],
             "model_used": row["model_used"],
@@ -1295,28 +1126,7 @@ class SimulationEngine:
         }
 
     def get_token_usage(self) -> dict[str, int]:
-        usage: dict[str, int] = {}
-        with get_connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT model_used, COALESCE(tokens_used, 0) AS tokens
-                FROM project_plans
-                UNION ALL
-                SELECT model_used, COALESCE(tokens_used, 0) AS tokens
-                FROM worker_plans
-                UNION ALL
-                SELECT model_used, COALESCE(tokens_used, 0) AS tokens
-                FROM daily_reports
-                UNION ALL
-                SELECT model_used, COALESCE(tokens_used, 0) AS tokens
-                FROM simulation_reports
-                """
-            ).fetchall()
-        for row in rows:
-            model = row["model_used"]
-            tokens = row["tokens"] or 0
-            usage[model] = usage.get(model, 0) + int(tokens)
-        return usage
+        return self.report_store.get_token_usage()
 
     # ------------------------------------------------------------------
     # Simulation control
