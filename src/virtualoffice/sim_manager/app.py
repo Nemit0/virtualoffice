@@ -996,11 +996,26 @@ def _bootstrap_default_app() -> FastAPI:
     try:
         return create_app()
     except Exception as exc:  # pragma: no cover - bootstrap fallback
+        # Emit detailed diagnostics so operators can find the root cause quickly
+        try:
+            import traceback
+            detail = f"{type(exc).__name__}: {str(exc)}\n\nTraceback:\n{traceback.format_exc()}"
+            print("[VDOS] Simulation app bootstrap failed. Falling back to degraded mode.\n" + detail)
+            # Persist error for GUI/ops per project convention
+            try:
+                os.makedirs("logs", exist_ok=True)
+                with open(os.path.join("logs", "error_output.txt"), "w", encoding="utf-8") as f:
+                    f.write(detail)
+            except Exception:
+                pass
+        except Exception:
+            detail = str(exc)
+
         fallback = FastAPI(title="VDOS Simulation Manager", version="0.1.0")
 
         @fallback.get("/bootstrap-status")
         def bootstrap_status() -> dict[str, Any]:
-            return {"status": "degraded", "detail": str(exc)}
+            return {"status": "degraded", "detail": detail}
 
         return fallback
 
