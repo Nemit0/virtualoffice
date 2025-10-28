@@ -178,6 +178,40 @@ class SimulationEngine:
             strict=self._planner_strict,
         )
 
+        # Planning orchestrator
+        from .core.planning_orchestrator import PlanningOrchestrator
+        self.planning_orchestrator = PlanningOrchestrator(
+            planner_service=self.planner_service,
+            worker_registry=self.worker_registry,
+            communication_hub=self.communication_hub,
+            plan_store=self.plan_store,
+            report_store=self.report_store,
+            locale=self._locale,
+            hours_per_day=self.hours_per_day,
+        )
+
+        # Lifecycle orchestrator
+        self.lifecycle = SimulationLifecycle(
+            state_manager=self.state,
+            tick_manager=self.tick_manager,
+            communication_hub=self.communication_hub,
+            worker_runtime_manager=self.worker_runtime_manager,
+            project_manager=self.project_manager,
+            event_system=self.event_system,
+            email_gateway=self.email_gateway,
+            chat_gateway=self.chat_gateway,
+            sim_manager_email=self.sim_manager_email,
+            sim_manager_handle=self.sim_manager_handle,
+            hours_per_day=self.hours_per_day,
+            locale=self._locale,
+            rnd=self._random,
+            list_people_fn=self.list_people,
+            set_active_ids_fn=lambda ids: setattr(self, "_active_person_ids", ids),
+            get_active_ids_fn=lambda: getattr(self, "_active_person_ids", None),
+            initialise_project_plan_fn=self._initialise_project_plan,
+            collaborator_selector_fn=self._select_collaborators,
+        )
+
         # Initialise DB and runtime state
         self.state.initialize_database()
         self._bootstrap_channels()
@@ -776,137 +810,41 @@ class SimulationEngine:
     # Simulation control
     # ------------------------------------------------------------------
     def get_state(self) -> SimulationState:
-        status = self.state.get_current_state()
-        return SimulationState(
-            current_tick=status.current_tick,
-            is_running=status.is_running,
-            auto_tick=status.auto_tick,
-            sim_time=self.tick_manager.format_sim_time(status.current_tick),
-        )
+        return self.lifecycle.get_state()
 
     def start(self, request: SimulationStartRequest | None = None) -> SimulationState:
-        seed = self._derive_seed(request)
-        self._random.seed(seed)
-        self._reset_runtime_state()
-        all_people = self.list_people()
-        if not all_people:
-            raise RuntimeError("Cannot start simulation without any personas")
-        active_people = self._resolve_active_people(request, all_people)
-        self._active_person_ids = [person.id for person in active_people]
         if request is not None:
-            # Validate that either single-project or multi-project fields are provided
+            # Preserve planner model hint for downstream planning
+            self._planner_model_hint = request.model_hint
+            # Maintain engine-level duration if provided (multi-project total)
             if request.projects:
-                # Multi-project mode
                 if request.total_duration_weeks:
                     self.project_duration_weeks = request.total_duration_weeks
                 else:
-                    # Calculate total duration from projects
                     max_end_week = max(p.start_week + p.duration_weeks - 1 for p in request.projects)
                     self.project_duration_weeks = max_end_week
-            else:
-                # Single-project mode - require project_name and project_summary
-                if not request.project_name or not request.project_summary:
-                    raise RuntimeError(
-                        "Either 'projects' or both 'project_name' and 'project_summary' must be provided"
-                    )
+            elif request.project_name and request.project_summary:
                 self.project_duration_weeks = request.duration_weeks
-            self._planner_model_hint = request.model_hint
-            self._initialise_project_plan(request, active_people)
-        self.state.set_running(True)
-        self.tick_manager.set_base_datetime()
-        self.worker_runtime_manager.sync_runtimes(active_people)
-        # Schedule a kickoff chat/email at the first working minute for each worker
-        try:
-            for person in active_people:
-                start_tick_of_day, _ = self.tick_manager.get_work_hours_ticks(person.id)
-
-                base_tick = 1  # day 1 start
-                kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes
-                # pick a collaborator to target
-                recipients = self._select_collaborators(person, active_people)
-                target = recipients[0] if recipients else None
-                if target:
-                    if self._locale == "ko":
-                        self._schedule_direct_comm(
-                            person.id,
-                            kickoff_tick,
-                            "chat",
-                            target.chat_handle,
-                            "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?",
-                        )
-                        self._schedule_direct_comm(
-                            person.id,
-                            kickoff_tick + 30,
-                            "email",
-                            target.email_address,
-                            "제목: 킥오프\n본문: 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.",
-                        )
-                    else:
-                        self._schedule_direct_comm(
-                            person.id, kickoff_tick, "chat", target.chat_handle, "Morning! Quick sync on priorities?"
-                        )
-                        self._schedule_direct_comm(
-                            person.id,
-                            kickoff_tick + 30,
-                            "email",
-                            target.email_address,
-                            "Subject: Quick kickoff\nBody: Lining up tasks for today — ping me with blockers.",
-                        )
-        except Exception:
-            pass
-        status = self.state.get_current_state()
-        return SimulationState(
-            current_tick=status.current_tick,
-            is_running=status.is_running,
-            auto_tick=status.auto_tick,
-            sim_time=self.tick_manager.format_sim_time(status.current_tick),
-        )
+            else:
+                raise RuntimeError("Either 'projects' or both 'project_name' and 'project_summary' must be provided")
+        return self.lifecycle.start(request)
 
     def stop(self) -> SimulationState:
-        self.stop_auto_ticks()
-        status = self.state.get_current_state()
-        if status.is_running:
-            project_plan = self.get_project_plan()
-            if project_plan is not None:
-                self._generate_simulation_report(project_plan, total_ticks=status.current_tick)
-        self.state.set_running(False)
-        self._active_person_ids = None
-        status = self.state.get_current_state()
-        return SimulationState(
-            current_tick=status.current_tick,
-            is_running=status.is_running,
-            auto_tick=status.auto_tick,
-            sim_time=self.tick_manager.format_sim_time(status.current_tick),
+        return self.lifecycle.stop(
+            generate_report_fn=lambda plan, ticks: self._generate_simulation_report(plan, total_ticks=ticks),
+            get_project_plan_fn=self.get_project_plan,
         )
 
     def start_auto_ticks(self) -> SimulationState:
-        status = self.state.get_current_state()
-        # Start auto-tick via tick manager
-        self.tick_manager.start_auto_tick(
-            is_running=status.is_running,
+        return self.lifecycle.start_auto_ticks(
             advance_callback=lambda: self.advance(1, "auto"),
-            state_manager=self.state,
             get_active_projects_callback=self.get_active_projects_with_assignments,
             archive_chat_room_callback=self.archive_project_chat_room,
             auto_pause_enabled=getattr(self, "_auto_pause_enabled", True),
         )
-        status = self.state.get_current_state()
-        return SimulationState(
-            current_tick=status.current_tick,
-            is_running=status.is_running,
-            auto_tick=status.auto_tick,
-            sim_time=self.tick_manager.format_sim_time(status.current_tick),
-        )
 
     def stop_auto_ticks(self) -> SimulationState:
-        self.tick_manager.stop_auto_tick(self.state)
-        status = self.state.get_current_state()
-        return SimulationState(
-            current_tick=status.current_tick,
-            is_running=status.is_running,
-            auto_tick=status.auto_tick,
-            sim_time=self.tick_manager.format_sim_time(status.current_tick),
-        )
+        return self.lifecycle.stop_auto_ticks()
 
     def set_auto_pause(self, enabled: bool) -> dict[str, Any]:
         """Toggle auto-pause setting at runtime and return comprehensive status information.
@@ -1042,20 +980,15 @@ class SimulationEngine:
             }
 
     def set_tick_interval(self, interval_seconds: float) -> dict[str, Any]:
-        """Update the auto-tick interval (in seconds). Use 0 for maximum speed."""
-        self.tick_manager.set_tick_interval(interval_seconds)
+        result = self.lifecycle.set_tick_interval(interval_seconds)
         if interval_seconds == 0:
             logger.info("Tick interval set to 0s (maximum speed - no delay between ticks)")
         else:
             logger.info(f"Tick interval updated to {interval_seconds}s")
-        return {
-            "tick_interval_seconds": self.tick_manager.get_tick_interval(),
-            "message": f"Tick interval set to {interval_seconds}s" + (" (max speed)" if interval_seconds == 0 else ""),
-        }
+        return result
 
     def get_tick_interval(self) -> float:
-        """Get the current auto-tick interval (in seconds)."""
-        return self.tick_manager.get_tick_interval()
+        return self.lifecycle.get_tick_interval()
 
     def advance(self, ticks: int, reason: str) -> SimulationAdvanceResult:
         with self.tick_manager.get_advance_lock():
@@ -1648,49 +1581,8 @@ class SimulationEngine:
             )
 
     def reset_full(self) -> SimulationState:
-        """Resets simulation state and deletes all personas.
-
-        Intended for a destructive "start fresh" action in the dashboard.
-        Flushes ALL data including emails, chats, and all simulation artifacts.
-        """
-        # First clear runtime and planning artifacts
-        # (reset() acquires its own lock)
-        self.reset()
-
-        # Then purge ALL data including email and chat servers
-        with self.tick_manager.get_advance_lock():
-            with get_connection() as conn:
-                # Delete personas (cascades to schedule_blocks, project_assignments, etc.)
-                conn.execute("DELETE FROM people")
-
-                # Delete email server data
-                conn.execute("DELETE FROM emails")
-                conn.execute("DELETE FROM email_recipients")
-                conn.execute("DELETE FROM mailboxes")
-                conn.execute("DELETE FROM drafts")
-
-                # Delete chat server data
-                conn.execute("DELETE FROM chat_messages")
-                conn.execute("DELETE FROM chat_members")
-                conn.execute("DELETE FROM chat_rooms")
-                conn.execute("DELETE FROM chat_users")
-
-                # Delete any remaining simulation artifacts
-                conn.execute("DELETE FROM hourly_summaries")
-
-            # Clear all status overrides via StateManager
-            self.state.clear_all_status_overrides()
-
-            # Reset runtime caches after purge
-            self._reset_runtime_state()
-            self.tick_manager.update_work_windows([])
-            status = self.state.get_current_state()
-            return SimulationState(
-                current_tick=status.current_tick,
-                is_running=status.is_running,
-                auto_tick=status.auto_tick,
-                sim_time=self.tick_manager.format_sim_time(status.current_tick),
-            )
+        """Resets simulation state and deletes all personas."""
+        return self.lifecycle.reset_full()
 
     def _derive_seed(self, request: SimulationStartRequest | None) -> int:
         if request and request.random_seed is not None:
