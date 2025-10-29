@@ -29,6 +29,36 @@ class PlanStore:
             row = conn.execute("SELECT * FROM worker_plans WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return self._row_to_worker_plan(row)
 
+    def batch_insert_worker_plans(
+        self, plans: list[tuple[int, int, str, PlanResult, str | None]]
+    ) -> None:
+        """
+        Batch insert multiple worker plans in a single transaction for better performance.
+
+        Args:
+            plans: List of tuples (person_id, tick, plan_type, result, context)
+        """
+        if not plans:
+            return
+
+        with get_connection() as conn:
+            conn.executemany(
+                "INSERT INTO worker_plans(person_id, tick, plan_type, content, model_used, tokens_used, context) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        person_id,
+                        tick,
+                        plan_type,
+                        result.content,
+                        result.model_used,
+                        result.tokens_used,
+                        context,
+                    )
+                    for person_id, tick, plan_type, result, context in plans
+                ],
+            )
+
     def get_worker_plan(
         self, person_id: int, plan_type: str, tick: int | None = None, exact_tick: bool = False
     ) -> dict[str, Any] | None:

@@ -47,6 +47,8 @@ class PlanningOrchestrator:
         self.report_store = report_store
         self.locale = locale
         self.hours_per_day = hours_per_day
+        # Cache LocalizationManager to avoid repeated lookups
+        self._locale_manager = get_current_locale_manager()
 
     # Daily planning ----------------------------------------------------
     def ensure_daily_plan(
@@ -136,6 +138,7 @@ class PlanningOrchestrator:
         model_hint: str | None,
         adjustments: list[str] | None = None,
         all_active_projects: list[dict[str, Any]] | None = None,
+        skip_persist: bool = False,
     ) -> PlanResult:
         # Recent emails for threading context
         recent_emails = self.communication_hub.get_recent_emails_for_person(person.id, limit=10)
@@ -181,20 +184,20 @@ class PlanningOrchestrator:
         content_result = result
         if adjustments:
             bullets = "\n".join(f"- {item}" for item in adjustments)
-            loc = get_current_locale_manager()
-            header = loc.get_text("live_collaboration_adjustments")
+            header = self._locale_manager.get_text("live_collaboration_adjustments")
             content = f"{result.content}\n\n{header}:\n{bullets}"
             content_result = PlanResult(content=content, model_used=result.model_used, tokens_used=result.tokens_used)
 
-        # Persist
-        context = f"reason={reason}" + (f";adjustments={len(adjustments)}" if adjustments else "")
-        self.plan_store.put_worker_plan(
-            person_id=person.id,
-            tick=tick,
-            plan_type="hourly",
-            result=content_result,
-            context=context,
-        )
+        # Persist (unless caller will batch insert)
+        if not skip_persist:
+            context = f"reason={reason}" + (f";adjustments={len(adjustments)}" if adjustments else "")
+            self.plan_store.put_worker_plan(
+                person_id=person.id,
+                tick=tick,
+                plan_type="hourly",
+                result=content_result,
+                context=context,
+            )
         return content_result
 
     def generate_hourly_plans_parallel(
@@ -204,6 +207,7 @@ class PlanningOrchestrator:
         executor: ThreadPoolExecutor | None,
         team_provider: callable | None = None,  # deprecated; team is per-task in this pass
         model_hint: str | None = None,
+        skip_persist: bool = False,  # Skip individual persistence for batch insert optimization
     ) -> list[tuple[PersonRead, PlanResult]]:
         # Fallback to sequential if no executor or only one task
         if not executor or len(planning_tasks) <= 1:
@@ -225,6 +229,7 @@ class PlanningOrchestrator:
                         model_hint=model_hint,
                         adjustments=adjustments,
                         all_active_projects=all_active_projects,
+                        skip_persist=skip_persist,
                     )
                 except Exception as exc:
                     logger.error(f"Sequential planning failed for {person.name}: {exc}")
@@ -249,6 +254,7 @@ class PlanningOrchestrator:
                         model_hint=model_hint,
                         adjustments=adjustments,
                         all_active_projects=all_active_projects,
+                        skip_persist=skip_persist,
                     ),
                 )
             )
@@ -336,7 +342,7 @@ class PlanningOrchestrator:
         hourly_summary = (
             "\n".join(hourly_summary_lines)
             if hourly_summary_lines
-            else get_current_locale_manager().get_text("no_hourly_activities")
+            else self._locale_manager.get_text("no_hourly_activities")
         )
 
         # Minute schedule outline

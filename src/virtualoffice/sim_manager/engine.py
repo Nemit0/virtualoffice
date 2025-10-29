@@ -18,7 +18,6 @@ from virtualoffice.virtualWorkers.worker import (
     ScheduleBlock,
     WorkerPersona,
     build_worker_markdown,
-    render_minute_schedule,
 )
 # Lazy imports moved to method level to avoid circular dependency at module load time
 # VirtualWorker, PlanningContext, DailyPlanningContext, ReportContext imported where needed
@@ -27,6 +26,7 @@ from .core.simulation_state import (
     SimulationState as StateManager,
 )
 from .core.tick_manager import TickManager
+from .core.lifecycle import SimulationLifecycle
 from .core.event_system import EventSystem, InboundMessage
 from .core.communication_hub import CommunicationHub
 from .core.worker_runtime import WorkerRuntimeManager
@@ -50,6 +50,16 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cache LocalizationManager to avoid repeated os.getenv() calls and instance creation
+_locale_manager_cache: dict[str, Any] = {}
+
+def _get_cached_locale_manager() -> Any:
+    """Get cached LocalizationManager instance to avoid repeated lookups."""
+    locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
+    if locale not in _locale_manager_cache:
+        _locale_manager_cache[locale] = get_current_locale_manager()
+    return _locale_manager_cache[locale]
 
 # Use InboundMessage from EventSystem module
 _InboundMessage = InboundMessage
@@ -140,6 +150,7 @@ class SimulationEngine:
             self._max_hourly_plans_per_minute = 10
         # (person_id, day_index, tick_of_day) -> attempts
         self._hourly_plan_attempts: dict[tuple[int, int, int], int] = {}
+        self._hourly_plan_attempts_lock = threading.Lock()  # Protect from race conditions in parallel planning
         # Parallel planning configuration
         try:
             self._max_planning_workers = int(os.getenv("VDOS_MAX_PLANNING_WORKERS", "4"))
@@ -407,18 +418,27 @@ class SimulationEngine:
         # Multi-project mode
         if request.projects:
             team_by_id = {p.id: p for p in team}
-            for proj_timeline in request.projects:
-                # Determine team for this project
-                if proj_timeline.assigned_person_ids:
-                    proj_team = [team_by_id[pid] for pid in proj_timeline.assigned_person_ids if pid in team_by_id]
-                else:
-                    proj_team = list(team)  # All team members by default
 
-                if not proj_team:
-                    continue
+            # Parallelize project plan generation for faster startup
+            if self._planning_executor and len(request.projects) > 1:
+                logger.info(f"Generating {len(request.projects)} project plans in parallel")
 
-                try:
-                    plan_result = self._call_planner(
+                # Prepare all planning tasks
+                planning_futures = []
+                project_teams = []
+                for proj_timeline in request.projects:
+                    # Determine team for this project
+                    if proj_timeline.assigned_person_ids:
+                        proj_team = [team_by_id[pid] for pid in proj_timeline.assigned_person_ids if pid in team_by_id]
+                    else:
+                        proj_team = list(team)  # All team members by default
+
+                    if not proj_team:
+                        continue
+
+                    # Submit parallel GPT call
+                    future = self._planning_executor.submit(
+                        self._call_planner,
                         "generate_project_plan",
                         department_head=department_head,
                         project_name=proj_timeline.project_name,
@@ -427,29 +447,81 @@ class SimulationEngine:
                         team=proj_team,
                         model_hint=request.model_hint,
                     )
-                except PlanningError as exc:
-                    raise RuntimeError(
-                        f"Unable to generate project plan for '{proj_timeline.project_name}': {exc}"
-                    ) from exc
+                    planning_futures.append((proj_timeline, proj_team, future))
+                    project_teams.append(proj_team)
 
-                project_plan = self._store_project_plan(
-                    project_name=proj_timeline.project_name,
-                    project_summary=proj_timeline.project_summary,
-                    plan_result=plan_result,
-                    generated_by=department_head.id if department_head else None,
-                    duration_weeks=proj_timeline.duration_weeks,
-                    start_week=proj_timeline.start_week,
-                    assigned_person_ids=proj_timeline.assigned_person_ids,
-                )
+                # Collect results and persist
+                for proj_timeline, proj_team, future in planning_futures:
+                    try:
+                        plan_result = future.result(timeout=120)
+                    except Exception as exc:
+                        raise RuntimeError(
+                            f"Unable to generate project plan for '{proj_timeline.project_name}': {exc}"
+                        ) from exc
 
-                # Create project chat room
-                try:
-                    room_slug = self.create_project_chat_room(
-                        project_id=project_plan["id"], project_name=proj_timeline.project_name, team_members=proj_team
+                    project_plan = self._store_project_plan(
+                        project_name=proj_timeline.project_name,
+                        project_summary=proj_timeline.project_summary,
+                        plan_result=plan_result,
+                        generated_by=department_head.id if department_head else None,
+                        duration_weeks=proj_timeline.duration_weeks,
+                        start_week=proj_timeline.start_week,
+                        assigned_person_ids=proj_timeline.assigned_person_ids,
                     )
-                    logger.info(f"Created project chat room '{room_slug}' for project '{proj_timeline.project_name}'")
-                except Exception as exc:
-                    logger.warning(f"Failed to create chat room for project '{proj_timeline.project_name}': {exc}")
+
+                    # Create project chat room
+                    try:
+                        room_slug = self.create_project_chat_room(
+                            project_id=project_plan["id"], project_name=proj_timeline.project_name, team_members=proj_team
+                        )
+                        logger.info(f"Created project chat room '{room_slug}' for project '{proj_timeline.project_name}'")
+                    except Exception as exc:
+                        logger.warning(f"Failed to create chat room for project '{proj_timeline.project_name}': {exc}")
+            else:
+                # Fallback to sequential if executor disabled or single project
+                for proj_timeline in request.projects:
+                    # Determine team for this project
+                    if proj_timeline.assigned_person_ids:
+                        proj_team = [team_by_id[pid] for pid in proj_timeline.assigned_person_ids if pid in team_by_id]
+                    else:
+                        proj_team = list(team)  # All team members by default
+
+                    if not proj_team:
+                        continue
+
+                    try:
+                        plan_result = self._call_planner(
+                            "generate_project_plan",
+                            department_head=department_head,
+                            project_name=proj_timeline.project_name,
+                            project_summary=proj_timeline.project_summary,
+                            duration_weeks=proj_timeline.duration_weeks,
+                            team=proj_team,
+                            model_hint=request.model_hint,
+                        )
+                    except PlanningError as exc:
+                        raise RuntimeError(
+                            f"Unable to generate project plan for '{proj_timeline.project_name}': {exc}"
+                        ) from exc
+
+                    project_plan = self._store_project_plan(
+                        project_name=proj_timeline.project_name,
+                        project_summary=proj_timeline.project_summary,
+                        plan_result=plan_result,
+                        generated_by=department_head.id if department_head else None,
+                        duration_weeks=proj_timeline.duration_weeks,
+                        start_week=proj_timeline.start_week,
+                        assigned_person_ids=proj_timeline.assigned_person_ids,
+                    )
+
+                    # Create project chat room
+                    try:
+                        room_slug = self.create_project_chat_room(
+                            project_id=project_plan["id"], project_name=proj_timeline.project_name, team_members=proj_team
+                        )
+                        logger.info(f"Created project chat room '{room_slug}' for project '{proj_timeline.project_name}'")
+                    except Exception as exc:
+                        logger.warning(f"Failed to create chat room for project '{proj_timeline.project_name}': {exc}")
 
             # For multi-project mode, skip ALL initial person planning to avoid timeout
             # All daily/hourly plans will be generated lazily on first advance()
@@ -554,12 +626,16 @@ class SimulationEngine:
         planning_tasks: list[
             tuple[PersonRead, dict[str, Any], str, int, str, list[str] | None, list[dict[str, Any]] | None]
         ],
+        team: list[PersonRead] | None = None,
     ) -> list[tuple[PersonRead, PlanResult]]:
+        # Use provided team list to avoid database queries from multiple threads
+        team_list = team if team is not None else self._get_active_people()
         return self.planning_orchestrator.generate_hourly_plans_parallel(
             planning_tasks,
             executor=self._planning_executor,
-            team_provider=lambda: self._get_active_people(),
+            team_provider=lambda: team_list,  # Return cached list instead of querying DB
             model_hint=self._planner_model_hint,
+            skip_persist=True,  # We'll batch insert for better performance
         )
 
     def _generate_hourly_plan(
@@ -593,22 +669,8 @@ class SimulationEngine:
         result: PlanResult,
         context: str | None,
     ) -> dict[str, Any]:
-        # Ensure person exists
-        self.get_person(person_id)
+        # Person validation already done in planning phase - skip redundant DB query
         return self.plan_store.put_worker_plan(person_id, tick, plan_type, result, context)
-
-    def _row_to_worker_plan(self, row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "person_id": row["person_id"],
-            "tick": row["tick"],
-            "plan_type": row["plan_type"],
-            "content": row["content"],
-            "model_used": row["model_used"],
-            "tokens_used": row["tokens_used"],
-            "context": row["context"],
-            "created_at": row["created_at"],
-        }
 
     def _fetch_worker_plan(
         self,
@@ -692,20 +754,6 @@ class SimulationEngine:
     ) -> dict[str, Any]:
         return self.report_store.put_daily_report(person_id, day_index, schedule_outline, result)
 
-    def _row_to_daily_report(self, row) -> dict[str, Any] | None:
-        if row is None:
-            return None
-        return {
-            "id": row["id"],
-            "person_id": row["person_id"],
-            "day_index": row["day_index"],
-            "report": row["report"],
-            "schedule_outline": row["schedule_outline"],
-            "model_used": row["model_used"],
-            "tokens_used": row["tokens_used"],
-            "created_at": row["created_at"],
-        }
-
     def _generate_simulation_report(self, project_plan: dict[str, Any], total_ticks: int) -> dict[str, Any]:
         if not project_plan:
             raise RuntimeError("Cannot generate simulation report without a project plan")
@@ -771,17 +819,6 @@ class SimulationEngine:
 
     def _store_simulation_report(self, total_ticks: int, result: PlanResult) -> dict[str, Any]:
         return self.report_store.put_simulation_report(total_ticks, result)
-
-    def _row_to_simulation_report(self, row) -> dict[str, Any]:
-        # Kept for backward compatibility; unused after extraction.
-        return None if row is None else {
-            "id": row["id"],
-            "report": row["report"],
-            "model_used": row["model_used"],
-            "tokens_used": row["tokens_used"],
-            "total_ticks": row["total_ticks"],
-            "created_at": row["created_at"],
-        }
 
     def get_token_usage(self) -> dict[str, int]:
         return self.report_store.get_token_usage()
@@ -880,12 +917,13 @@ class SimulationEngine:
                 event_adjustments, _ = self._maybe_generate_events(people, status.current_tick, project_plan)
                 day_index = (status.current_tick - 1) // self.hours_per_day
                 tick_of_day = (status.current_tick - 1) % self.hours_per_day if self.hours_per_day > 0 else 0
-                # Prune stale plan-attempt counters (keep only this minute)
-                if self._hourly_plan_attempts:
-                    keys = list(self._hourly_plan_attempts.keys())
-                    for key in keys:
-                        if key[1] != day_index or key[2] != tick_of_day:
-                            self._hourly_plan_attempts.pop(key, None)
+                # Prune stale plan-attempt counters (keep only this minute) - thread-safe
+                with self._hourly_plan_attempts_lock:
+                    if self._hourly_plan_attempts:
+                        keys = list(self._hourly_plan_attempts.keys())
+                        for key in keys:
+                            if key[1] != day_index or key[2] != tick_of_day:
+                                self._hourly_plan_attempts.pop(key, None)
 
                 # PHASE 1: Collect planning tasks and prepare context
                 planning_tasks = []
@@ -899,7 +937,7 @@ class SimulationEngine:
                     override = self.state.get_status_overrides().get(person.id)
                     if override and override[0] == "SickLeave":
                         incoming = []
-                        adjustments.append("Observe sick leave and hold tasks until recovered.")
+                        adjustments.append("병가를 준수하고 회복할 때까지 작업을 보류합니다.")
                     if not working:
                         if incoming:
                             for message in incoming:
@@ -908,7 +946,7 @@ class SimulationEngine:
                             reminder = _InboundMessage(
                                 sender_id=0,
                                 sender_name="Simulation Manager",
-                                subject=get_current_locale_manager().get_text("pending_adjustment"),
+                                subject=_get_cached_locale_manager().get_text("pending_adjustment"),
                                 summary=note,
                                 action_item=note,
                                 message_type="event",
@@ -928,49 +966,47 @@ class SimulationEngine:
                     should_plan = bool(incoming) or bool(adjustments) or reason != "auto" or (tick_of_day == 0)
                     if not should_plan:
                         continue
-                    # Hourly planning limiter per minute
+                    # Hourly planning limiter per minute (thread-safe)
                     key = (person.id, day_index, tick_of_day)
-                    attempts = self._hourly_plan_attempts.get(key, 0)
-                    if attempts >= self._max_hourly_plans_per_minute:
-                        logger.warning(
-                            "Skipping hourly planning for %s at tick %s (minute cap %s reached)",
-                            person.name,
-                            status.current_tick,
-                            self._max_hourly_plans_per_minute,
-                        )
-                        continue
-                    # record attempt before planning to avoid re-entry storms
-                    self._hourly_plan_attempts[key] = attempts + 1
+                    with self._hourly_plan_attempts_lock:
+                        attempts = self._hourly_plan_attempts.get(key, 0)
+                        if attempts >= self._max_hourly_plans_per_minute:
+                            logger.warning(
+                                "Skipping hourly planning for %s at tick %s (minute cap %s reached)",
+                                person.name,
+                                status.current_tick,
+                                self._max_hourly_plans_per_minute,
+                            )
+                            continue
+                        # record attempt before planning to avoid re-entry storms
+                        self._hourly_plan_attempts[key] = attempts + 1
                     self.worker_runtime_manager.remove_messages(
                         [msg.message_id for msg in incoming if msg.message_id is not None]
                     )
                     for message in incoming:
                         sender_person = people_by_id.get(message.sender_id)
                         if message.message_type == "ack":
-                            adjustments.append(f"Acknowledged by {message.sender_name}: {message.summary}")
+                            adjustments.append(f"{message.sender_name}의 확인: {message.summary}")
                             continue
                         if message.action_item:
-                            adjustments.append(f"Handle request from {message.sender_name}: {message.action_item}")
+                            adjustments.append(f"{message.sender_name}의 요청 처리: {message.action_item}")
                         if sender_person is None:
                             continue
                         ack_phrase = (
                             message.action_item
                             or message.summary
-                            or get_current_locale_manager().get_text("your_latest_update")
+                            or _get_cached_locale_manager().get_text("your_latest_update")
                         ).rstrip(".")
-                        if self._locale == "ko":
-                            # More varied and natural Korean acknowledgments
-                            import random
+                        # More varied and natural Korean acknowledgments
+                        import random
 
-                            ack_patterns = [
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다.",
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 진행하겠습니다.",
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중입니다.",
-                                f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리하겠습니다.",
-                            ]
-                            ack_body = random.choice(ack_patterns)
-                        else:
-                            ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
+                        ack_patterns = [
+                            f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다.",
+                            f"{sender_person.name.split()[0]}님, {ack_phrase} 진행하겠습니다.",
+                            f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중입니다.",
+                            f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리하겠습니다.",
+                        ]
+                        ack_body = random.choice(ack_patterns)
                         if self._can_send(
                             tick=status.current_tick,
                             channel="chat",
@@ -991,7 +1027,7 @@ class SimulationEngine:
                         ack_message = _InboundMessage(
                             sender_id=person.id,
                             sender_name=person.name,
-                            subject=get_current_locale_manager().get_template("acknowledgement_from", name=person.name),
+                            subject=_get_cached_locale_manager().get_template("acknowledgement_from", name=person.name),
                             summary=ack_body,
                             action_item=None,
                             message_type="ack",
@@ -1044,11 +1080,14 @@ class SimulationEngine:
 
                 # PHASE 2: Execute planning in parallel (or sequential if disabled)
                 if planning_tasks:
-                    plan_results = self._generate_hourly_plans_parallel(planning_tasks)
+                    plan_results = self._generate_hourly_plans_parallel(planning_tasks, team=people)
                 else:
                     plan_results = []
 
                 # PHASE 3: Process results and send communications
+                # Collect plans for batch insert to reduce DB overhead
+                plans_to_insert: list[tuple[int, int, str, PlanResult, str | None]] = []
+
                 for person, hourly_result in plan_results:
                     context = person_contexts[person.id]
                     override = context["override"]
@@ -1062,20 +1101,19 @@ class SimulationEngine:
                     daily_summary = self._summarise_plan(daily_plan_text, max_lines=3)
                     hourly_summary = self._summarise_plan(hourly_result.content)
 
-                    # Store the hourly plan
-                    self._store_worker_plan(
-                        person_id=person.id,
-                        tick=status.current_tick,
-                        plan_type="hourly",
-                        result=hourly_result,
-                        context=None,
-                    )
+                    # Collect hourly plan for batch insert (performance optimization)
+                    plans_to_insert.append((person.id, status.current_tick, "hourly", hourly_result, None))
 
                     # Schedule any explicitly timed comms from the hourly plan
                     try:
                         self._schedule_from_hourly_plan(person, hourly_result.content, status.current_tick)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to schedule comms from hourly plan for %s at tick %s: %s",
+                            person.name,
+                            status.current_tick,
+                            exc,
+                        )
                     if override and override[0] == "SickLeave":
                         continue
 
@@ -1087,7 +1125,7 @@ class SimulationEngine:
                     if se or sc:
                         continue
                     if not recipients:
-                        subject = get_current_locale_manager().get_template("update_for", name=person.name)
+                        subject = _get_cached_locale_manager().get_template("update_for", name=person.name)
                         body_lines = [
                             f"Project: {person_project['project_name']}",
                             f"Daily focus:\n{daily_summary}",
@@ -1138,7 +1176,7 @@ class SimulationEngine:
                         continue
                     action_item = self._derive_action_item(hourly_summary, daily_summary)
                     for i, recipient in enumerate(recipients):
-                        subject = get_current_locale_manager().get_template(
+                        subject = _get_cached_locale_manager().get_template(
                             "update_from_to", from_name=person.name, to_name=recipient.name
                         )
                         if self._locale == "ko":
@@ -1164,10 +1202,8 @@ class SimulationEngine:
                         body = "\n".join(body_lines)
                         # Suggest CCs for fallback emails (dept head + one relevant peer)
                         cc_suggest: list[str] = []
-                        try:
-                            head = next((p for p in people if getattr(p, "is_department_head", False)), None)
-                        except Exception:
-                            head = None
+                        # next() with default won't raise exception, no try-except needed
+                        head = next((p for p in people if getattr(p, "is_department_head", False)), None)
                         if head and head.id not in {person.id, recipient.id}:
                             cc_email = getattr(head, "email_address", None)
                             if cc_email:
@@ -1252,22 +1288,67 @@ class SimulationEngine:
                         )
                         self.worker_runtime_manager.queue_message(recipient, inbound)
 
+                # Batch insert all hourly plans for this tick (performance optimization)
+                if plans_to_insert:
+                    self.plan_store.batch_insert_worker_plans(plans_to_insert)
+
                 # Generate hourly summaries at the end of each hour (every 60 ticks)
                 if status.current_tick % 60 == 0:
                     completed_hour = (status.current_tick // 60) - 1
-                    for person in people:
-                        try:
-                            self._generate_hourly_summary(person, completed_hour)
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}"
+
+                    # Parallelize summary generation for faster processing
+                    if self._planning_executor and len(people) > 1:
+                        logger.info(f"Generating hourly summaries for {len(people)} workers in parallel")
+                        futures = []
+                        for person in people:
+                            future = self._planning_executor.submit(
+                                self._generate_hourly_summary, person, completed_hour
                             )
+                            futures.append((person, future))
+
+                        # Collect results
+                        for person, future in futures:
+                            try:
+                                future.result(timeout=30)
+                            except Exception as e:
+                                logger.warning(f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}")
+                    else:
+                        # Fallback to sequential if executor disabled or single worker
+                        for person in people:
+                            try:
+                                self._generate_hourly_summary(person, completed_hour)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}"
+                                )
 
                 # Generate daily reports at the end of each day
                 if status.current_tick % self.hours_per_day == 0:
                     completed_day = (status.current_tick // self.hours_per_day) - 1
-                    for person in people:
-                        self._generate_daily_report(person, completed_day, project_plan)
+
+                    # Parallelize report generation for faster processing
+                    if self._planning_executor and len(people) > 1:
+                        logger.info(f"Generating daily reports for {len(people)} workers in parallel")
+                        futures = []
+                        for person in people:
+                            future = self._planning_executor.submit(
+                                self._generate_daily_report, person, completed_day, project_plan
+                            )
+                            futures.append((person, future))
+
+                        # Collect results
+                        for person, future in futures:
+                            try:
+                                future.result(timeout=60)
+                            except Exception as e:
+                                logger.warning(f"Failed to generate daily report for {person.name} day {completed_day}: {e}")
+                    else:
+                        # Fallback to sequential if executor disabled or single worker
+                        for person in people:
+                            try:
+                                self._generate_daily_report(person, completed_day, project_plan)
+                            except Exception as e:
+                                logger.warning(f"Failed to generate daily report for {person.name} day {completed_day}: {e}")
 
             return SimulationAdvanceResult(
                 ticks_advanced=ticks,
@@ -1294,10 +1375,6 @@ class SimulationEngine:
     def _queue_runtime_message(self, recipient: PersonRead, message: _InboundMessage) -> None:
         """Delegate to WorkerRuntimeManager for backward compatibility."""
         self.worker_runtime_manager.queue_message(recipient, message)
-
-    def _load_status_overrides(self) -> None:
-        # Delegated to StateManager - no longer needed here
-        pass
 
     def _log_exchange(
         self,
@@ -1447,8 +1524,37 @@ class SimulationEngine:
         )
 
     def _bootstrap_channels(self) -> None:
-        self.email_gateway.ensure_mailbox(self.sim_manager_email, "Simulation Manager")
-        self.chat_gateway.ensure_user(self.sim_manager_handle, "Simulation Manager")
+        """Bootstrap email and chat channels with retry logic for service startup."""
+        import time
+        import httpx
+        
+        max_retries = 10
+        retry_delay = 0.5  # Start with 500ms
+        
+        # Retry email gateway
+        for attempt in range(max_retries):
+            try:
+                self.email_gateway.ensure_mailbox(self.sim_manager_email, "Simulation Manager")
+                break
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                if attempt == max_retries - 1:
+                    print(f"[SimEngine] WARNING: Could not connect to email service after {max_retries} attempts. Email features may not work.")
+                    break
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.5, 5.0)  # Exponential backoff, max 5s
+        
+        # Retry chat gateway
+        retry_delay = 0.5
+        for attempt in range(max_retries):
+            try:
+                self.chat_gateway.ensure_user(self.sim_manager_handle, "Simulation Manager")
+                break
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                if attempt == max_retries - 1:
+                    print(f"[SimEngine] WARNING: Could not connect to chat service after {max_retries} attempts. Chat features may not work.")
+                    break
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.5, 5.0)
 
     # (row mapping moved to PeopleRepository)
 
