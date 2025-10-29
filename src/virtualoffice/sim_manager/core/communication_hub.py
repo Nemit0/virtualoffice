@@ -27,6 +27,9 @@ from .tick_manager import TickManager
 
 logger = logging.getLogger(__name__)
 
+# Email threading configuration
+MAX_RECENT_EMAILS_PER_PERSON = 10  # Maximum recent emails to track per person for threading context
+
 
 class CommunicationHub:
     """
@@ -76,6 +79,35 @@ class CommunicationHub:
     def reset_tick_sends(self) -> None:
         """Clear deduplication tracking for a new tick."""
         self._sent_dedup.clear()
+
+    def cleanup_old_scheduled_comms(self, current_tick: int, keep_history_ticks: int = 100) -> int:
+        """
+        Remove scheduled communications for ticks that are far in the past.
+
+        This prevents memory leaks from scheduled ticks that were never executed.
+        Keeps recent history for debugging but removes very old entries.
+
+        Args:
+            current_tick: Current simulation tick
+            keep_history_ticks: How many ticks of history to keep (default: 100)
+
+        Returns:
+            Number of old ticks cleaned up
+        """
+        cutoff_tick = max(0, current_tick - keep_history_ticks)
+        cleaned_count = 0
+
+        for person_id in list(self._scheduled_comms.keys()):
+            by_tick = self._scheduled_comms[person_id]
+            old_ticks = [tick for tick in by_tick.keys() if tick < cutoff_tick]
+            for tick in old_ticks:
+                by_tick.pop(tick, None)
+                cleaned_count += 1
+            # Remove person entry if empty
+            if not by_tick:
+                self._scheduled_comms.pop(person_id, None)
+
+        return cleaned_count
 
     def can_send(
         self, *, tick: int, channel: str, sender: str, recipient_key: tuple, subject: str | None, body: str
@@ -268,6 +300,10 @@ class CommunicationHub:
         Returns:
             Tuple of (emails_sent, chats_sent)
         """
+        # Periodic cleanup of old scheduled ticks to prevent memory leaks
+        if current_tick % 50 == 0:
+            self.cleanup_old_scheduled_comms(current_tick)
+
         emails = chats = 0
         by_tick = self._scheduled_comms.get(person.id) or {}
         actions = by_tick.pop(current_tick, [])
@@ -487,7 +523,7 @@ class CommunicationHub:
                         }
                         # Add to sender's recent emails
                         if person.id not in self._recent_emails:
-                            self._recent_emails[person.id] = deque(maxlen=10)
+                            self._recent_emails[person.id] = deque(maxlen=MAX_RECENT_EMAILS_PER_PERSON)
                         self._recent_emails[person.id].append(email_record)
 
                         # Also add to all recipients' recent emails for their context
@@ -495,7 +531,7 @@ class CommunicationHub:
                             recipient_person = email_index.get(recipient_addr.lower())
                             if recipient_person:
                                 if recipient_person.id not in self._recent_emails:
-                                    self._recent_emails[recipient_person.id] = deque(maxlen=10)
+                                    self._recent_emails[recipient_person.id] = deque(maxlen=MAX_RECENT_EMAILS_PER_PERSON)
                                 self._recent_emails[recipient_person.id].append(email_record)
 
             elif channel == "chat" and chat_to:

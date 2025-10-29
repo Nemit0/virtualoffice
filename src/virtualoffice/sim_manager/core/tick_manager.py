@@ -327,7 +327,9 @@ class TickManager:
         """
         while not stop_event.wait(self._tick_interval_seconds):
             state = state_manager.get_current_state()
+            logger.debug(f"Auto-tick loop: tick={state.current_tick}, running={state.is_running}, auto_tick={state.auto_tick}")
             if not state.is_running or not state.auto_tick:
+                logger.debug("Auto-tick loop breaking: simulation not running or auto-tick disabled")
                 break
 
             # Check if auto-pause on project completion is enabled
@@ -411,9 +413,13 @@ class TickManager:
                         f"Continuing auto-tick to prevent simulation halt."
                     )
 
+            logger.debug(f"Auto-tick loop: about to call advance_callback()")
             try:
-                with self._advance_lock:
-                    advance_callback()
+                # Don't acquire lock here - advance_callback() (which calls advance()) already acquires it
+                # Acquiring it here causes deadlock since threading.Lock is not reentrant
+                logger.debug(f"Auto-tick loop: calling advance")
+                advance_callback()
+                logger.debug(f"Auto-tick loop: advance completed successfully")
             except Exception:  # pragma: no cover - defensive logging
                 logger.exception("Automatic tick failed; disabling auto ticks.")
                 state_manager.set_auto_tick(False)

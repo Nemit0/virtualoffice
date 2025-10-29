@@ -57,10 +57,10 @@ class ContextBuilder:
         """
         context = {
             "worker_name": worker.name,
-            "worker_role": worker.role or "Team Member",
+            "worker_role": worker.role or "팀원",
             "worker_email": worker.email_address,
             "worker_chat_handle": worker.chat_handle,
-            "worker_timezone": getattr(worker, "timezone", "UTC"),
+            "worker_timezone": getattr(worker, "timezone", "Asia/Seoul"),
             "tick": tick,
             "context_reason": reason,
             "project_plan": project_plan,
@@ -72,7 +72,7 @@ class ContextBuilder:
         if hasattr(worker, "persona_markdown") and worker.persona_markdown:
             context["persona_markdown"] = worker.persona_markdown
         else:
-            context["persona_markdown"] = f"Role: {worker.role}\nSkills: General"
+            context["persona_markdown"] = f"역할: {worker.role}\n기술: 일반"
 
         # Add work hours
         work_hours = getattr(worker, "work_hours", "09:00-17:00") or "09:00-17:00"
@@ -125,13 +125,13 @@ class ContextBuilder:
         """
         context = {
             "worker_name": worker.name,
-            "worker_role": worker.role or "Team Member",
+            "worker_role": worker.role or "팀원",
             "worker_email": worker.email_address,
             "tick": tick,
-            "event_type": event.get("event_type", "unknown"),
+            "event_type": event.get("event_type", "알 수 없음"),
             "event_description": event.get("description", ""),
             "event_payload": event.get("payload", {}),
-            "project_name": project_plan.get("project_name", "Current Project"),
+            "project_name": project_plan.get("project_name", "현재 프로젝트"),
             "project_plan": project_plan.get("plan", ""),
             "locale": self.locale,
         }
@@ -140,7 +140,7 @@ class ContextBuilder:
         if hasattr(worker, "persona_markdown") and worker.persona_markdown:
             context["persona_markdown"] = worker.persona_markdown
         else:
-            context["persona_markdown"] = f"Role: {worker.role}\nSkills: General"
+            context["persona_markdown"] = f"역할: {worker.role}\n기술: 일반"
 
         # Build team roster
         context["team_roster"] = self._format_team_roster(worker, team)
@@ -170,12 +170,12 @@ class ContextBuilder:
         """
         context = {
             "worker_name": worker.name,
-            "worker_role": worker.role or "Team Member",
+            "worker_role": worker.role or "팀원",
             "day_index": day_index,
             "day_number": day_index + 1,
             "daily_plan": daily_plan,
-            "hourly_log": hourly_log or "No hourly updates recorded.",
-            "minute_schedule": minute_schedule or "No detailed schedule available.",
+            "hourly_log": hourly_log or "기록된 시간별 업데이트가 없습니다.",
+            "minute_schedule": minute_schedule or "상세 일정을 사용할 수 없습니다.",
             "locale": self.locale,
         }
 
@@ -183,7 +183,7 @@ class ContextBuilder:
         if hasattr(worker, "persona_markdown") and worker.persona_markdown:
             context["persona_markdown"] = worker.persona_markdown
         else:
-            context["persona_markdown"] = f"Role: {worker.role}\nSkills: General"
+            context["persona_markdown"] = f"역할: {worker.role}\n기술: 일반"
 
         return context
 
@@ -278,13 +278,13 @@ class ContextBuilder:
         if self.locale == "ko":
             lines.append("최근 이메일 (스레드 컨텍스트용):")
         else:
-            lines.append("Recent Emails (for threading context):")
+            lines.append("최근 이메일 (스레딩 맥락용):")
 
         for i, email in enumerate(emails[-5:], 1):
             email_id = email.get("email_id", f"email-{i}")
-            from_addr = email.get("from", "unknown")
-            subject = email.get("subject", "No subject")
-            lines.append(f"  [{email_id}] From: {from_addr} - Subject: {subject}")
+            from_addr = email.get("from", "알 수 없음")
+            subject = email.get("subject", "제목 없음")
+            lines.append(f"  [{email_id}] 발신: {from_addr} - 제목: {subject}")
 
         return "\n".join(lines)
 
@@ -305,12 +305,12 @@ class ContextBuilder:
         if self.locale == "ko":
             lines.append("중요: 현재 여러 프로젝트를 동시에 진행 중입니다:")
         else:
-            lines.append("IMPORTANT: You are currently working on MULTIPLE projects concurrently:")
+            lines.append("중요: 현재 여러 프로젝트를 동시에 진행 중입니다:")
 
         for i, proj in enumerate(projects, 1):
-            project_name = proj.get("project_name", f"Project {i}")
+            project_name = proj.get("project_name", f"프로젝트 {i}")
             plan = proj.get("plan", "")
-            lines.append(f"\nProject {i}: {project_name}")
+            lines.append(f"\n프로젝트 {i}: {project_name}")
             # Truncate plan for brevity
             if len(plan) > 500:
                 lines.append(plan[:500] + "...")

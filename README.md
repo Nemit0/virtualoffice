@@ -388,6 +388,7 @@ For detailed documentation, see:
 - `docs/architecture.md` - Complete architecture overview
 - `docs/guides/migration_guide.md` - Migration guide for refactored engine
 - `docs/guides/template_authoring.md` - Creating custom prompt templates
+- `docs/guides/troubleshooting.md` - Troubleshooting common issues
 - `docs/modules/` - Individual module documentation
 
 ---

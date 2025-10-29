@@ -2,7 +2,7 @@ import os
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -66,7 +66,7 @@ def _load_token_usage() -> dict:
     """Load token usage from file, reset if new day."""
     if not _TOKEN_USAGE_FILE.exists():
         return {
-            "last_reset_date": datetime.now().strftime("%Y-%m-%d"),
+            "last_reset_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "daily_usage": {
                 "openai_key1": {"mini": 0, "regular": 0},
                 "openai_key2": {"mini": 0, "regular": 0},
@@ -83,7 +83,7 @@ def _load_token_usage() -> dict:
         data = json.load(f)
 
     # Reset daily usage if new day
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if data.get("last_reset_date") != today:
         data["last_reset_date"] = today
         data["daily_usage"] = {

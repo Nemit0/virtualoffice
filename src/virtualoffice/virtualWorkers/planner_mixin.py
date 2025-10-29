@@ -63,11 +63,11 @@ class PlannerMixin:
         valid_emails = [m.email_address for m in context.team if m.email_address != worker_email]
         prompt_context["valid_email_list"] = "\n".join(f"  - {email}" for email in valid_emails)
 
-        # Build example communications
+        # Build example communications in Korean
         examples = []
         if valid_emails:
             examples.append(
-                f"- Email at 10:30 to {valid_emails[0]} cc {valid_emails[1] if len(valid_emails) > 1 else valid_emails[0]}: Sprint update | Completed auth module, ready for review"
+                f"- 이메일 10:30에 {valid_emails[0]} 참조 {valid_emails[1] if len(valid_emails) > 1 else valid_emails[0]}: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨"
             )
         if context.team:
             # Find a teammate's chat handle (not self)
@@ -77,11 +77,11 @@ class PlannerMixin:
                     chat_handle = member.chat_handle
                     break
             if chat_handle:
-                examples.append(f"- Chat at 11:00 with {chat_handle}: Quick question about the API endpoint")
-        examples.append("- Chat at 11:00 with team: Update on sprint progress (sends to project group chat)")
+                examples.append(f"- 채팅 11:00에 {chat_handle}과: API 엔드포인트 관련 질문")
+        examples.append("- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)")
         if valid_emails:
             examples.append(
-                f"- Reply at 14:00 to [email-42] cc {valid_emails[0]}: RE: API status | Thanks for the update, proceeding with integration"
+                f"- 답장 14:00에 [email-42] 참조 {valid_emails[0]}: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다"
             )
         prompt_context["correct_examples"] = "\n".join(examples)
 
@@ -109,21 +109,21 @@ class PlannerMixin:
         """
         # Build prompt context
         persona_markdown = (
-            getattr(self.persona, "persona_markdown", "") or f"Role: {self.persona.role}\nSkills: General"
+            getattr(self.persona, "persona_markdown", "") or f"역할: {self.persona.role}\n기술: 일반"
         )
         worker_email = self.persona.email_address
         team_roster = "\n".join(
-            f"- {m.name} ({m.role}) - Email: {m.email_address}, Chat: @{m.chat_handle}"
+            f"- {m.name} ({m.role}) - 이메일: {m.email_address}, 채팅: @{m.chat_handle}"
             for m in context.team
             if m.email_address != worker_email
         )
 
         prompt_context = {
             "worker_name": self.persona.name,
-            "worker_role": self.persona.role or "Team Member",
-            "worker_timezone": getattr(self.persona, "timezone", "UTC"),
+            "worker_role": self.persona.role or "팀원",
+            "worker_timezone": getattr(self.persona, "timezone", "Asia/Seoul"),
             "persona_markdown": persona_markdown,
-            "team_roster": team_roster or "No teammates",
+            "team_roster": team_roster or "팀원 없음",
             "duration_weeks": context.duration_weeks,
             "day_number": context.day_index + 1,
             "project_plan": context.project_plan,
@@ -195,25 +195,25 @@ class PlannerMixin:
         try:
             messages = self.prompt_manager.build_prompt("event_reaction", prompt_context)
         except Exception:
-            # Fall back to simple prompt if template not available
-            event_type = context.event.get("event_type", "unknown")
+            # Fall back to simple prompt if template not available (Korean)
+            event_type = context.event.get("event_type", "알 수 없음")
             description = context.event.get("description", "")
 
             messages = [
                 {
                     "role": "system",
                     "content": (
-                        "You are helping a worker respond to a simulation event. "
-                        "Provide a brief list of adjustments they should make to their plan."
+                        "작업자가 시뮬레이션 이벤트에 대응하도록 돕고 있습니다. "
+                        "계획에 적용해야 할 조정 사항을 간단히 나열해 주세요."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
-                        f"Worker: {self.persona.name} ({self.persona.role})\n"
-                        f"Event: {event_type}\n"
-                        f"Description: {description}\n\n"
-                        "What adjustments should this worker make to their plan?"
+                        f"작업자: {self.persona.name} ({self.persona.role})\n"
+                        f"이벤트: {event_type}\n"
+                        f"설명: {description}\n\n"
+                        "이 작업자가 계획에 적용해야 할 조정 사항은 무엇인가요?"
                     ),
                 },
             ]

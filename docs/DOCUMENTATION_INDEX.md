@@ -80,6 +80,7 @@ docs/
 │   ├── virtual_worker_context.md            # ✓ Created - VirtualWorker Context Classes documentation
 │   ├── localization.md                      # ✓ Created - Localization system documentation
 │   ├── planner.md                           # ✓ Created - Planner system documentation
+│   ├── database.md                          # ✓ Created (2025-10-28) - Database connection management and concurrent access
 │   ├── email-server.md                      # (To be created)
 │   ├── chat-server.md                       # (To be created)
 │   ├── sim-manager.md                       # (To be created)
@@ -88,7 +89,8 @@ docs/
 │   └── utils.md                             # (To be created)
 ├── guides/                                    # User guides
 │   ├── template_authoring.md                # ✓ Created - Template authoring guide (referenced in README)
-│   └── migration_guide.md                   # ✓ Created - Engine refactoring migration guide
+│   ├── migration_guide.md                   # ✓ Created - Engine refactoring migration guide
+│   └── troubleshooting.md                   # ✓ Created (2025-10-28) - Comprehensive troubleshooting guide with diagnostic tools
 ├── GETTING_STARTED.md                        # ✓ Updated (2025-10-28) - Added Prompt Management System section
 ├── api/                                       # API documentation (directory created)
 │   ├── email-api.md                          # (To be created)
@@ -116,6 +118,7 @@ Start here to understand the system:
 1. `docs/README.md` - Overview and quick start
 2. `docs/architecture.md` - How everything fits together
 3. `docs/reference/environment-variables.md` - Configuration guide
+4. `docs/guides/troubleshooting.md` - Troubleshooting common issues
 
 ### For API Integration
 If you're integrating with VDOS services:

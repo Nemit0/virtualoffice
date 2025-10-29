@@ -519,6 +519,7 @@ class ReportContext:
     daily_plan: str
     hourly_log: str
     minute_schedule: str
+    project_plan: str | None = None  # Optional project plan context
     locale: str = "en"
     model_hint: str | None = None
 ```

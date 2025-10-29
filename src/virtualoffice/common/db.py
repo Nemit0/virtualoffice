@@ -22,9 +22,18 @@ DB_PATH = _resolve_db_path()
 
 @contextmanager
 def get_connection() -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
+    conn = sqlite3.connect(
+        DB_PATH,
+        detect_types=sqlite3.PARSE_DECLTYPES,
+        check_same_thread=False,
+        timeout=30.0  # Increase timeout for concurrent access
+    )
     conn.row_factory = sqlite3.Row
+    # Enable WAL mode for better concurrent access
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys = ON")
+    # Set busy timeout for better lock handling
+    conn.execute("PRAGMA busy_timeout = 30000")  # 30 seconds in milliseconds
     try:
         yield conn
         conn.commit()

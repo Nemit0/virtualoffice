@@ -589,6 +589,17 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     #  - Reset engine runtime view of state
     @app.post(f"{API_PREFIX}/admin/hard-reset", response_model=SimulationControlResponse)
     def admin_hard_reset(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
+        """
+        ⚠️  DANGEROUS: Complete database reset for development use only.
+
+        This endpoint:
+        - Deletes the entire simulation database
+        - Recreates all schemas from scratch
+        - Resets the simulation engine state
+
+        WARNING: This will destroy ALL simulation data permanently.
+        TODO: Add authentication before deploying to production.
+        """
         try:
             engine.stop_auto_ticks()
         except Exception:
@@ -701,11 +712,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         if not person:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person with ID {person_id} not found")
 
-        # Remove from internal dict and database
-        engine._status_overrides.pop(person_id, None)
-        from virtualoffice.common.db import get_connection
-        with get_connection() as conn:
-            conn.execute("DELETE FROM worker_status_overrides WHERE worker_id = ?", (person_id,))
+        # Use public API to clear status override (handles both cache and database)
+        engine.state.clear_status_override(person_id)
 
     # --- Monitoring proxy endpoints (avoid CORS by routing through sim_manager) ---
     @app.get(f"{API_PREFIX}/monitor/emails/{{person_id}}")

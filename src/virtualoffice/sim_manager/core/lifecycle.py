@@ -136,8 +136,8 @@ class SimulationLifecycle:
                         target.email_address,
                         "Subject: Quick kickoff\nBody: Lining up tasks for today — ping me with blockers.",
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to schedule kickoff messages: %s", exc)
 
         return self.get_state()
 

@@ -123,7 +123,7 @@ korean_text = get_korean_text("scheduled_communications")
 
 ### Planner Integration
 
-The localization system is designed to integrate with the planner to replace hardcoded strings:
+The localization system is fully integrated with the planner to replace hardcoded strings:
 
 ```python
 # Before (hardcoded)
@@ -134,6 +134,73 @@ from virtualoffice.common.localization import get_current_locale_manager
 manager = get_current_locale_manager()
 content += f"\n{manager.get_text('scheduled_communications')}:"
 ```
+
+#### Hourly Planning Example Communications and Guidelines
+
+**Status**: ✅ Complete (as of 2025-10-29)
+
+The planner now generates locale-aware example communications and comprehensive email guidelines in hourly planning prompts. When `VDOS_LOCALE=ko`, all examples and guidelines are in Korean:
+
+**Group Chat vs DM Usage Guidelines** (`planner.py` lines 565-567):
+```python
+"그룹 채팅 vs 개인 메시지 사용 시기:",
+"- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+"- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
+```
+
+**Email Content Guidelines** (`planner.py` lines 569-586):
+```python
+"이메일 내용 가이드라인 (중요):",
+"1. 이메일 길이: 최소 3-5문장으로 실질적인 이메일 본문 작성",
+"   - 구체적인 세부사항, 맥락, 명확한 조치 사항 포함",
+"   - 좋은 예시: '로그인 API 통합 작업 중입니다. OAuth 플로우와 사용자 세션 관리를 완료했습니다...'",
+"   - 나쁜 예시: 'API 작업 업데이트. 진행 중입니다.'",
+"",
+"2. 제목에 프로젝트 맥락: 여러 프로젝트 작업 시 제목에 프로젝트 태그 포함",
+"   - 형식: '[프로젝트명] 실제 제목'",
+"   - 예시: '[모바일 앱 MVP] API 통합 상태 업데이트'",
+"   - 예시: '[웹 대시보드] 디자인 리뷰 요청'",
+"   - 업무 관련 이메일의 약 60-70%에 사용",
+"",
+"3. 이메일 현실성: 이메일을 자연스럽고 전문적으로 작성",
+"   - 적절한 경우 맥락이나 인사말로 시작",
+"   - 구체적인 기술 세부사항 또는 비즈니스 맥락 포함",
+"   - 명확한 다음 단계 또는 질문으로 마무리",
+"   - 커뮤니케이션 스타일을 다양화 (모든 이메일이 공식적일 필요는 없음)",
+```
+
+**Korean Examples** (`planner.py` lines 600-607):
+```python
+"올바른 예시 (다음 패턴을 따르세요):",
+"- 이메일 10:30에 colleague@example.dev 참조 manager@example.dev: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨",
+"- 채팅 11:00에 @colleague과: API 엔드포인트 관련 질문",
+"- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)",
+"- 답장 14:00에 [email-42] 참조 lead@example.dev: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다",
+```
+
+**Wrong Examples** (also in Korean, lines 609-614):
+```python
+"잘못된 예시 (절대 하지 마세요):",
+"- 이메일 10:30에 dev 참조 pm: ... (잘못됨 - 'dev'와 'pm'은 이메일 주소가 아닙니다!)",
+"- 이메일 10:30에 team@company.dev: ... (잘못됨 - 배포 목록은 존재하지 않습니다!)",
+"- 이메일 10:30에 all: ... (잘못됨 - 정확한 이메일 주소를 지정하세요!)",
+"- 이메일 10:30에 김민수: ... (잘못됨 - 사람 이름이 아닌 이메일 주소를 사용하세요!)",
+"- 이메일 10:30에 @colleague: ... (잘못됨 - @는 채팅용이며, 이메일 주소를 사용하세요!)",
+```
+
+**Impact**: 
+- GPT receives comprehensive Korean-only guidelines and examples when generating hourly plans
+- Email content guidelines ensure substantive, realistic email bodies (3-5 sentences minimum)
+- Project context guidelines encourage proper subject line formatting with project tags
+- Group chat vs DM guidelines clarify appropriate communication channel selection
+- Eliminates English text pollution in Korean simulations
+- Ensures authentic Korean workplace communication patterns
+
+**Related Files**:
+- `src/virtualoffice/sim_manager/planner.py` (lines 562-614)
+- `src/virtualoffice/virtualWorkers/planner_mixin.py` (locale-aware example generation)
+- `agent_reports/20251029_PROMPT_LOCALIZATION_AUDIT.md` (comprehensive audit)
+- `agent_reports/20251029_COMPREHENSIVE_KOREAN_LOCALIZATION_FIX.md` (complete details)
 
 ### Engine Integration
 
@@ -147,6 +214,47 @@ reason = "Adjustments from live collaboration"
 manager = get_current_locale_manager()
 reason = manager.get_text("live_collaboration_adjustments")
 ```
+
+#### Engine Adjustment Messages
+
+**Status**: ✅ Complete (as of 2025-10-29)
+
+The simulation engine now uses Korean-only adjustment messages when `VDOS_LOCALE=ko`. These messages are added to planning context when workers replan their hourly schedules.
+
+**Sick Leave Adjustments** (`engine.py` line 869):
+```python
+adjustments.append("병가를 준수하고 회복할 때까지 작업을 보류합니다.")
+# "Observe sick leave and hold tasks until recovered."
+```
+
+**Acknowledgment Messages** (`engine.py` lines 918, 921):
+```python
+# Acknowledgment from another worker
+adjustments.append(f"{message.sender_name}의 확인: {message.summary}")
+# "Acknowledged by {name}: {summary}"
+
+# Request handling
+adjustments.append(f"{message.sender_name}의 요청 처리: {message.action_item}")
+# "Handle request from {name}: {action}"
+```
+
+**Acknowledgment Body Patterns** (`engine.py` lines 932-937):
+```python
+# Varied and natural Korean acknowledgment patterns
+ack_patterns = [
+    f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다.",
+    f"{sender_person.name.split()[0]}님, {ack_phrase} 진행하겠습니다.",
+    f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중입니다.",
+    f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리하겠습니다.",
+]
+ack_body = random.choice(ack_patterns)
+```
+
+**Impact**: These adjustment messages are injected into planning context and sent to GPT when workers replan. Previously, English text would appear in Korean simulations, causing mixed language in generated content. Now all adjustment messages are Korean-only, ensuring pure Korean prompts.
+
+**Related Files**:
+- `src/virtualoffice/sim_manager/engine.py` (lines 869, 918, 921, 932-937)
+- `agent_reports/20251029_ENGINE_ADJUSTMENTS_KOREAN_FIX.md`
 
 ### Client Feature Requests
 
@@ -364,7 +472,28 @@ python -m pytest tests/test_korean_simulation_integration.py -v
 1. **Phase 1**: Planner integration (replace hardcoded headers) ✅ Complete
 2. **Phase 2**: Engine integration (replace hardcoded messages) ✅ Complete
 3. **Phase 3**: Persona generation integration (localized persona templates) ✅ Complete
-4. **Phase 4**: UI integration (localized dashboard and GUI elements) 🔄 In Progress
+4. **Phase 4**: Planner example communications (Korean hourly planning examples) ✅ Complete
+5. **Phase 5**: UI integration (localized dashboard and GUI elements) 🔄 In Progress
+
+### Worker Schedule Defaults
+
+**Status**: ✅ Complete (as of 2025-10-29)
+
+The worker module now uses locale-aware default schedule table entries. When no schedule blocks are provided, the system generates a default entry in the appropriate language:
+
+**Implementation** (`src/virtualoffice/virtualWorkers/worker.py` line 83):
+```python
+def _schedule_table(blocks: Sequence[ScheduleBlock]) -> str:
+    if not blocks:
+        return "| 09:00 | 18:00 | 핵심 프로젝트 작업 |"  # Korean: "Core project work"
+    # ... rest of implementation
+```
+
+**Impact**: This ensures that persona markdown generation produces Korean-only content when `VDOS_LOCALE=ko`, including default schedule entries. The default activity text "핵심 프로젝트 작업" (Core project work) appears in persona markdown when no explicit schedule blocks are defined.
+
+**Related Files**:
+- `src/virtualoffice/virtualWorkers/worker.py` (line 83)
+- `agent_reports/20251029_COMPREHENSIVE_KOREAN_LOCALIZATION_FIX.md`
 
 ### Persona Generation Integration
 

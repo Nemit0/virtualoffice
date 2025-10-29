@@ -284,6 +284,7 @@ class ReportContext:
     daily_plan: str
     hourly_log: str
     minute_schedule: str
+    project_plan: str | None = None  # Optional project plan context
     locale: str = "en"
     model_hint: str | None = None
 ```
@@ -296,6 +297,7 @@ class ReportContext:
 | `daily_plan` | `str` | Yes | Today's daily plan text |
 | `hourly_log` | `str` | Yes | Log of hourly activities throughout the day |
 | `minute_schedule` | `str` | Yes | Detailed minute-by-minute schedule |
+| `project_plan` | `str \| None` | No | Optional project plan context for report generation |
 | `locale` | `str` | No | Language/locale code (default: "en") |
 | `model_hint` | `str \| None` | No | Optional model override for this report |
 
@@ -320,6 +322,7 @@ context = ReportContext(
     09:45-10:00: Test validation with edge cases
     ...
     """,
+    project_plan="Build dashboard MVP with authentication and data visualization",  # Optional
     locale="en",
     model_hint="gpt-4o"
 )
@@ -337,6 +340,14 @@ Daily reports typically include:
 - **Blockers**: Issues encountered
 - **Next Steps**: Plans for tomorrow
 - **Communications**: Key messages sent/received
+
+#### Project Plan Context
+
+The optional `project_plan` field provides additional context for report generation:
+- **Purpose**: Helps workers align daily reports with overall project goals
+- **Use Case**: When generating reports, workers can reference project milestones and deliverables
+- **Multi-Project**: In multi-project scenarios, this can contain the primary project plan or a summary of all active projects
+- **Flexibility**: Optional field allows reports to be generated with or without project context
 
 ### EventResponse
 

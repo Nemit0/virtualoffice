@@ -7,7 +7,6 @@ Provides worker persona management and autonomous planning capabilities.
 from .worker import (
     WorkerPersona,
     ScheduleBlock,
-    VirtualWorker as LegacyVirtualWorker,
     build_worker_markdown,
     render_minute_schedule,
 )
@@ -25,8 +24,6 @@ __all__ = [
     # Core persona classes
     "WorkerPersona",
     "ScheduleBlock",
-    # Legacy worker (for backward compatibility)
-    "LegacyVirtualWorker",
     # Enhanced autonomous worker
     "VirtualWorker",
     "create_virtual_worker",

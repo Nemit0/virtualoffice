@@ -418,7 +418,14 @@ async function startSimulation() {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    setStatus('Simulation started');
+
+    // Start auto-tick thread to enable automatic advancement
+    setStatus('Starting auto-tick...');
+    await fetchJson(`${API_PREFIX}/simulation/ticks/start`, {
+      method: 'POST',
+    });
+
+    setStatus('Simulation started with auto-tick enabled');
     await refreshAll();
   } catch (err) {
     setStatus(err.message || String(err), true);

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Iterable, Optional
 
 import httpx
+
+from virtualoffice.common.email_validation import filter_valid_emails
+
+logger = logging.getLogger(__name__)
 
 
 class EmailGateway:
@@ -49,27 +54,23 @@ class HttpEmailGateway(EmailGateway):
         thread_id: str | None = None,
         sent_at_iso: str | None = None,
     ) -> dict:
-        # Filter out empty/invalid email addresses
-        def _clean_addresses(addresses: Iterable[str]) -> list[str]:
-            cleaned = []
-            for addr in addresses:
-                addr_str = str(addr).strip()
-                # Must have @ and not be empty
-                if addr_str and "@" in addr_str and not addr_str.startswith("@") and not addr_str.endswith("@"):
-                    cleaned.append(addr_str)
-            return cleaned
-
-        cleaned_to = _clean_addresses(to)
-        cleaned_cc = _clean_addresses(cc or [])
-        cleaned_bcc = _clean_addresses(bcc or [])
+        # Filter out empty/invalid email addresses using centralized validation
+        cleaned_to = filter_valid_emails(to, normalize=False, strict=False)
+        cleaned_cc = filter_valid_emails(cc or [], normalize=False, strict=False)
+        cleaned_bcc = filter_valid_emails(bcc or [], normalize=False, strict=False)
 
         # Check if we have at least one valid recipient after cleaning
         if not cleaned_to and not cleaned_cc and not cleaned_bcc:
-            # No valid recipients - return empty response instead of failing
-            # This can happen when scheduled comms have malformed addresses
-            return {"id": -1, "sender": sender, "to": [], "cc": [], "bcc": [],
-                    "subject": subject, "body": "(skipped - no valid recipients)",
-                    "thread_id": thread_id, "sent_at": sent_at_iso or ""}
+            # No valid recipients - log and raise error for visibility
+            logger.warning(
+                "Email send failed: no valid recipients. sender=%s, to=%s, cc=%s, bcc=%s, subject=%s",
+                sender,
+                to,
+                cc,
+                bcc,
+                subject,
+            )
+            raise ValueError(f"No valid email recipients found. Original to={to}, cc={cc}, bcc={bcc}")
 
         payload = {
             "sender": sender,

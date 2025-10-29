@@ -27,6 +27,10 @@ DEFAULT_HOURLY_MODEL = os.getenv("VDOS_PLANNER_HOURLY_MODEL", DEFAULT_DAILY_MODE
 DEFAULT_DAILY_REPORT_MODEL = os.getenv("VDOS_PLANNER_DAILY_REPORT_MODEL")
 DEFAULT_SIM_REPORT_MODEL = os.getenv("VDOS_PLANNER_SIM_REPORT_MODEL")
 
+# Korean validation retry configuration
+# Set to 0 to disable retries and speed up planning (accepts mixed Korean/English)
+MAX_KOREAN_VALIDATION_RETRIES = int(os.getenv("VDOS_KOREAN_VALIDATION_RETRIES", "0"))
+
 @dataclass
 class PlanResult:
     content: str
@@ -237,16 +241,16 @@ class GPTPlanner:
             import time
             start_time = time.time()
             try:
-                # Build context
-                persona_markdown = getattr(worker, 'persona_markdown', '') or f"Role: {worker.role}\nSkills: General"
-                team_roster = "\n".join(f"- {m.name} ({m.role}) - Email: {m.email_address}, Chat: @{m.chat_handle}" for m in (team or []) if m.id != worker.id)
+                # Build context with Korean defaults
+                persona_markdown = getattr(worker, 'persona_markdown', '') or f"역할: {worker.role}\n기술: 일반"
+                team_roster = "\n".join(f"- {m.name} ({m.role}) - 이메일: {m.email_address}, 채팅: @{m.chat_handle}" for m in (team or []) if m.id != worker.id)
                 
                 context = {
                     "worker_name": worker.name,
-                    "worker_role": worker.role or "Team Member",
-                    "worker_timezone": getattr(worker, "timezone", "UTC"),
+                    "worker_role": worker.role or "팀원",
+                    "worker_timezone": getattr(worker, "timezone", "Asia/Seoul"),
                     "persona_markdown": persona_markdown,
-                    "team_roster": team_roster or "No teammates",
+                    "team_roster": team_roster or "팀원 없음",
                     "duration_weeks": duration_weeks,
                     "day_number": day_index + 1,
                     "project_plan": project_plan,
@@ -372,16 +376,16 @@ class GPTPlanner:
                 context["project_reference"] = project_plan
                 context["valid_email_list"] = "\n".join(f"  - {m.email_address}" for m in (team or []) if m.id != worker.id)
                 
-                # Build example communications
+                # Build example communications in Korean
                 valid_emails = [m.email_address for m in (team or []) if m.id != worker.id]
                 examples = []
                 if valid_emails:
-                    examples.append(f"- Email at 10:30 to {valid_emails[0]} cc {valid_emails[1] if len(valid_emails) > 1 else valid_emails[0]}: Sprint update | Completed auth module, ready for review")
+                    examples.append(f"- 이메일 10:30에 {valid_emails[0]} 참조 {valid_emails[1] if len(valid_emails) > 1 else valid_emails[0]}: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨")
                 if team:
-                    examples.append(f"- Chat at 11:00 with {team[0].chat_handle if team[0].id != worker.id else (team[1].chat_handle if len(team) > 1 else 'colleague')}: Quick question about the API endpoint")
-                examples.append("- Chat at 11:00 with team: Update on sprint progress (sends to project group chat)")
+                    examples.append(f"- 채팅 11:00에 {team[0].chat_handle if team[0].id != worker.id else (team[1].chat_handle if len(team) > 1 else 'colleague')}과: API 엔드포인트 관련 질문")
+                examples.append("- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)")
                 if valid_emails:
-                    examples.append(f"- Reply at 14:00 to [email-42] cc {valid_emails[0]}: RE: API status | Thanks for the update, proceeding with integration")
+                    examples.append(f"- 답장 14:00에 [email-42] 참조 {valid_emails[0]}: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다")
                 context["correct_examples"] = "\n".join(examples)
                 
                 # Build prompt from template
@@ -469,24 +473,24 @@ class GPTPlanner:
             recent_emails_lines.append("Recent Emails (for threading context):")
             for i, email in enumerate(recent_emails[-5:], 1):  # Show last 5 emails
                 email_id = email.get('email_id', f'email-{i}')
-                from_addr = email.get('from', 'unknown')
-                subject = email.get('subject', 'No subject')
-                recent_emails_lines.append(f"  [{email_id}] From: {from_addr} - Subject: {subject}")
+                from_addr = email.get('from', '알 수 없음')
+                subject = email.get('subject', '제목 없음')
+                recent_emails_lines.append(f"  [{email_id}] 발신: {from_addr} - 제목: {subject}")
             recent_emails_lines.append("")
 
         # Handle multiple concurrent projects
         project_context_lines = []
         if all_active_projects and len(all_active_projects) > 1:
-            project_context_lines.append("IMPORTANT: You are currently working on MULTIPLE projects concurrently:")
+            project_context_lines.append("중요: 현재 여러 프로젝트를 동시에 진행 중입니다:")
             for i, proj in enumerate(all_active_projects, 1):
-                project_context_lines.append(f"\nProject {i}: {proj['project_name']}")
+                project_context_lines.append(f"\n프로젝트 {i}: {proj['project_name']}")
                 project_context_lines.append(proj['plan'][:500] + "...")  # Truncate for brevity
-            project_context_lines.append("\nYou should naturally switch between these projects throughout your day.")
-            project_context_lines.append("When writing emails/chats, specify which project each communication relates to in the subject/message.")
-            project_context_lines.append("Example: 'Email at 10:00 to dev cc pm: [Mobile App MVP] API integration status | ...'")
+            project_context_lines.append("\n하루 동안 이 프로젝트들 사이를 자연스럽게 전환해야 합니다.")
+            project_context_lines.append("이메일/채팅 작성 시 제목/메시지에 각 커뮤니케이션이 관련된 프로젝트를 명시하세요.")
+            project_context_lines.append("예시: '이메일 10:00에 dev 참조 pm: [모바일 앱 MVP] API 통합 상태 | ...'")
             project_reference = "\n".join(project_context_lines)
         else:
-            project_reference = f"Project reference:\n{project_plan}"
+            project_reference = f"프로젝트 참조:\n{project_plan}"
 
         # Build format templates based on locale
         format_templates = []
@@ -534,9 +538,9 @@ class GPTPlanner:
                 "- Project team: Chat at 11:00 with project: Message to project group chat",
                 "- Project team: Chat at 11:00 with group: Message to project group chat",
                 "",
-                "When to use group chat vs DM:",
-                "- Use 'team/project/group' for: status updates, blockers, announcements, coordination",
-                "- Use individual handles for: private questions, sensitive feedback, personal check-ins",
+                "그룹 채팅 vs 개인 메시지 사용 시기:",
+                "- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+                "- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
             ])
 
         user_content = "\n".join(
@@ -558,27 +562,27 @@ class GPTPlanner:
                 f"CRITICAL: At the end, add a block titled '{get_current_locale_manager().get_text('scheduled_communications')}' with 3–5 communication lines.",
                 *format_templates,
                 "",
-                "When to use group chat vs DM:",
-                "- Use 'team/project/group' for: status updates, blockers, announcements, coordination",
-                "- Use individual handles for: private questions, sensitive feedback, personal check-ins",
+                "그룹 채팅 vs 개인 메시지 사용 시기:",
+                "- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+                "- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
                 "",
-                "EMAIL CONTENT GUIDELINES (IMPORTANT):",
-                "1. EMAIL LENGTH: Write substantive email bodies with 3-5 sentences minimum",
-                "   - Include specific details, context, and clear action items",
-                "   - Good example: 'Working on the login API integration. Completed the OAuth flow and user session management. Need to discuss error handling strategies with the team. Can we sync tomorrow at 2pm? Also, should we implement rate limiting now or in v2?'",
-                "   - Bad example: 'Update on API work. Making progress.'",
+                "이메일 내용 가이드라인 (중요):",
+                "1. 이메일 길이: 최소 3-5문장으로 실질적인 이메일 본문 작성",
+                "   - 구체적인 세부사항, 맥락, 명확한 조치 사항 포함",
+                "   - 좋은 예시: '로그인 API 통합 작업 중입니다. OAuth 플로우와 사용자 세션 관리를 완료했습니다. 팀과 오류 처리 전략을 논의해야 합니다. 내일 오후 2시에 동기화할 수 있을까요? 또한 속도 제한을 지금 구현할지 v2에서 할지 결정해야 합니다.'",
+                "   - 나쁜 예시: 'API 작업 업데이트. 진행 중입니다.'",
                 "",
-                "2. PROJECT CONTEXT IN SUBJECTS: When working on multiple projects, include project tag in subject",
-                "   - Format: '[ProjectName] actual subject'",
-                "   - Example: '[Mobile App MVP] API integration status update'",
-                "   - Example: '[웹 대시보드] 디자인 리뷰 요청'",
-                "   - Use this for about 60-70% of work-related emails",
+                "2. 제목에 프로젝트 맥락: 여러 프로젝트 작업 시 제목에 프로젝트 태그 포함",
+                "   - 형식: '[프로젝트명] 실제 제목'",
+                "   - 예시: '[모바일 앱 MVP] API 통합 상태 업데이트'",
+                "   - 예시: '[웹 대시보드] 디자인 리뷰 요청'",
+                "   - 업무 관련 이메일의 약 60-70%에 사용",
                 "",
-                "3. EMAIL REALISM: Make emails sound natural and professional",
-                "   - Start with context or greeting when appropriate",
-                "   - Include specific technical details or business context",
-                "   - End with clear next steps or questions",
-                "   - Vary your communication style (not all emails need to be formal)",
+                "3. 이메일 현실성: 이메일을 자연스럽고 전문적으로 작성",
+                "   - 적절한 경우 맥락이나 인사말로 시작",
+                "   - 구체적인 기술 세부사항 또는 비즈니스 맥락 포함",
+                "   - 명확한 다음 단계 또는 질문으로 마무리",
+                "   - 커뮤니케이션 스타일을 다양화 (모든 이메일이 공식적일 필요는 없음)",
                 "",
                 "EMAIL RULES (VERY IMPORTANT):",
                 "1. ONLY use email addresses EXACTLY as shown in the Team Roster above",
@@ -593,18 +597,18 @@ class GPTPlanner:
                 "VALID EMAIL ADDRESSES (use ONLY these):",
                 *(f"  - {email}" for email in valid_emails),
                 "",
-                "CORRECT EXAMPLES (follow these patterns):",
-                f"- Email at 10:30 to {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} cc {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: Sprint update | Completed auth module, ready for review",
-                f"- Chat at 11:00 with {team[0].chat_handle if team else 'colleague'}: Quick question about the API endpoint",
-                "- Chat at 11:00 with team: Update on sprint progress (sends to project group chat)",
-                f"- Reply at 14:00 to [email-42] cc {valid_emails[0] if valid_emails else 'lead@example.dev'}: RE: API status | Thanks for the update, proceeding with integration",
+                "올바른 예시 (다음 패턴을 따르세요):",
+                f"- 이메일 10:30에 {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} 참조 {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨",
+                f"- 채팅 11:00에 {team[0].chat_handle if team else 'colleague'}과: API 엔드포인트 관련 질문",
+                "- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)",
+                f"- 답장 14:00에 [email-42] 참조 {valid_emails[0] if valid_emails else 'lead@example.dev'}: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다",
                 "",
-                "WRONG EXAMPLES (NEVER DO THIS):",
-                "- Email at 10:30 to dev cc pm: ... (WRONG - 'dev' and 'pm' are not email addresses!)",
-                "- Email at 10:30 to team@company.dev: ... (WRONG - no distribution lists exist!)",
-                "- Email at 10:30 to all: ... (WRONG - specify exact email addresses!)",
-                "- Email at 10:30 to 김민수: ... (WRONG - use the email address, not the person's name!)",
-                "- Email at 10:30 to @colleague: ... (WRONG - @ is for chat, use email address!)",
+                "잘못된 예시 (절대 하지 마세요):",
+                "- 이메일 10:30에 dev 참조 pm: ... (잘못됨 - 'dev'와 'pm'은 이메일 주소가 아닙니다!)",
+                "- 이메일 10:30에 team@company.dev: ... (잘못됨 - 배포 목록은 존재하지 않습니다!)",
+                "- 이메일 10:30에 all: ... (잘못됨 - 정확한 이메일 주소를 지정하세요!)",
+                "- 이메일 10:30에 김민수: ... (잘못됨 - 사람 이름이 아닌 이메일 주소를 사용하세요!)",
+                "- 이메일 10:30에 @colleague: ... (잘못됨 - @는 채팅용이며, 이메일 주소를 사용하세요!)",
                 "",
                 f"Do not add bracketed headers or meta text besides '{get_current_locale_manager().get_text('scheduled_communications')}'.",
             ]
@@ -894,7 +898,7 @@ class GPTPlanner:
         Returns:
             Tuple of (validated_content, total_tokens)
         """
-        max_retries = 2
+        max_retries = MAX_KOREAN_VALIDATION_RETRIES
         total_tokens = tokens
         
         for attempt in range(max_retries + 1):
@@ -1009,12 +1013,12 @@ class StubPlanner:
     ) -> PlanResult:
         total_days = max(duration_weeks, 1) * 5
         body = "\n".join([
-            f"Worker: {worker.name} ({worker.role})",
-            f"Day: {day_index + 1} / {total_days}",
-            "Goals:",
-            "- Advance project milestones",
-            "- Communicate blockers",
-            "- Capture progress for end-of-day report",
+            f"작업자: {worker.name} ({worker.role})",
+            f"일차: {day_index + 1} / {total_days}",
+            "목표:",
+            "- 프로젝트 마일스톤 진행",
+            "- 차단 요소 커뮤니케이션",
+            "- 일일 보고서를 위한 진행 상황 기록",
         ])
         model = model_hint or "vdos-stub-daily"
         return self._result("Daily Plan", body, model)
@@ -1043,21 +1047,21 @@ class StubPlanner:
         # Pick sensible default contacts for a 2-person run: designer <-> dev
         me = (worker.chat_handle or worker.name or "worker").lower()
         other = "designer" if "dev" in me or "full" in (worker.role or "").lower() else "dev"
-        # A couple of realistic touchpoints
+        # A couple of realistic touchpoints in Korean
         sched = [
-            f"Chat at 09:10 with {other}: Morning! Quick sync on priorities?",
-            f"Email at 09:35 to {other}: Subject: Kickoff | Body: Plan for the morning and any blockers",
-            f"Chat at 14:20 with {other}: Checking in on progress, anything I can unblock?",
+            f"채팅 09:10에 {other}과: 안녕하세요! 우선순위 간단히 조율할까요?",
+            f"이메일 09:35에 {other}: 제목: 킥오프 | 본문: 오전 계획 및 차단 요소",
+            f"채팅 14:20에 {other}과: 진행 상황 확인, 제가 도울 부분 있나요?",
         ]
         hour = tick % 60 or 60
         lines = [
-            f"Worker: {worker.name}",
-            f"Tick: {tick} (minute {hour})",
-            f"Reason: {context_reason}",
-            "Focus for the next hours:",
-            "- Review priorities",
-            "- Heads-down execution",
-            "- Share update with teammate",
+            f"작업자: {worker.name}",
+            f"틱: {tick} (분 {hour})",
+            f"이유: {context_reason}",
+            "다음 시간 집중 사항:",
+            "- 우선순위 검토",
+            "- 집중 실행",
+            "- 팀원과 업데이트 공유",
             "",
             f"{get_current_locale_manager().get_text('scheduled_communications')}:",
             *sched,

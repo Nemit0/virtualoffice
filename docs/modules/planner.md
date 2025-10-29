@@ -139,10 +139,19 @@ if hasattr(worker, 'persona_markdown') and worker.persona_markdown:
 - Multi-project coordination and prioritization
 
 **Scheduled Communication Format**:
+
+**English Format**:
 ```
-Email at 10:30 to dev cc pm, designer: Subject | Body text
-Chat at 14:00 with designer: Message text
-Reply at 11:00 to [email-123] cc team: Response subject | Response body
+Email at 10:30 to dev@example.com cc pm@example.com: Subject | Body text
+Chat at 14:00 with @designer: Message text
+Reply at 11:00 to [email-123] cc team@example.com: Response subject | Response body
+```
+
+**Korean Format** (when `VDOS_LOCALE=ko`):
+```
+이메일 10:30에 dev@example.com 참조 pm@example.com: 제목 | 본문
+채팅 14:00에 @designer과: 메시지 내용
+답장 11:00에 [email-123] 참조 team@example.com: 답장 제목 | 답장 본문
 ```
 
 ### Report Generation
@@ -195,6 +204,72 @@ locale_manager = get_current_locale_manager()
 scheduled_header = locale_manager.get_text("scheduled_communications")
 # Returns "Scheduled Communications" (en) or "예정된 커뮤니케이션" (ko)
 ```
+
+### Korean Example Communications (Updated October 2025)
+
+The planner now generates **Korean-only example communications** in hourly planning prompts when `VDOS_LOCALE=ko`. This eliminates English text pollution in Korean simulations.
+
+**Implementation** (`planner.py` lines 562-614):
+
+#### Group Chat vs DM Usage Guidelines (Korean)
+```python
+"그룹 채팅 vs 개인 메시지 사용 시기:",
+"- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+"- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
+```
+
+#### Email Content Guidelines (Korean)
+```python
+"이메일 내용 가이드라인 (중요):",
+"1. 이메일 길이: 최소 3-5문장으로 실질적인 이메일 본문 작성",
+"   - 구체적인 세부사항, 맥락, 명확한 조치 사항 포함",
+"   - 좋은 예시: '로그인 API 통합 작업 중입니다. OAuth 플로우와 사용자 세션 관리를 완료했습니다...'",
+"   - 나쁜 예시: 'API 작업 업데이트. 진행 중입니다.'",
+"",
+"2. 제목에 프로젝트 맥락: 여러 프로젝트 작업 시 제목에 프로젝트 태그 포함",
+"   - 형식: '[프로젝트명] 실제 제목'",
+"   - 예시: '[모바일 앱 MVP] API 통합 상태 업데이트'",
+"   - 예시: '[웹 대시보드] 디자인 리뷰 요청'",
+"   - 업무 관련 이메일의 약 60-70%에 사용",
+"",
+"3. 이메일 현실성: 이메일을 자연스럽고 전문적으로 작성",
+"   - 적절한 경우 맥락이나 인사말로 시작",
+"   - 구체적인 기술 세부사항 또는 비즈니스 맥락 포함",
+"   - 명확한 다음 단계 또는 질문으로 마무리",
+"   - 커뮤니케이션 스타일을 다양화 (모든 이메일이 공식적일 필요는 없음)",
+```
+
+#### Correct Examples (Korean)
+```python
+"올바른 예시 (다음 패턴을 따르세요):",
+"- 이메일 10:30에 colleague@example.dev 참조 manager@example.dev: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨",
+"- 채팅 11:00에 @colleague과: API 엔드포인트 관련 질문",
+"- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)",
+"- 답장 14:00에 [email-42] 참조 lead@example.dev: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다",
+```
+
+#### Wrong Examples (Korean)
+```python
+"잘못된 예시 (절대 하지 마세요):",
+"- 이메일 10:30에 dev 참조 pm: ... (잘못됨 - 'dev'와 'pm'은 이메일 주소가 아닙니다!)",
+"- 이메일 10:30에 team@company.dev: ... (잘못됨 - 배포 목록은 존재하지 않습니다!)",
+"- 이메일 10:30에 all: ... (잘못됨 - 정확한 이메일 주소를 지정하세요!)",
+"- 이메일 10:30에 김민수: ... (잘못됨 - 사람 이름이 아닌 이메일 주소를 사용하세요!)",
+"- 이메일 10:30에 @colleague: ... (잘못됨 - @는 채팅용이며, 이메일 주소를 사용하세요!)",
+```
+
+**Impact**:
+- GPT receives Korean-only examples and guidelines when generating hourly plans
+- Eliminates mixed Korean/English content in simulations
+- Ensures authentic Korean workplace communication patterns
+- Provides detailed email content guidelines in Korean
+- Clarifies group chat vs DM usage in Korean context
+- Maintains consistency with Korean persona markdown and templates
+
+**Related Changes**:
+- `planner_mixin.py`: Also updated with locale-aware example generation
+- See `agent_reports/20251029_PROMPT_LOCALIZATION_AUDIT.md` for comprehensive audit
+- See `agent_reports/20251029_COMPREHENSIVE_KOREAN_LOCALIZATION_FIX.md` for complete details
 
 ## Error Handling and Fallback
 

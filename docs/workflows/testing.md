@@ -36,6 +36,24 @@ tests/
 test_korean_persona.py                   # Korean persona integration test (NEW)
 ```
 
+### Diagnostic and Long-Running Test Scripts
+```
+.tmp/
+├── diagnose_stuck_simulation.py         # Diagnostic tool for stuck simulations
+├── full_simulation_test.py              # Comprehensive 5-tick workflow test
+├── test_1week_simulation.py             # 1-week long-running stability test (NEW)
+├── test_auto_tick_long_wait.py          # Auto-tick monitoring test
+├── test_auto_tick_with_logging.py       # Auto-tick database state monitoring
+├── test_auto_tick_detailed.py           # Auto-tick with detailed error capture
+├── debug_advance_step_by_step.py        # Step-by-step advance() debugging
+├── test_planning_directly.py            # Isolated planning system test
+├── check_thread_status.py               # Auto-tick thread status check
+├── check_project_status.py              # Project status and auto-pause check
+├── check_tick_log.py                    # Tick log inspection
+├── check_tables.py                      # Database table inspection
+└── check_sim_state.py                   # Detailed simulation state inspection
+```
+
 ## Test Categories
 
 ### 1. Unit Tests
@@ -61,12 +79,14 @@ Complete simulation workflow testing:
 - **Mobile Chat Simulation** (`test_mobile_chat_simulation.py`): Full 4-week simulation scenarios
 - **Multi-project Scenarios** (`test_multi_project_scenarios.py`): Concurrent project management
 - **Korean Persona Integration** (`test_korean_persona.py`): Korean locale with persona system
+- **1-Week Simulation Test** (`.tmp/test_1week_simulation.py`): Long-running stability test with continuous monitoring (NEW)
 
 ### 4. Performance Tests
 Load testing and performance validation:
 
 - **Environment and API Tests** (`test_env_and_api.py`): Configuration validation, API performance
 - **Dashboard Tests** (`test_dashboard_web.py`): Web interface performance
+- **1-Week Simulation Test** (`.tmp/test_1week_simulation.py`): Extended performance and stability testing (NEW)
 
 ## Locale-Aware Testing
 
@@ -116,6 +136,132 @@ assert payload["skills"] == ["Python", "FastAPI"]
 - Mocks `_generate_persona_text` function with locale-appropriate responses
 - Validates both name and skills match expected locale conventions
 - Ensures consistent behavior across different locale configurations
+
+## New Test: 1-Week Simulation Stability Test
+
+### File: `.tmp/test_1week_simulation.py`
+
+**Purpose**: Validates long-running simulation stability, auto-tick reliability, and performance consistency over an extended period (full work week).
+
+**Key Features**:
+- **Extended Duration**: Simulates 5 full work days (2400 ticks total)
+- **Continuous Monitoring**: Progress checks every 60 seconds with detailed metrics
+- **Performance Tracking**: Tick rates, ETA calculations, rate variation analysis
+- **Safety Limits**: 1-hour maximum test duration to prevent runaway tests
+- **Optimized Configuration**: Parallel planning (4 workers), Korean validation disabled, auto-pause disabled
+- **Comprehensive Reporting**: Final statistics, success criteria validation, issue identification
+
+**Test Configuration**:
+```python
+HOURS_PER_DAY = 480  # 8 hours * 60 minutes
+WORK_DAYS = 5
+TOTAL_TICKS = 2400  # Full work week
+SAMPLE_INTERVAL = 60  # Check progress every 60 seconds
+MAX_TEST_DURATION = 3600  # 1 hour safety limit
+```
+
+**Optimized Settings**:
+```python
+os.environ["VDOS_MAX_PLANNING_WORKERS"] = "4"  # Parallel planning
+os.environ["VDOS_KOREAN_VALIDATION_RETRIES"] = "0"  # Disable retries
+os.environ["VDOS_AUTO_PAUSE_ON_PROJECT_END"] = "false"  # Prevent early stop
+```
+
+**Test Phases**:
+
+#### 1. Initialization
+- Creates simulation engine with optimized settings
+- Verifies at least 2 personas exist
+- Starts fresh 1-week simulation
+
+#### 2. Auto-Tick Monitoring
+- Enables auto-tick for continuous advancement
+- Monitors progress every 60 seconds
+- Tracks tick rates and performance metrics
+- Calculates ETA and progress percentage
+
+#### 3. Progress Tracking
+**Metrics Collected**:
+- Overall tick advancement rate (ticks/second)
+- Time per tick (seconds)
+- Progress percentage and ETA
+- Rate variation (min/max/average)
+- Day and tick-of-day tracking
+
+**Sample Output**:
+```
+[5.0m] Day 2, Tick 120/480 (Total: 600/2400) | Progress: 25.0% | Rate: 2.00 ticks/s | ETA: 15m
+```
+
+#### 4. Safety Checks
+- Monitors auto-tick status (detects if disabled)
+- Enforces 1-hour maximum test duration
+- Handles keyboard interrupts gracefully
+- Stops auto-tick on completion or interruption
+
+#### 5. Final Statistics
+**Time Metrics**:
+- Total elapsed time (minutes and hours)
+- Start and end timestamps
+- Average time per tick
+- Ticks per minute
+
+**Progress Metrics**:
+- Initial and final tick numbers
+- Total ticks advanced
+- Completion percentage
+- Target vs actual ticks
+
+**Performance Analysis**:
+- Average tick rate (ticks/second)
+- Rate variation (min/max/average)
+- Performance consistency assessment
+
+#### 6. Success Criteria Validation
+**Pass Conditions**:
+- ✓ Completes full 2400 ticks (or reaches time limit)
+- ✓ Average time per tick <20 seconds
+- ✓ Auto-tick remains enabled throughout
+- ✓ No errors or exceptions in logs
+
+**Issue Detection**:
+- ⚠ Did not complete full week (time limit reached)
+- ✗ Did not complete full week (auto-tick stopped)
+- ⚠ Average time per tick is slow (>20s)
+- ✗ Auto-tick was disabled before completion
+
+**Running the Test**:
+```bash
+# Ensure services are running first
+briefcase dev
+
+# In another terminal, run the test
+python .tmp/test_1week_simulation.py
+```
+
+**Expected Results**:
+- **Duration**: ~10 hours at 15s/tick (2400 ticks)
+- **Performance**: Stable tick rates throughout
+- **Reliability**: No auto-tick failures or crashes
+- **Memory**: Stable memory usage
+- **Communications**: All emails/chats generated correctly
+
+**Use Cases**:
+- Validating simulation stability for production use
+- Testing performance under realistic workloads
+- Verifying auto-tick doesn't degrade over time
+- Benchmarking full-week simulation duration
+- Stress-testing the simulation engine
+- Detecting memory leaks or resource issues
+- Validating database performance under load
+
+**Troubleshooting**:
+If the test fails or shows issues:
+1. Check `virtualoffice.log` for errors
+2. Run diagnostic tool: `python .tmp/diagnose_stuck_simulation.py`
+3. Verify database state: `python .tmp/check_sim_state.py`
+4. Check auto-tick thread: `python .tmp/check_thread_status.py`
+5. Review performance metrics in test output
 
 ## New Test: Korean Persona Integration
 
@@ -251,6 +397,7 @@ worker = PersonRead(
 - **Message Volume**: Test high-volume email/chat generation
 - **Long Simulations**: Test multi-week simulation stability
 - **Korean Content Generation**: Test Korean AI generation performance
+- **1-Week Stability Test**: Extended 2400-tick simulation with continuous monitoring (NEW)
 
 ### Performance Metrics
 - **Tick Processing Time**: Target <100ms per tick for 5 personas
@@ -258,6 +405,32 @@ worker = PersonRead(
 - **Database Performance**: Query execution time monitoring
 - **AI Response Time**: GPT planning request latency tracking
 - **Korean Generation Time**: Korean content generation performance
+- **Long-Running Stability**: Tick rate consistency over extended periods (NEW)
+- **Auto-Tick Reliability**: Thread stability and advancement consistency (NEW)
+
+### 1-Week Simulation Performance Benchmarks
+**Test**: `.tmp/test_1week_simulation.py`
+
+**Expected Performance**:
+- **Total Duration**: ~10 hours for 2400 ticks
+- **Average Tick Rate**: ~0.067 ticks/second (15 seconds per tick)
+- **Ticks Per Minute**: ~4 ticks/minute
+- **Memory Growth**: <100MB over full simulation
+- **Database Size**: <50MB for full week with 2 personas
+
+**Performance Targets**:
+- ✓ Average time per tick: <20 seconds
+- ✓ Tick rate variation: <50% deviation from average
+- ✓ Memory usage: Stable (no continuous growth)
+- ✓ Auto-tick uptime: 100% (no crashes or stops)
+- ✓ Database operations: No lock errors or timeouts
+
+**Monitoring Metrics**:
+- Overall tick advancement rate (ticks/second)
+- Recent tick rate (last 60 seconds)
+- Progress percentage and ETA
+- Rate variation (min/max/average)
+- Day and tick-of-day tracking
 
 ### Stress Testing
 - **Concurrent Simulations**: Multiple simulation instances
@@ -319,6 +492,33 @@ python -m pytest tests/test_chat_server.py -v
 
 # Auto-pause functionality tests
 python -m pytest tests/test_auto_pause_integration.py -v
+```
+
+#### Long-Running and Diagnostic Tests
+```bash
+# 1-week simulation stability test (requires services running)
+python .tmp/test_1week_simulation.py
+
+# Full simulation workflow test (5 ticks)
+python .tmp/full_simulation_test.py
+
+# Diagnostic tool for stuck simulations
+python .tmp/diagnose_stuck_simulation.py
+
+# Auto-tick monitoring tests
+python .tmp/test_auto_tick_long_wait.py
+python .tmp/test_auto_tick_with_logging.py
+python .tmp/test_auto_tick_detailed.py
+
+# Step-by-step advance debugging
+python .tmp/debug_advance_step_by_step.py
+
+# Database and state inspection
+python .tmp/check_sim_state.py
+python .tmp/check_tables.py
+python .tmp/check_tick_log.py
+python .tmp/check_thread_status.py
+python .tmp/check_project_status.py
 ```
 
 ### Test Configuration
@@ -456,7 +656,8 @@ python -m pytest --memray
 - ✅ **Virtual Workers**: Persona creation, schedule rendering, planning integration
 - ✅ **Localization**: Language switching, Korean content validation
 - ✅ **Auto-pause**: Project lifecycle management, auto-pause logic
-- ✅ **Korean Integration**: Korean persona with localization system (NEW)
+- ✅ **Korean Integration**: Korean persona with localization system
+- ✅ **Long-Running Stability**: 1-week simulation with continuous monitoring (NEW)
 
 ### Coverage Targets
 - **Unit Tests**: >90% line coverage for core modules
