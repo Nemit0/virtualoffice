@@ -703,6 +703,38 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message=f"Status override set for {person.name} until tick {until_tick}"
         )
 
+    @app.get(f"{API_PREFIX}/people/{{person_id}}/status-override", response_model=StatusOverrideResponse | None)
+    def get_status_override(person_id: int, engine: SimulationEngine = Depends(get_engine)) -> StatusOverrideResponse | None:
+        """Get the current status override for a persona, if any."""
+        # Check if person exists
+        people = engine.list_people()
+        person = next((p for p in people if p.id == person_id), None)
+        if not person:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person with ID {person_id} not found")
+
+        # Get status overrides
+        status_overrides = engine.state.get_status_overrides()
+        override = status_overrides.get(person_id)
+
+        if override is None:
+            return None
+
+        status_str, until_tick = override
+
+        # Check if override is still active
+        current_tick = engine.get_state().current_tick
+        if current_tick >= until_tick:
+            return None
+
+        return StatusOverrideResponse(
+            person_id=person.id,
+            person_name=person.name,
+            status=status_str,
+            until_tick=until_tick,
+            reason="Active override",  # We don't store reason separately in the current schema
+            message=f"Status override active for {person.name} until tick {until_tick}"
+        )
+
     @app.delete(f"{API_PREFIX}/people/{{person_id}}/status-override", status_code=status.HTTP_204_NO_CONTENT)
     def clear_status_override(person_id: int, engine: SimulationEngine = Depends(get_engine)) -> None:
         """Clear a persona's status override, making them available again."""
