@@ -38,12 +38,26 @@ class PeopleRepository:
                 return False
             conn.execute("DELETE FROM people WHERE id = ?", (row["id"],))
         return True
+    
+    def update_style_examples(self, person_id: int, style_examples_json: str) -> None:
+        """Update style examples for an existing person.
+        
+        Args:
+            person_id: ID of the person to update
+            style_examples_json: JSON string containing style examples
+        """
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE people SET style_examples = ? WHERE id = ?",
+                (style_examples_json, person_id)
+            )
 
-    def insert(self, payload: PersonCreate, persona_markdown: str, schedule_blocks: list[ScheduleBlockIn] | list) -> int:
+    def insert(self, payload: PersonCreate, persona_markdown: str, schedule_blocks: list[ScheduleBlockIn] | list, style_examples_json: str = '[]') -> int:
         """Insert a new person and associated schedule blocks.
 
         `schedule_blocks` may be a list of ScheduleBlockIn or objects with
         attributes (start, end, activity). Only values are used.
+        `style_examples_json` is a JSON string containing style examples.
         """
         skills_json = json.dumps(list(payload.skills))
         personality_json = json.dumps(list(payload.personality))
@@ -60,8 +74,8 @@ class PeopleRepository:
                     name, role, timezone, work_hours, break_frequency,
                     communication_style, email_address, chat_handle, is_department_head, team_name, skills,
                     personality, objectives, metrics, persona_markdown,
-                    planning_guidelines, event_playbook, statuses
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    planning_guidelines, event_playbook, statuses, style_examples
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.name,
@@ -82,6 +96,7 @@ class PeopleRepository:
                     planning_json,
                     playbook_json,
                     statuses_json,
+                    style_examples_json,
                 ),
             )
             person_id = cursor.lastrowid
@@ -115,6 +130,12 @@ class PeopleRepository:
         personality = json.loads(row["personality"]) if row["personality"] else []
         if not personality:
             personality = ["Helpful"]
+        
+        # Handle style_examples (backward compatibility)
+        try:
+            style_examples = row["style_examples"] if row["style_examples"] else '[]'
+        except (KeyError, IndexError):
+            style_examples = '[]'
 
         return PersonRead(
             id=person_id,
@@ -137,6 +158,7 @@ class PeopleRepository:
             event_playbook=json.loads(row["event_playbook"]),
             statuses=json.loads(row["statuses"]),
             persona_markdown=row["persona_markdown"],
+            style_examples=style_examples,
         )
 
     def _fetch_schedule(self, person_id: int) -> List[dict]:

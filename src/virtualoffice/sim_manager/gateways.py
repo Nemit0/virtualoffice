@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 import httpx
 
 from virtualoffice.common.email_validation import filter_valid_emails
+
+if TYPE_CHECKING:
+    from .style_filter.filter import CommunicationStyleFilter
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +33,16 @@ class EmailGateway:
 
 
 class HttpEmailGateway(EmailGateway):
-    def __init__(self, base_url: str, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        client: httpx.Client | None = None,
+        style_filter: "CommunicationStyleFilter | None" = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._external_client = client
         self._client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
+        self.style_filter = style_filter
 
     @property
     def client(self) -> httpx.Client:
@@ -53,7 +63,37 @@ class HttpEmailGateway(EmailGateway):
         bcc: Iterable[str] | None = None,
         thread_id: str | None = None,
         sent_at_iso: str | None = None,
+        persona_id: int | None = None,
     ) -> dict:
+        # Apply style filter if enabled and persona_id provided
+        if self.style_filter and persona_id:
+            try:
+                # Run async filter in sync context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we need to handle this differently
+                    # For now, log and skip filtering to avoid blocking
+                    logger.warning(
+                        "Style filter skipped: already in async context. "
+                        "Consider making gateway methods async."
+                    )
+                else:
+                    filter_result = loop.run_until_complete(
+                        self.style_filter.apply_filter(
+                            message=body,
+                            persona_id=persona_id,
+                            message_type="email",
+                        )
+                    )
+                    body = filter_result.styled_message
+                    logger.debug(
+                        f"Style filter applied to email: success={filter_result.success}, "
+                        f"tokens={filter_result.tokens_used}, latency={filter_result.latency_ms:.1f}ms"
+                    )
+            except Exception as e:
+                logger.error(f"Style filter failed, using original message: {e}", exc_info=True)
+                # Continue with original body on error
+        
         # Filter out empty/invalid email addresses using centralized validation
         cleaned_to = filter_valid_emails(to, normalize=False, strict=False)
         cleaned_cc = filter_valid_emails(cc or [], normalize=False, strict=False)
@@ -110,10 +150,16 @@ class ChatGateway:
 
 
 class HttpChatGateway(ChatGateway):
-    def __init__(self, base_url: str, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        client: httpx.Client | None = None,
+        style_filter: "CommunicationStyleFilter | None" = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._external_client = client
         self._client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
+        self.style_filter = style_filter
 
     @property
     def client(self) -> httpx.Client:
@@ -124,7 +170,44 @@ class HttpChatGateway(ChatGateway):
         response = self.client.put(f"/users/{handle}", json=payload)
         response.raise_for_status()
 
-    def send_dm(self, sender: str, recipient: str, body: str, *, sent_at_iso: str | None = None) -> dict:
+    def send_dm(
+        self,
+        sender: str,
+        recipient: str,
+        body: str,
+        *,
+        sent_at_iso: str | None = None,
+        persona_id: int | None = None,
+    ) -> dict:
+        # Apply style filter if enabled and persona_id provided
+        if self.style_filter and persona_id:
+            try:
+                # Run async filter in sync context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we need to handle this differently
+                    # For now, log and skip filtering to avoid blocking
+                    logger.warning(
+                        "Style filter skipped: already in async context. "
+                        "Consider making gateway methods async."
+                    )
+                else:
+                    filter_result = loop.run_until_complete(
+                        self.style_filter.apply_filter(
+                            message=body,
+                            persona_id=persona_id,
+                            message_type="chat",
+                        )
+                    )
+                    body = filter_result.styled_message
+                    logger.debug(
+                        f"Style filter applied to DM: success={filter_result.success}, "
+                        f"tokens={filter_result.tokens_used}, latency={filter_result.latency_ms:.1f}ms"
+                    )
+            except Exception as e:
+                logger.error(f"Style filter failed, using original message: {e}", exc_info=True)
+                # Continue with original body on error
+        
         payload = {
             "sender": sender,
             "recipient": recipient,
@@ -148,8 +231,45 @@ class HttpChatGateway(ChatGateway):
         response.raise_for_status()
         return response.json()
 
-    def send_room_message(self, room_slug: str, sender: str, body: str, *, sent_at_iso: str | None = None) -> dict:
+    def send_room_message(
+        self,
+        room_slug: str,
+        sender: str,
+        body: str,
+        *,
+        sent_at_iso: str | None = None,
+        persona_id: int | None = None,
+    ) -> dict:
         """Send a message to a group chat room."""
+        # Apply style filter if enabled and persona_id provided
+        if self.style_filter and persona_id:
+            try:
+                # Run async filter in sync context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we need to handle this differently
+                    # For now, log and skip filtering to avoid blocking
+                    logger.warning(
+                        "Style filter skipped: already in async context. "
+                        "Consider making gateway methods async."
+                    )
+                else:
+                    filter_result = loop.run_until_complete(
+                        self.style_filter.apply_filter(
+                            message=body,
+                            persona_id=persona_id,
+                            message_type="chat",
+                        )
+                    )
+                    body = filter_result.styled_message
+                    logger.debug(
+                        f"Style filter applied to room message: success={filter_result.success}, "
+                        f"tokens={filter_result.tokens_used}, latency={filter_result.latency_ms:.1f}ms"
+                    )
+            except Exception as e:
+                logger.error(f"Style filter failed, using original message: {e}", exc_info=True)
+                # Continue with original body on error
+        
         payload = {
             "sender": sender,
             "body": body,

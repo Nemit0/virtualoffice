@@ -232,6 +232,24 @@ Temporary status overrides for workers.
 | status | TEXT | Override status |
 | until_tick | INTEGER | Expiration tick |
 
+### people
+
+Virtual worker personas with communication style filter support.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Unique identifier |
+| name | TEXT | Worker name |
+| role | TEXT | Job title |
+| ... | ... | (other persona fields) |
+| style_examples | TEXT | JSON array of communication style examples (default: '[]') |
+| style_filter_enabled | INTEGER | Enable style filter for this persona (0 or 1, default: 1) |
+| created_at | TEXT | Timestamp |
+
+**Style Filter Fields**:
+- `style_examples`: JSON array containing 3-5 example messages demonstrating the persona's communication style
+- `style_filter_enabled`: Per-persona toggle for applying the communication style filter to outgoing messages
+
 ## Integration
 
 ### With SimulationEngine

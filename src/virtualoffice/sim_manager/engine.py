@@ -327,8 +327,32 @@ class SimulationEngine:
             event_playbook=payload.event_playbook,
             statuses=payload.statuses,
         )
+        
+        # Generate style examples if not provided
+        style_examples_json = payload.style_examples if hasattr(payload, 'style_examples') else None
+        if not style_examples_json or style_examples_json == '[]':
+            try:
+                from .style_filter.example_generator import StyleExampleGenerator
+                from .style_filter.models import StyleExample
+                import asyncio
+                
+                generator = StyleExampleGenerator(locale=locale)
+                # Run async generation in sync context
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                examples = loop.run_until_complete(generator.generate_examples(persona))
+                style_examples_json = StyleExample.to_json(examples)
+            except Exception as e:
+                # Log error but don't fail persona creation
+                print(f"Warning: Failed to generate style examples for {payload.name}: {e}")
+                style_examples_json = '[]'
+        
         # Persist person and schedule via repository
-        person_id = self.people_repo.insert(payload, persona_markdown, schedule)
+        person_id = self.people_repo.insert(payload, persona_markdown, schedule, style_examples_json)
 
         self.email_gateway.ensure_mailbox(payload.email_address, payload.name)
         self.chat_gateway.ensure_user(payload.chat_handle, payload.name)
@@ -351,6 +375,52 @@ class SimulationEngine:
     def delete_person_by_name(self, name: str) -> bool:
         # Runtime will be removed on next sync_runtimes call
         return self.people_repo.delete_by_name(name)
+    
+    def regenerate_style_examples(self, person_id: int) -> str:
+        """Regenerate style examples for an existing persona.
+        
+        Args:
+            person_id: ID of the persona to regenerate examples for
+            
+        Returns:
+            JSON string of newly generated style examples
+            
+        Raises:
+            ValueError: If person not found or generation fails
+        """
+        # Get existing person
+        person = self.get_person(person_id)
+        
+        # Get locale
+        locale = os.getenv("VDOS_LOCALE", "en").strip().lower()
+        
+        # Create persona object for generator
+        persona = self._to_persona(person)
+        
+        # Generate new examples
+        try:
+            from .style_filter.example_generator import StyleExampleGenerator
+            from .style_filter.models import StyleExample
+            import asyncio
+            
+            generator = StyleExampleGenerator(locale=locale)
+            
+            # Run async generation in sync context
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            examples = loop.run_until_complete(generator.generate_examples(persona))
+            style_examples_json = StyleExample.to_json(examples)
+            
+            # Update database
+            self.people_repo.update_style_examples(person_id, style_examples_json)
+            
+            return style_examples_json
+        except Exception as e:
+            raise ValueError(f"Failed to regenerate style examples: {str(e)}")
 
     # ------------------------------------------------------------------
     # Planning lifecycle
@@ -1021,6 +1091,7 @@ class SimulationEngine:
                                 recipient=sender_person.chat_handle,
                                 body=ack_body,
                                 sent_at_iso=(dt.isoformat() if dt else None),
+                                persona_id=person.id,
                             )
                             chats_sent += 1
                         self._log_exchange(status.current_tick, person.id, sender_person.id, "chat", None, ack_body)
@@ -1150,6 +1221,7 @@ class SimulationEngine:
                                 subject=subject,
                                 body=body_text,
                                 sent_at_iso=(dt.isoformat() if dt else None),
+                                persona_id=None,  # Simulation manager messages don't use style filter
                             )
                             emails_sent += 1
                         self._log_exchange(status.current_tick, None, person.id, "email", subject, body_text)
@@ -1170,6 +1242,7 @@ class SimulationEngine:
                                 recipient=person.chat_handle,
                                 body=chat_body,
                                 sent_at_iso=(dt.isoformat() if dt else None),
+                                persona_id=None,  # Simulation manager messages don't use style filter
                             )
                             chats_sent += 1
                         self._log_exchange(status.current_tick, None, person.id, "chat", None, chat_body)
@@ -1247,6 +1320,7 @@ class SimulationEngine:
                                 body=body,
                                 cc=cc_suggest,
                                 sent_at_iso=(dt.isoformat() if dt else None),
+                                persona_id=person.id,
                             )
                             emails_sent += 1
                         self._log_exchange(status.current_tick, person.id, recipient.id, "email", subject, body)
@@ -1272,6 +1346,7 @@ class SimulationEngine:
                                     recipient=recipient.chat_handle,
                                     body=chat_body,
                                     sent_at_iso=(dt.isoformat() if dt else None),
+                                    persona_id=person.id,
                                 )
                                 chats_sent += 1
                         self._log_exchange(status.current_tick, person.id, recipient.id, "chat", None, chat_body)

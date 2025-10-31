@@ -18,6 +18,11 @@ simulation_output/
 agent_reports/
 output/
 
+# Caches and database files
+*.db
+*.sqlite
+*.sqlite3
+*.log
 
 # C extensions
 *.so

@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS people (
     planning_guidelines TEXT NOT NULL,
     event_playbook TEXT NOT NULL,
     statuses TEXT NOT NULL,
+    style_examples TEXT NOT NULL DEFAULT '[]',
+    style_filter_enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -197,6 +199,26 @@ CREATE TABLE IF NOT EXISTS worker_status_overrides (
     FOREIGN KEY(worker_id) REFERENCES people(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS style_filter_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    persona_id INTEGER NOT NULL,
+    message_type TEXT NOT NULL,
+    tokens_used INTEGER NOT NULL,
+    latency_ms REAL NOT NULL,
+    success INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(persona_id) REFERENCES people(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_filter_metrics_persona ON style_filter_metrics(persona_id);
+CREATE INDEX IF NOT EXISTS idx_filter_metrics_created ON style_filter_metrics(created_at);
+
+CREATE TABLE IF NOT EXISTS style_filter_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 """
 
 
@@ -243,6 +265,10 @@ class SimulationState:
                 conn.execute("ALTER TABLE people ADD COLUMN is_department_head INTEGER NOT NULL DEFAULT 0")
             if "team_name" not in people_columns:
                 conn.execute("ALTER TABLE people ADD COLUMN team_name TEXT")
+            if "style_examples" not in people_columns:
+                conn.execute("ALTER TABLE people ADD COLUMN style_examples TEXT NOT NULL DEFAULT '[]'")
+            if "style_filter_enabled" not in people_columns:
+                conn.execute("ALTER TABLE people ADD COLUMN style_filter_enabled INTEGER NOT NULL DEFAULT 1")
 
             state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(simulation_state)")}
             if "auto_tick" not in state_columns:
@@ -267,6 +293,18 @@ class SimulationState:
             if not row:
                 conn.execute(
                     "INSERT INTO simulation_state(id, current_tick, is_running, auto_tick) VALUES (1, 0, 0, 0)"
+                )
+            
+            # Ensure style_filter_config has the singleton row
+            filter_row = conn.execute("SELECT id FROM style_filter_config WHERE id = 1").fetchone()
+            if not filter_row:
+                # Read default from environment variable
+                import os
+                default_enabled = os.getenv("VDOS_STYLE_FILTER_ENABLED", "true").strip().lower()
+                enabled_value = 1 if default_enabled in {"1", "true", "yes", "on"} else 0
+                conn.execute(
+                    "INSERT INTO style_filter_config(id, enabled) VALUES (1, ?)",
+                    (enabled_value,)
                 )
 
     def get_current_state(self) -> SimulationStatus:

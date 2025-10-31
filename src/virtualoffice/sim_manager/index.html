@@ -1,71 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VDOS Dashboard</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f5f7fb; color: #1f2933; }
-    header { background: #1f2933; color: #fff; padding: 16px 24px; }
-    main { padding: 24px; }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    h2 { margin-top: 32px; font-size: 20px; }
-    section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1); }
-    label { display: block; font-weight: 600; margin-bottom: 4px; }
-    input[type=text], input[type=number], textarea { width: 100%; padding: 6px 8px; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
-    textarea { min-height: 60px; resize: vertical; }
-    button { padding: 8px 14px; margin-right: 8px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; }
-    button.secondary { background: #475569; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    #status-message { margin-top: 8px; font-weight: 600; }
-    #status-message.error { color: #b91c1c; }
-    #status-message.success { color: #047857; }
-    #people-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-    .person-card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; background: #f8fafc; }
-    .plan-card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 10px; background: #fff; }
-    .plan-card pre { white-space: pre-wrap; font-size: 13px; background: #f1f5f9; padding: 6px; border-radius: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { border: 1px solid #cbd5e1; padding: 6px; font-size: 13px; text-align: left; }
-    th { background: #e2e8f0; }
-    #events-list { list-style: none; padding: 0; margin: 0; }
-    #events-list li { padding: 6px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
-    .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .controls-grid .card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: #ffffff; }
-    .toolbar { margin-top: 8px; }
-    .small { font-size: 12px; color: #475569; margin-top: -6px; margin-bottom: 12px; }
-  </style>
+  <link rel="stylesheet" href="/static/css/styles.css">
 </head>
+
 <body>
   <header>
     <h1>VDOS Dashboard</h1>
     <div id="status-message"></div>
   </header>
+
   <main>
+    <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+      <button class="tab-button active" data-tab="controls" role="tab" aria-selected="true"
+        aria-controls="control-panel" id="tab-controls-button">Controls</button>
+      <button class="tab-button" data-tab="emails" role="tab" aria-selected="false" aria-controls="tab-emails"
+        id="tab-emails-button">Emails</button>
+      <button class="tab-button" data-tab="chat" role="tab" aria-selected="false" aria-controls="tab-chat"
+        id="tab-chat-button">Chat</button>
+    </nav>
     <section id="control-panel">
       <h2>Controls</h2>
       <div class="controls-grid">
         <div class="card">
-          <label for="project-name">Project Name</label>
-          <input id="project-name" type="text" value="Dashboard Project"/>
-          <label for="project-summary">Project Summary</label>
-          <textarea id="project-summary">Generated from web dashboard</textarea>
-          <label for="project-duration">Duration (weeks)</label>
-          <input id="project-duration" type="number" min="1" value="1"/>
-          <label for="random-seed">Random Seed (optional)</label>
-          <input id="random-seed" type="number"/>
-          <label for="model-hint">Model Hint (optional)</label>
-          <input id="model-hint" type="text" placeholder="gpt-4o-mini"/>
+          <h3>Projects</h3>
+          <div id="projects-list"></div>
           <div class="toolbar">
-            <button id="start-btn">Start</button>
+            <button id="add-project-btn">Add Project</button>
+            <button id="export-projects-btn" class="secondary">Export Projects</button>
+            <button id="import-projects-btn" class="secondary">Import Projects</button>
+          </div>
+
+          <hr style="margin: 20px 0;">
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="random-seed">Random Seed (optional)</label>
+              <input id="random-seed" type="number" />
+            </div>
+            <div class="form-group">
+              <label for="model-hint">Model Hint (optional)</label>
+              <input id="model-hint" type="text" placeholder="gpt-4o-mini" />
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="start-btn">Start Simulation</button>
             <button id="stop-btn" class="secondary">Stop</button>
             <button id="reset-btn" class="secondary">Reset</button>
             <button id="full-reset-btn" class="secondary">Full Reset (Delete Personas)</button>
           </div>
         </div>
+
         <div class="card">
-          <label for="advance-ticks">Advance ticks</label>
-          <input id="advance-ticks" type="number" min="1" value="1"/>
-          <label for="advance-reason">Reason</label>
-          <input id="advance-reason" type="text" value="manual"/>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="advance-ticks">Advance ticks</label>
+              <input id="advance-ticks" type="number" min="1" value="1" />
+            </div>
+            <div class="form-group">
+              <label for="advance-reason">Reason</label>
+              <input id="advance-reason" type="text" value="manual" />
+            </div>
+            <div class="form-group">
+              <label for="tick-interval">Auto-tick interval (seconds)</label>
+              <input id="tick-interval" type="number" min="0" max="60" step="0.1" value="1.0" />
+              <small style="color: #64748b; font-size: 11px;">0 = max speed (no delay)</small>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="auto-pause-toggle">
+                <input id="auto-pause-toggle" type="checkbox" checked aria-describedby="auto-pause-help" />
+                Auto-pause when projects complete
+              </label>
+              <small id="auto-pause-help" style="color: #64748b; font-size: 11px;">Automatically stops auto-tick when
+                all projects are finished</small>
+            </div>
+            <div class="form-group">
+              <label for="auto-refresh-toggle">
+                <input id="auto-refresh-toggle" type="checkbox" checked aria-describedby="auto-refresh-help" />
+                Auto-refresh dashboard
+              </label>
+              <small id="auto-refresh-help" style="color: #64748b; font-size: 11px;">Automatically refreshes all tabs
+                (Controls, Emails, Chat) during simulation</small>
+            </div>
+          </div>
           <div class="toolbar">
             <button id="advance-btn">Advance</button>
             <button id="auto-start-btn">Start Auto</button>
@@ -78,15 +101,58 @@
 
     <section id="state-panel">
       <h2>Simulation State</h2>
-      <div><strong>Status:</strong> <span id="state-status">—</span></div>
-      <div><strong>Current Tick:</strong> <span id="state-current_tick">0</span></div>
-      <div><strong>Simulation Time:</strong> <span id="state-sim_time">Day 0 00:00</span></div>
-      <div><strong>Auto Tick:</strong> <span id="state-auto">False</span></div>
+      <div class="simulation-state">
+        <div class="state-item">
+          <strong>Status</strong><br>
+          <span id="state-status">—</span>
+        </div>
+        <div class="state-item">
+          <strong>Current Tick</strong><br>
+          <span id="state-current_tick">0</span>
+        </div>
+        <div class="state-item">
+          <strong>Simulation Time</strong><br>
+          <span id="state-sim_time">Day 0 00:00</span>
+        </div>
+        <div class="state-item">
+          <strong>Auto Tick</strong><br>
+          <span id="state-auto">False</span>
+        </div>
+        <div class="state-item">
+          <strong>Auto-Pause</strong><br>
+          <span id="state-auto-pause">—</span>
+        </div>
+        <div class="state-item">
+          <strong>Active Projects</strong><br>
+          <span id="state-active-projects">—</span>
+        </div>
+        <div class="state-item">
+          <strong>Future Projects</strong><br>
+          <span id="state-future-projects">—</span>
+        </div>
+      </div>
+      <div id="auto-pause-warning" class="auto-pause-warning" style="display: none;">
+        <div class="warning-icon">⚠️</div>
+        <div class="warning-text">
+          <strong>Auto-pause will trigger soon</strong><br>
+          <span id="auto-pause-warning-text">No active projects remaining</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="active-projects-section">
+      <h2>Active Project Assignments</h2>
+      <p>Teams currently working on projects (based on simulation week and project timelines).</p>
+      <div id="active-projects-container"></div>
     </section>
 
     <section id="people-section">
       <h2>Personas</h2>
       <p>Select personas to include in the next simulation run.</p>
+      <div class="toolbar">
+        <button id="export-personas-btn" class="secondary">Export Personas</button>
+        <button id="import-personas-btn" class="secondary">Import Personas</button>
+      </div>
       <div id="people-container"></div>
     </section>
 
@@ -94,51 +160,174 @@
       <h2>Create Persona</h2>
       <div class="controls-grid">
         <div class="card">
-          <label for="persona-prompt">Prompt</label>
-          <input id="persona-prompt" type="text" placeholder="Full stack developer focused on dashboards"/>
+          <div class="form-group">
+            <label for="persona-prompt">Prompt</label>
+            <input id="persona-prompt" type="text" placeholder="Full stack developer focused on dashboards" />
+          </div>
           <div class="toolbar">
             <button id="persona-generate-btn">Generate with GPT</button>
           </div>
-          <p class="small">Requires an OpenAI API key. Adjust the fields below before creating.</p>
         </div>
+
         <div class="card">
-          <label for="persona-name">Name</label>
-          <input id="persona-name" type="text"/>
-          <label for="persona-role">Role</label>
-          <input id="persona-role" type="text"/>
-          <label for="persona-timezone">Timezone</label>
-          <input id="persona-timezone" type="text" value="UTC"/>
-          <label for="persona-hours">Work hours</label>
-          <input id="persona-hours" type="text" value="09:00-17:00"/>
-          <label for="persona-break">Break frequency</label>
-          <input id="persona-break" type="text" value="50/10 cadence"/>
-          <label for="persona-style">Communication style</label>
-          <input id="persona-style" type="text" value="Warm async"/>
-          <label for="persona-email">Email address</label>
-          <input id="persona-email" type="text" placeholder="name@vdos.local"/>
-          <label for="persona-chat">Chat handle</label>
-          <input id="persona-chat" type="text" placeholder="handle"/>
-          <label><input id="persona-is-head" type="checkbox"/> Department head</label>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-name">Name</label>
+              <input id="persona-name" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="persona-role">Role</label>
+              <input id="persona-role" type="text" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-timezone">Timezone</label>
+              <input id="persona-timezone" type="text" value="UTC" />
+            </div>
+            <div class="form-group">
+              <label for="persona-hours">Work hours</label>
+              <input id="persona-hours" type="text" value="09:00-17:00" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-break">Break frequency</label>
+              <input id="persona-break" type="text" value="50/10 cadence" />
+            </div>
+            <div class="form-group">
+              <label for="persona-style">Communication style</label>
+              <input id="persona-style" type="text" value="Warm async" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-email">Email address</label>
+              <input id="persona-email" type="text" placeholder="name@vdos.local" />
+            </div>
+            <div class="form-group">
+              <label for="persona-chat">Chat handle</label>
+              <input id="persona-chat" type="text" placeholder="handle" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="persona-team">Team name (optional)</label>
+              <input id="persona-team" type="text" placeholder="e.g., Team A, 팀A" />
+            </div>
+            <div class="form-group">
+              <label>
+                <input id="persona-is-head" type="checkbox" /> Department head
+              </label>
+            </div>
+          </div>
         </div>
+
         <div class="card">
-          <label for="persona-skills">Skills (comma separated)</label>
-          <input id="persona-skills" type="text"/>
-          <label for="persona-personality">Personality (comma separated)</label>
-          <input id="persona-personality" type="text"/>
-          <label for="persona-objectives">Objectives (one per line)</label>
-          <textarea id="persona-objectives"></textarea>
-          <label for="persona-metrics">Metrics (one per line)</label>
-          <textarea id="persona-metrics"></textarea>
-          <label for="persona-guidelines">Planning guidelines (one per line)</label>
-          <textarea id="persona-guidelines"></textarea>
+          <div class="form-group">
+            <label for="persona-skills">Skills (comma separated)</label>
+            <input id="persona-skills" type="text" />
+          </div>
+          <div class="form-group">
+            <label for="persona-personality">Personality (comma separated)</label>
+            <input id="persona-personality" type="text" />
+          </div>
+          <div class="form-group">
+            <label for="persona-objectives">Objectives (one per line)</label>
+            <textarea id="persona-objectives"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-metrics">Metrics (one per line)</label>
+            <textarea id="persona-metrics"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-guidelines">Planning guidelines (one per line)</label>
+            <textarea id="persona-guidelines"></textarea>
+          </div>
         </div>
+
         <div class="card">
-          <label for="persona-schedule">Schedule (HH:MM-HH:MM Activity per line)</label>
-          <textarea id="persona-schedule"></textarea>
-          <label for="persona-playbook">Event playbook (JSON object)</label>
-          <textarea id="persona-playbook"></textarea>
-          <label for="persona-statuses">Statuses (one per line)</label>
-          <textarea id="persona-statuses"></textarea>
+          <div class="form-group">
+            <label for="persona-schedule">Schedule (HH:MM-HH:MM Activity per line)</label>
+            <textarea id="persona-schedule"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-playbook">Event playbook (JSON object)</label>
+            <textarea id="persona-playbook"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="persona-statuses">Statuses (one per line)</label>
+            <textarea id="persona-statuses"></textarea>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Communication Style Examples</h3>
+          <p class="small">
+            These examples define how this persona writes emails and chats.
+            The style filter uses these to transform generated messages.
+          </p>
+
+          <div class="form-group">
+            <label for="style-example-0">Email Example 1</label>
+            <textarea id="style-example-0" rows="3"
+              placeholder="Example of how this persona writes formal emails..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-1">Email Example 2</label>
+            <textarea id="style-example-1" rows="3"
+              placeholder="Another email example showing this persona's style..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-2">Email Example 3</label>
+            <textarea id="style-example-2" rows="3" placeholder="A third email example..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-3">Email Example 4</label>
+            <textarea id="style-example-3" rows="3" placeholder="A fourth email example..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-4">Email Example 5</label>
+            <textarea id="style-example-4" rows="3" placeholder="A fifth email example..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-5">Chat Example 1</label>
+            <textarea id="style-example-5" rows="3"
+              placeholder="Example of how this persona writes in chat..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-6">Chat Example 2</label>
+            <textarea id="style-example-6" rows="3" placeholder="Another chat example..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-7">Chat Example 3</label>
+            <textarea id="style-example-7" rows="3" placeholder="A third chat example..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-8">Chat Example 4</label>
+            <textarea id="style-example-8" rows="3" placeholder="A fourth chat example..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="style-example-9">Chat Example 5</label>
+            <textarea id="style-example-9" rows="3" placeholder="A fifth chat example..."></textarea>
+          </div>
+
+          <div class="toolbar">
+            <button id="regenerate-examples-btn" class="secondary">Regenerate with AI</button>
+            <button id="preview-filter-btn" class="secondary">Preview Filter</button>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="toolbar">
             <button id="persona-create-btn">Create Persona</button>
             <button id="persona-clear-btn" class="secondary">Clear</button>
@@ -154,487 +343,324 @@
 
     <section id="metrics-section">
       <h2>Planner Metrics</h2>
-      <table id="planner-table">
-        <thead>
-          <tr><th>Time (UTC)</th><th>Method</th><th>Planner</th><th>Model</th><th>Duration (ms)</th><th>Fallback</th><th>Context</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <div style="overflow-x: auto;">
+        <table id="planner-table">
+          <thead>
+            <tr>
+              <th>Time (UTC)</th>
+              <th>Method</th>
+              <th>Planner</th>
+              <th>Model</th>
+              <th>Duration (ms)</th>
+              <th>Fallback</th>
+              <th>Context</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="token-section">
       <h2>Token Usage</h2>
-      <table id="token-table">
-        <thead><tr><th>Model</th><th>Tokens</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div style="overflow-x: auto;">
+        <table id="token-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Tokens</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="events-section">
       <h2>Recent Events</h2>
       <ul id="events-list"></ul>
     </section>
+
+    <!-- Emails Tab -->
+    <section id="tab-emails" class="tabbed-section" style="display: none;" role="tabpanel"
+      aria-labelledby="tab-emails-button">
+      <h2 id="email-tab-heading">Emails</h2>
+
+      <!-- Email Client Header -->
+      <div class="email-client-header" role="toolbar" aria-label="Email client controls">
+        <div class="email-client-controls">
+          <div class="form-group">
+            <label for="email-person-select">Persona</label>
+            <select id="email-person-select" aria-describedby="email-person-help">
+              <option value="">Select a persona...</option>
+            </select>
+            <div id="email-person-help" class="sr-only">Choose which persona's emails to view</div>
+          </div>
+
+          <div class="email-folder-navigation" role="tablist" aria-label="Email folders">
+            <div class="segmented">
+              <button id="email-folder-inbox" class="seg active" role="tab" aria-selected="true"
+                aria-controls="email-list" tabindex="0">Inbox</button>
+              <button id="email-folder-sent" class="seg" role="tab" aria-selected="false" aria-controls="email-list"
+                tabindex="-1">Sent</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="email-client-actions">
+          <button id="email-refresh-btn" class="secondary" aria-describedby="email-refresh-help">
+            <span aria-hidden="true">🔄</span> Refresh
+          </button>
+          <div id="email-refresh-help" class="sr-only">Refresh email list (Shortcut: R)</div>
+          <div class="email-status-indicator" role="status" aria-live="polite">
+            <span id="email-last-refresh">Never refreshed</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Email Client Body - Two Pane Layout -->
+      <div class="email-client-body" role="main" aria-label="Email client interface">
+        <div class="email-client-layout">
+          <!-- Email List Pane -->
+          <div class="email-list-pane" role="region" aria-labelledby="email-list-heading">
+            <div class="email-list-header">
+              <div class="email-list-title">
+                <h3 id="email-list-heading">
+                  <span id="email-folder-title">Inbox</span>
+                  <span id="email-count" class="email-count-badge" aria-label="email count">0</span>
+                </h3>
+              </div>
+              <div class="email-search-container">
+                <input type="text" id="email-search" class="email-search-input" placeholder="Search emails..."
+                  aria-label="Search emails" />
+                <button id="email-search-clear" class="email-search-clear" aria-label="Clear search"
+                  style="display: none;">×</button>
+              </div>
+            </div>
+            <div class="email-list-container">
+              <div id="email-list" class="email-list" tabindex="0" aria-describedby="email-list-help">
+                <!-- Email rows will be populated here -->
+                <div class="email-list-placeholder">
+                  <div class="placeholder-icon" aria-hidden="true">📧</div>
+                  <div class="placeholder-text">
+                    <p>Select a persona to view emails</p>
+                  </div>
+                </div>
+              </div>
+              <div id="email-list-help" class="sr-only">Use arrow keys to navigate emails, Enter to select, R to
+                refresh, I for Inbox, S for Sent</div>
+            </div>
+          </div>
+
+          <!-- Email Detail Pane -->
+          <div class="email-detail-pane" role="region" aria-labelledby="email-detail-heading">
+            <div class="email-detail-container">
+              <div id="email-detail" class="email-detail-view" aria-live="polite">
+                <!-- Email detail content will be populated here -->
+                <div class="email-detail-placeholder">
+                  <div class="placeholder-icon" aria-hidden="true">✉️</div>
+                  <div class="placeholder-text">
+                    <h3 id="email-detail-heading">No email selected</h3>
+                    <p>Select an email from the list to view its contents</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat Tab -->
+    <section id="tab-chat" class="tabbed-section" style="display: none;" role="tabpanel"
+      aria-labelledby="tab-chat-button">
+      <h2 id="chat-tab-heading">Chat</h2>
+
+      <!-- Chat Client Header -->
+      <div class="chat-client-header" role="toolbar" aria-label="Chat client controls">
+        <div class="chat-client-controls">
+          <div class="form-group">
+            <label for="chat-person-select">Persona</label>
+            <select id="chat-person-select" aria-describedby="chat-person-help">
+              <option value="">Select a persona...</option>
+            </select>
+            <div id="chat-person-help" class="sr-only">Choose which persona's chat conversations to view</div>
+          </div>
+        </div>
+
+        <div class="chat-client-actions">
+          <button id="chat-sidebar-toggle" class="chat-sidebar-toggle" aria-describedby="chat-sidebar-toggle-help">
+            <span class="toggle-icon" aria-hidden="true">☰</span> Menu
+          </button>
+          <div id="chat-sidebar-toggle-help" class="sr-only">Toggle conversation sidebar</div>
+          <button id="chat-refresh-btn" class="secondary" aria-describedby="chat-refresh-help">
+            <span aria-hidden="true">🔄</span> Refresh
+          </button>
+          <div id="chat-refresh-help" class="sr-only">Refresh chat conversations</div>
+          <div class="chat-status-indicator" role="status" aria-live="polite">
+            <span id="chat-last-refresh">Never refreshed</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Client Body - Two Pane Layout -->
+      <div class="chat-client-body" role="main" aria-label="Chat client interface">
+        <!-- Mobile sidebar overlay -->
+        <div class="chat-sidebar-overlay" id="chat-sidebar-overlay" aria-hidden="true"></div>
+        <div class="chat-client-layout" id="chat-client-layout">
+          <!-- Chat Sidebar Pane -->
+          <div class="chat-sidebar-pane" role="region" aria-labelledby="chat-sidebar-heading">
+            <div class="chat-sidebar">
+              <div class="chat-sidebar-header">
+                <h3 id="chat-sidebar-heading" class="sr-only">Conversations</h3>
+                <div class="chat-search-container">
+                  <input type="text" id="chat-search" class="chat-search-input" placeholder="Search conversations..."
+                    aria-label="Search conversations" />
+                  <button id="chat-search-clear" class="chat-search-clear" aria-label="Clear search"
+                    style="display: none;">×</button>
+                </div>
+              </div>
+              <div class="chat-sidebar-content">
+                <div class="conversation-section" id="rooms-section">
+                  <h4 class="section-title">
+                    <span class="section-icon" aria-hidden="true">#</span>
+                    Rooms
+                    <span class="section-count" id="rooms-count">(0)</span>
+                  </h4>
+                  <div class="conversation-list" id="chat-rooms-list" role="list" aria-label="Chat rooms">
+                    <!-- Room conversation items will be populated here -->
+                  </div>
+                </div>
+                <div class="conversation-section" id="dms-section">
+                  <h4 class="section-title">
+                    <span class="section-icon" aria-hidden="true">@</span>
+                    Direct Messages
+                    <span class="section-count" id="dms-count">(0)</span>
+                  </h4>
+                  <div class="conversation-list" id="chat-dms-list" role="list" aria-label="Direct messages">
+                    <!-- DM conversation items will be populated here -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Message Pane -->
+          <div class="chat-message-pane" role="region" aria-labelledby="chat-message-heading">
+            <div class="chat-message-view">
+              <div class="chat-message-header">
+                <div class="conversation-title">
+                  <h3 id="chat-message-heading" class="conversation-name">Select a conversation</h3>
+                  <div class="conversation-meta">
+                    <span class="participant-list"></span>
+                    <span class="message-count"></span>
+                  </div>
+                </div>
+                <div class="message-actions">
+                  <div class="message-search-container">
+                    <input type="text" id="message-search" class="message-search"
+                      placeholder="Search in conversation..." aria-label="Search messages in current conversation" />
+                    <div class="message-search-controls" id="message-search-controls" style="display: none;">
+                      <span class="search-results-count" id="search-results-count"></span>
+                      <button id="search-prev-btn" class="search-nav-btn" aria-label="Previous search result"
+                        title="Previous (Shift+Enter)">↑</button>
+                      <button id="search-next-btn" class="search-nav-btn" aria-label="Next search result"
+                        title="Next (Enter)">↓</button>
+                      <button id="search-clear-btn" class="search-clear-btn" aria-label="Clear search"
+                        title="Clear (Escape)">✕</button>
+                    </div>
+                  </div>
+                  <button id="message-refresh-btn" class="message-refresh-btn secondary"
+                    aria-label="Refresh messages">🔄</button>
+                </div>
+              </div>
+
+              <div class="chat-message-content">
+                <div class="message-thread" id="message-thread" role="log" aria-live="polite"
+                  aria-label="Message thread">
+                  <!-- Message bubbles will be populated here -->
+                  <div class="message-thread-placeholder">
+                    <div class="placeholder-icon" aria-hidden="true">💬</div>
+                    <div class="placeholder-text">
+                      <h4>No conversation selected</h4>
+                      <p>Select a conversation from the sidebar to view messages</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-message-footer">
+                <div class="message-status">
+                  Last updated: <span id="chat-message-last-refresh">Never</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
+  <!-- Preview Filter Modal -->
+  <div id="preview-modal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div
+      style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; border-radius: 8px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;">
+      <h2>Preview Communication Style Filter</h2>
+      <p class="small">Enter a sample message to see how the style filter would transform it using this persona's
+        examples.</p>
+
+      <label for="preview-input">Sample Message</label>
+      <textarea id="preview-input" rows="4" placeholder="Enter a sample message to transform..."></textarea>
+
+      <div class="toolbar">
+        <button id="preview-transform-btn">Transform</button>
+        <button id="preview-close-btn" class="secondary">Close</button>
+      </div>
+
+      <div id="preview-results" style="display: none; margin-top: 20px;">
+        <div style="margin-bottom: 16px;">
+          <strong>Original Message:</strong>
+          <pre id="preview-original"
+            style="background: #f1f5f9; padding: 12px; border-radius: 4px; white-space: pre-wrap;"></pre>
+        </div>
+        <div>
+          <strong>Filtered Message:</strong>
+          <pre id="preview-filtered"
+            style="background: #f1f5f9; padding: 12px; border-radius: 4px; white-space: pre-wrap;"></pre>
+        </div>
+      </div>
+
+      <div id="preview-error" style="display: none; color: #b91c1c; margin-top: 12px;"></div>
+    </div>
+  </div>
+
+  <!-- Email Modal Viewer -->
+  <div id="email-modal" class="modal" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="email-modal-subject">Subject</div>
+        <button id="email-modal-close" class="secondary">Close</button>
+      </div>
+      <div class="modal-body" id="email-modal-body"></div>
+    </div>
+  </div>
+
   <script>
-    const API_PREFIX = '/api/v1';
-    let selectedPeople = new Set();
-
-    function setStatus(message, isError = false) {
-      const el = document.getElementById('status-message');
-      el.textContent = message || '';
-      el.className = isError ? 'error' : (message ? 'success' : '');
-    }
-
-    async function fetchJson(url, options = {}) {
-      const opts = { ...options };
-      if (opts.body && !opts.headers) {
-        opts.headers = { 'Content-Type': 'application/json' };
+    console.log('[INLINE TEST] JavaScript is working!');
+    console.log('[INLINE TEST] Timestamp:', new Date().toISOString());
+    
+    // Performance monitoring for page load
+    window.addEventListener('load', () => {
+      const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
+      console.log(`[PERF] Page load completed in ${loadTime}ms`);
+      if (loadTime > 2000) {
+        console.warn(`[PERF] Page load time (${loadTime}ms) exceeds target of 2000ms`);
       }
-      const response = await fetch(url, opts);
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || response.statusText);
-      }
-      if (response.status === 204) {
-        return null;
-      }
-      return response.json();
-    }
-
-    function parseCommaSeparated(value) {
-      if (!value) return [];
-      return value.split(',').map(entry => entry.trim()).filter(Boolean);
-    }
-
-    function parseLines(value) {
-      if (!value) return [];
-      return value.split('\n').map(line => line.trim()).filter(Boolean);
-    }
-
-    function parseSchedule(text) {
-      if (!text) return [];
-      const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
-      return lines.map(line => {
-        const [range, ...rest] = line.split(' ');
-        if (!range || !range.includes('-')) {
-          return null;
-        }
-        const [start, end] = range.split('-');
-        const activity = rest.join(' ').trim() || 'Focus block';
-        return { start: start.trim(), end: end.trim(), activity };
-      }).filter(Boolean);
-    }
-
-    function buildPersonCard(person, checked) {
-      const card = document.createElement('div');
-      card.className = 'person-card';
-      const label = document.createElement('label');
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = person.id;
-      checkbox.checked = checked;
-      checkbox.addEventListener('change', () => {
-        const id = Number(checkbox.value);
-        if (checkbox.checked) {
-          selectedPeople.add(id);
-        } else {
-          selectedPeople.delete(id);
-        }
-      });
-      label.appendChild(checkbox);
-      const title = document.createElement('span');
-      title.textContent = ` ${person.name} (${person.role})`;
-      label.appendChild(title);
-      card.appendChild(label);
-      const meta = document.createElement('div');
-      meta.textContent = `${person.timezone} · ${person.work_hours}`;
-      card.appendChild(meta);
-      return card;
-    }
-
-    function buildPlanCard(entry) {
-      const card = document.createElement('div');
-      card.className = 'plan-card';
-      const title = document.createElement('h3');
-      title.textContent = `${entry.person.name} (${entry.person.role})`;
-      card.appendChild(title);
-      if (entry.error) {
-        const error = document.createElement('div');
-        error.textContent = `Error: ${entry.error}`;
-        error.style.color = '#b91c1c';
-        card.appendChild(error);
-        return card;
-      }
-      const hourlyLabel = document.createElement('strong');
-      hourlyLabel.textContent = 'Latest Hourly Plan:';
-      card.appendChild(hourlyLabel);
-      const hourlyPre = document.createElement('pre');
-      hourlyPre.textContent = entry.hourly || '—';
-      card.appendChild(hourlyPre);
-      const dailyLabel = document.createElement('strong');
-      dailyLabel.textContent = 'Latest Daily Report:';
-      card.appendChild(dailyLabel);
-      const dailyPre = document.createElement('pre');
-      dailyPre.textContent = entry.daily || '—';
-      card.appendChild(dailyPre);
-      return card;
-    }
-
-    async function refreshState() {
-      const state = await fetchJson(`${API_PREFIX}/simulation`);
-      document.getElementById('state-status').textContent = state.is_running ? 'running' : 'stopped';
-      document.getElementById('state-current_tick').textContent = state.current_tick;
-      document.getElementById('state-sim_time').textContent = state.sim_time || 'Day 0 00:00';
-      document.getElementById('state-auto').textContent = state.auto_tick;
-    }
-
-    async function refreshPeopleAndPlans() {
-      const people = await fetchJson(`${API_PREFIX}/people`);
-      const container = document.getElementById('people-container');
-      const plansContainer = document.getElementById('plans-container');
-      const currentSelection = new Set(Array.from(container.querySelectorAll('input[type=checkbox]')).filter(cb => cb.checked).map(cb => Number(cb.value)));
-      if (selectedPeople.size === 0 && currentSelection.size > 0) {
-        selectedPeople = currentSelection;
-      }
-      container.innerHTML = '';
-      plansContainer.innerHTML = '';
-      if (!people.length) {
-        container.textContent = 'No personas registered.';
-        return;
-      }
-      if (selectedPeople.size === 0) {
-        people.forEach(person => selectedPeople.add(Number(person.id)));
-      }
-      people.forEach(person => {
-        const checked = selectedPeople.has(Number(person.id));
-        container.appendChild(buildPersonCard(person, checked));
-      });
-      const entries = await Promise.all(people.map(async person => {
-        try {
-          const [hourly, daily] = await Promise.all([
-            fetchJson(`${API_PREFIX}/people/${person.id}/plans?plan_type=hourly&limit=1`),
-            fetchJson(`${API_PREFIX}/people/${person.id}/daily-reports?limit=1`),
-          ]);
-          return {
-            person,
-            hourly: hourly && hourly.length ? hourly[0].content : '',
-            daily: daily && daily.length ? daily[0].report : '',
-          };
-        } catch (err) {
-          return { person, error: err.message || String(err) };
-        }
-      }));
-      entries.forEach(entry => { plansContainer.appendChild(buildPlanCard(entry)); });
-    }
-
-    async function refreshPlannerMetrics() {
-      const metrics = await fetchJson(`${API_PREFIX}/metrics/planner?limit=50`);
-      const tbody = document.querySelector('#planner-table tbody');
-      tbody.innerHTML = '';
-      metrics.slice().reverse().forEach(row => {
-        const tr = document.createElement('tr');
-        const cells = [
-          row.timestamp,
-          row.method,
-          row.result_planner,
-          row.model,
-          row.duration_ms,
-          row.fallback ? `Yes${row.error ? ' (' + row.error + ')' : ''}` : 'No',
-          JSON.stringify(row.context),
-        ];
-        cells.forEach(value => {
-          const td = document.createElement('td');
-          td.textContent = value == null ? '' : String(value);
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
-    }
-
-    async function refreshTokenUsage() {
-      const data = await fetchJson(`${API_PREFIX}/simulation/token-usage`);
-      const tbody = document.querySelector('#token-table tbody');
-      tbody.innerHTML = '';
-      Object.entries(data.per_model || {}).forEach(([model, tokens]) => {
-        const tr = document.createElement('tr');
-        const tdModel = document.createElement('td');
-        tdModel.textContent = model;
-        const tdTokens = document.createElement('td');
-        tdTokens.textContent = tokens;
-        tr.appendChild(tdModel);
-        tr.appendChild(tdTokens);
-        tbody.appendChild(tr);
-      });
-    }
-
-    async function refreshEvents() {
-      const events = await fetchJson(`${API_PREFIX}/events`);
-      const list = document.getElementById('events-list');
-      list.innerHTML = '';
-      events.slice(-10).reverse().forEach(evt => {
-        const li = document.createElement('li');
-        li.textContent = `#${evt.id} [${evt.type}] targets=${evt.target_ids.join(', ')} at tick ${evt.at_tick}`;
-        list.appendChild(li);
-      });
-    }
-
-    async function refreshAll() {
-      try {
-        await refreshState();
-        await refreshPeopleAndPlans();
-        await refreshPlannerMetrics();
-        await refreshTokenUsage();
-        await refreshEvents();
-        setStatus('');
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    function gatherSelectedPersonIds() {
-      return Array.from(document.querySelectorAll('#people-container input[type=checkbox]'))
-        .filter(cb => cb.checked)
-        .map(cb => Number(cb.value));
-    }
-
-    function gatherDeselectedPersonIds() {
-      return Array.from(document.querySelectorAll('#people-container input[type=checkbox]'))
-        .filter(cb => !cb.checked)
-        .map(cb => Number(cb.value));
-    }
-
-    async function startSimulation() {
-      const includeIds = gatherSelectedPersonIds();
-      const excludeIds = gatherDeselectedPersonIds();
-      const projectName = document.getElementById('project-name').value.trim() || 'Dashboard Project';
-      const projectSummary = document.getElementById('project-summary').value.trim() || 'Generated from web dashboard';
-      const duration = parseInt(document.getElementById('project-duration').value, 10) || 1;
-      const seedText = document.getElementById('random-seed').value.trim();
-      const modelHint = document.getElementById('model-hint').value.trim();
-      const payload = { project_name: projectName, project_summary: projectSummary, duration_weeks: duration };
-      if (includeIds.length) { payload.include_person_ids = includeIds; }
-      if (excludeIds.length) { payload.exclude_person_ids = excludeIds; }
-      if (seedText) {
-        const seed = Number(seedText);
-        if (!Number.isNaN(seed)) { payload.random_seed = seed; }
-      }
-      if (modelHint) { payload.model_hint = modelHint; }
-      try {
-        setStatus('Starting simulation...');
-        await fetchJson(`${API_PREFIX}/simulation/start`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        setStatus('Simulation started');
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    async function stopSimulation() {
-      try {
-        setStatus('Stopping simulation...');
-        await fetchJson(`${API_PREFIX}/simulation/stop`, { method: 'POST' });
-        setStatus('Simulation stopped');
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    async function resetSimulation() {
-      try {
-        setStatus('Resetting simulation...');
-        await fetchJson(`${API_PREFIX}/simulation/reset`, { method: 'POST' });
-        setStatus('Simulation reset');
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    async function fullResetSimulation() {
-      const confirmed = confirm('This will DELETE ALL PERSONAS and reset the simulation. Continue?');
-      if (!confirmed) return;
-      try {
-        setStatus('Performing full reset...');
-        await fetchJson(`${API_PREFIX}/simulation/full-reset`, { method: 'POST' });
-        setStatus('Full reset complete (personas deleted).');
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    async function advanceSimulation() {
-      const ticks = parseInt(document.getElementById('advance-ticks').value, 10) || 1;
-      const reason = document.getElementById('advance-reason').value.trim() || 'manual';
-      try {
-        await fetchJson(`${API_PREFIX}/simulation/advance`, {
-          method: 'POST',
-          body: JSON.stringify({ ticks, reason }),
-        });
-        setStatus(`Advanced ${ticks} tick(s)`);
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    async function startAutoTicks() {
-      try {
-        await fetchJson(`${API_PREFIX}/simulation/ticks/start`, { method: 'POST' });
-        setStatus('Automatic ticking enabled');
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    async function stopAutoTicks() {
-      try {
-        await fetchJson(`${API_PREFIX}/simulation/ticks/stop`, { method: 'POST' });
-        setStatus('Automatic ticking disabled');
-        await refreshAll();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    function populatePersonaForm(persona) {
-      document.getElementById('persona-name').value = persona.name || '';
-      document.getElementById('persona-role').value = persona.role || '';
-      document.getElementById('persona-timezone').value = persona.timezone || 'UTC';
-      document.getElementById('persona-hours').value = persona.work_hours || '09:00-17:00';
-      document.getElementById('persona-break').value = persona.break_frequency || '50/10 cadence';
-      document.getElementById('persona-style').value = persona.communication_style || 'Warm async';
-      document.getElementById('persona-email').value = persona.email_address || '';
-      document.getElementById('persona-chat').value = persona.chat_handle || '';
-      document.getElementById('persona-is-head').checked = Boolean(persona.is_department_head);
-      document.getElementById('persona-skills').value = (persona.skills || []).join(', ');
-      document.getElementById('persona-personality').value = (persona.personality || []).join(', ');
-      document.getElementById('persona-objectives').value = (persona.objectives || []).join('\n');
-      document.getElementById('persona-metrics').value = (persona.metrics || []).join('\n');
-      document.getElementById('persona-guidelines').value = (persona.planning_guidelines || []).join('\n');
-      const schedule = (persona.schedule || []).map(block => `${block.start}-${block.end} ${block.activity || ''}`.trim()).join('\n');
-      document.getElementById('persona-schedule').value = schedule;
-      document.getElementById('persona-playbook').value = JSON.stringify(persona.event_playbook || {}, null, 2);
-      document.getElementById('persona-statuses').value = (persona.statuses || []).join('\n');
-    }
-
-    function clearPersonaForm() {
-      populatePersonaForm({});
-      document.getElementById('persona-is-head').checked = false;
-    }
-
-    async function generatePersona() {
-      const prompt = document.getElementById('persona-prompt').value.trim();
-      if (!prompt) {
-        setStatus('Enter a prompt before generating.', true);
-        return;
-      }
-      try {
-        setStatus('Generating persona...');
-        const response = await fetchJson(`${API_PREFIX}/personas/generate`, {
-          method: 'POST',
-          body: JSON.stringify({ prompt }),
-        });
-        if (response && response.persona) {
-          populatePersonaForm(response.persona);
-          setStatus('Persona drafted. Review the fields and click Create Persona.');
-        }
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    function collectPersonaPayload() {
-      const eventPlaybookText = document.getElementById('persona-playbook').value.trim();
-      let eventPlaybook = {};
-      if (eventPlaybookText) {
-        try {
-          eventPlaybook = JSON.parse(eventPlaybookText);
-        } catch (err) {
-          throw new Error('Invalid event playbook JSON');
-        }
-      }
-      const schedule = parseSchedule(document.getElementById('persona-schedule').value);
-      return {
-        name: document.getElementById('persona-name').value.trim(),
-        role: document.getElementById('persona-role').value.trim(),
-        timezone: document.getElementById('persona-timezone').value.trim() || 'UTC',
-        work_hours: document.getElementById('persona-hours').value.trim() || '09:00-17:00',
-        break_frequency: document.getElementById('persona-break').value.trim() || '50/10 cadence',
-        communication_style: document.getElementById('persona-style').value.trim() || 'Async',
-        email_address: document.getElementById('persona-email').value.trim(),
-        chat_handle: document.getElementById('persona-chat').value.trim(),
-        is_department_head: document.getElementById('persona-is-head').checked,
-        skills: parseCommaSeparated(document.getElementById('persona-skills').value),
-        personality: parseCommaSeparated(document.getElementById('persona-personality').value),
-        objectives: parseLines(document.getElementById('persona-objectives').value),
-        metrics: parseLines(document.getElementById('persona-metrics').value),
-        planning_guidelines: parseLines(document.getElementById('persona-guidelines').value),
-        schedule,
-        event_playbook: eventPlaybook,
-        statuses: parseLines(document.getElementById('persona-statuses').value),
-      };
-    }
-
-    async function createPersona() {
-      let payload;
-      try {
-        payload = collectPersonaPayload();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-        return;
-      }
-      if (!payload.name || !payload.role || !payload.email_address || !payload.chat_handle) {
-        setStatus('Name, role, email, and chat handle are required.', true);
-        return;
-      }
-      if (!payload.skills.length) {
-        setStatus('Specify at least one skill.', true);
-        return;
-      }
-      if (!payload.personality.length) {
-        setStatus('Specify at least one personality trait.', true);
-        return;
-      }
-      try {
-        const created = await fetchJson(`${API_PREFIX}/people`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        setStatus(`Created persona ${payload.name}`);
-        if (created && created.id) {
-          selectedPeople.add(Number(created.id));
-        }
-        clearPersonaForm();
-        await refreshPeopleAndPlans();
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      }
-    }
-
-    function init() {
-      document.getElementById('start-btn').addEventListener('click', startSimulation);
-      document.getElementById('stop-btn').addEventListener('click', stopSimulation);
-      document.getElementById('reset-btn').addEventListener('click', resetSimulation);
-      document.getElementById('full-reset-btn').addEventListener('click', fullResetSimulation);
-      document.getElementById('advance-btn').addEventListener('click', advanceSimulation);
-      document.getElementById('auto-start-btn').addEventListener('click', startAutoTicks);
-      document.getElementById('auto-stop-btn').addEventListener('click', stopAutoTicks);
-      document.getElementById('refresh-btn').addEventListener('click', refreshAll);
-      document.getElementById('persona-generate-btn').addEventListener('click', generatePersona);
-      document.getElementById('persona-create-btn').addEventListener('click', createPersona);
-      document.getElementById('persona-clear-btn').addEventListener('click', clearPersonaForm);
-      refreshAll();
-      setInterval(refreshAll, 5000);
-    }
-
-    document.addEventListener('DOMContentLoaded', init);
+    });
   </script>
+  <script type="module" src="/static/js/app.js"></script>
 </body>
+
 </html>

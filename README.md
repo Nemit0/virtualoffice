@@ -276,6 +276,7 @@ Environment variables (see `.env.template` for full list):
 - `VDOS_DEFAULT_BREAK_PATTERN` (e.g., `25/5, 90/lunch/60`)
 - `VDOS_LOCALE_TZ` (default `Asia/Seoul`)
 - `VDOS_LOCALE` (default `en`) – Language locale (`en` for English, `ko` for Korean with comprehensive localization)
+- `VDOS_STYLE_FILTER_ENABLED` (default `true`) – Enable GPT-4o powered communication style filter for persona-consistent messages
 
 ---
 

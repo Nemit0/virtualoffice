@@ -306,6 +306,78 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
 - Delegates to `ChatGateway` for room creation
 - Supports multi-project simulations with overlapping timelines
 
+#### Communication Gateways
+**Location**: `src/virtualoffice/sim_manager/gateways.py`
+
+**Responsibilities**:
+- HTTP client adapters for email and chat services
+- Optional AI-powered message style transformation
+- Async filter execution in synchronous gateway context
+- Graceful error handling and fallback to original messages
+- Email validation and recipient filtering
+
+**Key Classes**:
+- `EmailGateway` - Abstract base class for email operations
+- `HttpEmailGateway` - HTTP implementation with style filter support
+- `ChatGateway` - Abstract base class for chat operations
+- `HttpChatGateway` - HTTP implementation with style filter support
+
+**HttpEmailGateway Methods**:
+- `__init__(base_url, client, style_filter)` - Initialize with optional style filter
+- `ensure_mailbox(address, display_name)` - Create/update mailbox
+- `send_email(sender, to, subject, body, ..., persona_id)` - Send email with optional style filtering
+- `close()` - Clean up HTTP client resources
+
+**HttpChatGateway Methods**:
+- `__init__(base_url, client, style_filter)` - Initialize with optional style filter
+- `ensure_user(handle, display_name)` - Create/update chat user
+- `send_dm(sender, recipient, body, ..., persona_id)` - Send DM with optional style filtering
+- `create_room(name, participants, slug)` - Create group chat room
+- `send_room_message(room_slug, sender, body, ..., persona_id)` - Send room message with optional style filtering
+- `get_room_info(room_slug)` - Get room information
+- `close()` - Clean up HTTP client resources
+
+**Style Filter Integration**:
+- **Optional Parameter**: `style_filter: CommunicationStyleFilter | None` in constructor
+- **Persona ID Propagation**: All send methods accept optional `persona_id` parameter
+- **Async Execution**: Filter runs asynchronously using `asyncio.get_event_loop()`
+- **Event Loop Detection**: Skips filtering if already in async context to avoid blocking
+- **Error Handling**: Catches all exceptions and falls back to original message
+- **Logging**: Comprehensive debug logging of filter application and errors
+- **Graceful Degradation**: Message delivery continues even if filter fails
+
+**Style Filter Workflow**:
+```python
+if self.style_filter and persona_id:
+    try:
+        loop = asyncio.get_event_loop()
+        if not loop.is_running():
+            filter_result = loop.run_until_complete(
+                self.style_filter.apply_filter(
+                    message=body,
+                    persona_id=persona_id,
+                    message_type="email",  # or "chat"
+                )
+            )
+            body = filter_result.styled_message
+            logger.debug(f"Style filter applied: tokens={filter_result.tokens_used}")
+    except Exception as e:
+        logger.error(f"Style filter failed, using original message: {e}")
+        # Continue with original body
+```
+
+**Email Validation**:
+- Uses `filter_valid_emails()` from `virtualoffice.common.email_validation`
+- Removes empty, invalid, and malformed email addresses
+- Validates at least one valid recipient exists before sending
+- Raises `ValueError` if no valid recipients after filtering
+
+**Integration**:
+- Used by `CommunicationHub` for message dispatch
+- Instantiated by `SimulationEngine` with optional style filter
+- Supports both filtered and unfiltered operation modes
+- Compatible with existing simulation workflows
+
 #### Prompt Management System
 **Location**: `src/virtualoffice/sim_manager/prompts/`
 
@@ -463,13 +535,20 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
 - `app.py` - FastAPI application (515 lines)
 - `engine.py` - Core simulation engine (2360+ lines, refactored)
 - `planner.py` - GPT and Stub planners (546 lines)
-- `gateways.py` - HTTP clients for email/chat (110 lines)
+- `gateways.py` - HTTP clients for email/chat with style filter integration (300+ lines)
 - `schemas.py` - Pydantic models (217 lines)
 
 **Core Modules** (`src/virtualoffice/sim_manager/core/`):
 - `simulation_state.py` - State management and database operations
 - `tick_manager.py` - Time progression and auto-tick functionality
 - `event_system.py` - Event injection, processing, and random generation (NEW)
+
+**Communication Gateways** (`src/virtualoffice/sim_manager/gateways.py`):
+- `HttpEmailGateway` - Email service HTTP client with style filter integration
+- `HttpChatGateway` - Chat service HTTP client with style filter integration
+- Optional `CommunicationStyleFilter` integration for AI-powered message transformation
+- Async filter execution in sync context using event loop management
+- Graceful fallback to original messages on filter errors
 
 **Auto-Pause Methods**:
 - `set_auto_pause(enabled: bool)` - Toggle auto-pause setting at runtime with comprehensive status return
@@ -804,6 +883,8 @@ Stores virtual worker personas.
 | planning_guidelines | TEXT | JSON array |
 | event_playbook | TEXT | JSON object |
 | statuses | TEXT | JSON array |
+| style_examples | TEXT | JSON array of communication style examples (default: '[]') |
+| style_filter_enabled | INTEGER | Enable style filter for this persona (0 or 1, default: 1) |
 | created_at | TEXT | Timestamp |
 
 #### simulation_state

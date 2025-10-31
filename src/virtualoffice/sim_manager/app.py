@@ -200,7 +200,7 @@ def _generate_persona_from_prompt(prompt: str, model_hint: str | None = None, ex
                 "schedule": [{"start": "09:00", "end": "10:00", "activity": "Plan"}],
             }
 
-_DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "index_new.html")
+_DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "index.html")
 
 def _build_default_engine() -> SimulationEngine:
     email_base = os.getenv("VDOS_EMAIL_BASE_URL")
@@ -288,6 +288,186 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         deleted = engine.delete_person_by_name(person_name)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    
+    @app.post(f"{API_PREFIX}/people/{{person_id}}/regenerate-style-examples")
+    def regenerate_style_examples(
+        person_id: int,
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Regenerate style examples for an existing persona using GPT-4o.
+        
+        This endpoint calls the StyleExampleGenerator with the persona's current
+        attributes and updates the database with new examples.
+        
+        Returns:
+            Dictionary with 'style_examples' key containing JSON string of examples
+        """
+        try:
+            style_examples_json = engine.regenerate_style_examples(person_id)
+            return {
+                "style_examples": style_examples_json,
+                "message": f"Successfully regenerated style examples for person {person_id}"
+            }
+        except ValueError as exc:
+            if "not found" in str(exc).lower():
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()  # Print full traceback to console for debugging
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to regenerate style examples: {str(exc)}"
+            )
+    
+    @app.post(f"{API_PREFIX}/personas/generate-style-examples")
+    async def generate_style_examples_from_attributes(
+        payload: dict[str, Any] = Body(...),
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Generate style examples for a persona based on provided attributes.
+        
+        This is used when creating a new persona or regenerating examples
+        without an existing person_id.
+        
+        Args:
+            payload: Dictionary with name, role, personality, communication_style
+            
+        Returns:
+            Dictionary with 'style_examples' key containing array of examples
+        """
+        try:
+            from .style_filter.example_generator import StyleExampleGenerator
+            from virtualoffice.virtualWorkers.worker import WorkerPersona
+            
+            # Extract attributes from payload
+            name = payload.get('name', 'Unknown')
+            role = payload.get('role', 'Worker')
+            personality_str = payload.get('personality', '')
+            communication_style = payload.get('communication_style', 'Professional')
+            
+            # Parse personality if it's a string
+            if isinstance(personality_str, str):
+                personality = [p.strip() for p in personality_str.split(',') if p.strip()]
+            else:
+                personality = personality_str or []
+            
+            # Create a temporary WorkerPersona object
+            temp_persona = WorkerPersona(
+                name=name,
+                role=role,
+                personality=personality,
+                communication_style=communication_style,
+                skills=[],  # Not needed for style generation
+                timezone='UTC',
+                work_hours='09:00-17:00',
+                break_frequency='50/10',
+                email_address=f'{name.lower().replace(" ", ".")}@vdos.local',
+                chat_handle=name.lower().replace(' ', '_'),
+                is_department_head=False
+            )
+            
+            # Get locale from environment
+            locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
+            
+            # Generate examples
+            generator = StyleExampleGenerator(locale=locale)
+            examples = await generator.generate_examples(temp_persona, count=5)
+            
+            # Convert to JSON-serializable format
+            examples_list = [{"type": ex.type, "content": ex.content} for ex in examples]
+            
+            return {
+                "style_examples": examples_list,
+                "message": "Successfully generated style examples"
+            }
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()  # Print full traceback to console for debugging
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate style examples: {str(exc)}"
+            )
+    
+    @app.post(f"{API_PREFIX}/personas/preview-filter")
+    def preview_style_filter(
+        payload: dict[str, Any] = Body(...),
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Preview how the style filter would transform a message.
+        
+        Args:
+            payload: Dictionary with:
+                - message: The message to transform
+                - style_examples: Array of style examples
+                - message_type: 'email' or 'chat'
+                
+        Returns:
+            Dictionary with original_message and filtered_message
+        """
+        try:
+            from .style_filter.filter import CommunicationStyleFilter
+            from .style_filter.models import StyleExample
+            
+            message = payload.get('message', '')
+            style_examples_data = payload.get('style_examples', [])
+            message_type = payload.get('message_type', 'email')
+            
+            if not message:
+                raise ValueError("Message is required")
+            
+            if not style_examples_data:
+                raise ValueError("Style examples are required")
+            
+            # Convert style examples data to StyleExample objects
+            style_examples = []
+            for ex_data in style_examples_data:
+                if isinstance(ex_data, dict) and 'type' in ex_data and 'content' in ex_data:
+                    style_examples.append(StyleExample(
+                        type=ex_data['type'],
+                        content=ex_data['content']
+                    ))
+            
+            if not style_examples:
+                raise ValueError("No valid style examples provided")
+            
+            # Get locale from environment
+            locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
+            
+            # Create a temporary filter (without database connection)
+            # We'll use the filter's prompt building and GPT call directly
+            style_filter = CommunicationStyleFilter(
+                db_connection=engine.db_connection,
+                locale=locale,
+                enabled=True
+            )
+            
+            # Build the filter prompt
+            prompt = style_filter._build_filter_prompt(style_examples, message_type)
+            
+            # Call GPT-4o to transform the message
+            from virtualoffice.utils.completion_util import generate_text
+            
+            messages = [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": message}
+            ]
+            
+            filtered_message, tokens = generate_text(messages, model="gpt-4o")
+            
+            return {
+                "original_message": message,
+                "filtered_message": filtered_message.strip(),
+                "tokens_used": tokens,
+                "message": "Filter preview successful"
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to preview filter: {str(exc)}"
+            )
 
     @app.get(f"{API_PREFIX}/simulation/project-plan", response_model=ProjectPlanRead | None)
     def get_project_plan(engine: SimulationEngine = Depends(get_engine)) -> ProjectPlanRead | None:
@@ -1028,6 +1208,127 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             "errors": errors,
             "message": f"Validated {len(validated_projects)} projects, {len(errors)} errors found"
         }
+
+    # ===== Style Filter Configuration Endpoints =====
+    
+    @app.get(f"{API_PREFIX}/style-filter/config")
+    def get_style_filter_config(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Get the current style filter configuration."""
+        try:
+            from virtualoffice.common import db
+            with db.get_connection() as conn:
+                cursor = conn.execute("SELECT enabled, updated_at FROM style_filter_config WHERE id = 1")
+                row = cursor.fetchone()
+                
+                if row:
+                    return {
+                        "enabled": bool(row[0]),
+                        "updated_at": row[1]
+                    }
+                else:
+                    # Return default if no config exists
+                    return {
+                        "enabled": True,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get style filter config: {str(exc)}"
+            )
+    
+    @app.post(f"{API_PREFIX}/style-filter/config")
+    def update_style_filter_config(
+        payload: dict[str, bool] = Body(...),
+        engine: SimulationEngine = Depends(get_engine)
+    ) -> dict[str, Any]:
+        """Update the style filter configuration."""
+        try:
+            enabled = payload.get("enabled", True)
+            from virtualoffice.common import db
+            with db.get_connection() as conn:
+                # Ensure the config row exists
+                conn.execute("""
+                    INSERT OR IGNORE INTO style_filter_config (id, enabled, updated_at)
+                    VALUES (1, ?, ?)
+                """, (int(enabled), datetime.now(timezone.utc).isoformat()))
+                
+                # Update the config
+                conn.execute("""
+                    UPDATE style_filter_config
+                    SET enabled = ?, updated_at = ?
+                    WHERE id = 1
+                """, (int(enabled), datetime.now(timezone.utc).isoformat()))
+                
+                conn.commit()
+                
+                return {
+                    "enabled": enabled,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "message": f"Style filter {'enabled' if enabled else 'disabled'}"
+                }
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update style filter config: {str(exc)}"
+            )
+    
+    @app.get(f"{API_PREFIX}/style-filter/metrics")
+    def get_style_filter_metrics(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Get style filter usage metrics for the current session."""
+        try:
+            from virtualoffice.common import db
+            with db.get_connection() as conn:
+                # Get session metrics (all metrics)
+                cursor = conn.execute("""
+                    SELECT 
+                        COUNT(*) as total_transformations,
+                        SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successful_transformations,
+                        SUM(tokens_used) as total_tokens,
+                        AVG(latency_ms) as avg_latency_ms,
+                        message_type,
+                        COUNT(*) as count_by_type
+                    FROM style_filter_metrics
+                    GROUP BY message_type
+                """)
+                
+                by_type = {}
+                total_transformations = 0
+                successful_transformations = 0
+                total_tokens = 0
+                avg_latency = 0.0
+                
+                for row in cursor.fetchall():
+                    msg_type = row[4]
+                    by_type[msg_type] = row[5]
+                    total_transformations += row[0]
+                    successful_transformations += row[1]
+                    total_tokens += row[2] or 0
+                    if row[3]:
+                        avg_latency = row[3]
+                
+                # Calculate estimated cost (GPT-4o pricing: $2.50 per 1M input tokens, $10 per 1M output tokens)
+                # Assuming roughly 50/50 split for simplicity
+                estimated_cost = (total_tokens / 1_000_000) * 6.25  # Average of input/output pricing
+                
+                return {
+                    "total_transformations": total_transformations,
+                    "successful_transformations": successful_transformations,
+                    "total_tokens": total_tokens,
+                    "average_latency_ms": round(avg_latency, 2) if avg_latency else 0,
+                    "estimated_cost_usd": round(estimated_cost, 4),
+                    "by_message_type": by_type
+                }
+        except Exception as exc:
+            # Return empty metrics if table doesn't exist or other error
+            return {
+                "total_transformations": 0,
+                "successful_transformations": 0,
+                "total_tokens": 0,
+                "average_latency_ms": 0,
+                "estimated_cost_usd": 0.0,
+                "by_message_type": {}
+            }
 
     return app
 

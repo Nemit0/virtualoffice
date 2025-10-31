@@ -41,7 +41,8 @@ test_korean_persona.py                   # Korean persona integration test (NEW)
 .tmp/
 ├── diagnose_stuck_simulation.py         # Diagnostic tool for stuck simulations
 ├── full_simulation_test.py              # Comprehensive 5-tick workflow test
-├── test_1week_simulation.py             # 1-week long-running stability test (NEW)
+├── test_1week_simulation.py             # 1-week long-running stability test
+├── test_persona_generation_ui.py        # Playwright UI automation test for persona generation (NEW)
 ├── test_auto_tick_long_wait.py          # Auto-tick monitoring test
 ├── test_auto_tick_with_logging.py       # Auto-tick database state monitoring
 ├── test_auto_tick_detailed.py           # Auto-tick with detailed error capture
@@ -86,7 +87,12 @@ Load testing and performance validation:
 
 - **Environment and API Tests** (`test_env_and_api.py`): Configuration validation, API performance
 - **Dashboard Tests** (`test_dashboard_web.py`): Web interface performance
-- **1-Week Simulation Test** (`.tmp/test_1week_simulation.py`): Extended performance and stability testing (NEW)
+- **1-Week Simulation Test** (`.tmp/test_1week_simulation.py`): Extended performance and stability testing
+
+### 5. UI Automation Tests
+Browser-based UI testing with Playwright:
+
+- **Persona Generation UI Test** (`.tmp/test_persona_generation_ui.py`): Automated testing of persona generation workflow in web dashboard (NEW)
 
 ## Locale-Aware Testing
 
@@ -262,6 +268,185 @@ If the test fails or shows issues:
 3. Verify database state: `python .tmp/check_sim_state.py`
 4. Check auto-tick thread: `python .tmp/check_thread_status.py`
 5. Review performance metrics in test output
+
+## New Test: Persona Generation UI Automation
+
+### File: `.tmp/test_persona_generation_ui.py`
+
+**Purpose**: Automated browser-based testing of the persona generation workflow in the VDOS web dashboard using Playwright.
+
+**Key Features**:
+- **Browser Automation**: Uses Playwright to interact with the web dashboard
+- **Console Monitoring**: Captures and validates JavaScript console output
+- **Error Detection**: Tracks page errors and JavaScript exceptions
+- **Visual Validation**: Takes screenshots for manual inspection
+- **Step-by-Step Verification**: Validates each step of the persona generation workflow
+- **Korean Locale Testing**: Tests persona generation with Korean input ("풀스택 개발자 김최솔")
+
+**Test Workflow**:
+
+#### 1. Browser Setup
+```python
+browser = await p.chromium.launch(headless=False)
+context = await browser.new_context()
+page = await context.new_page()
+```
+- Launches Chromium browser in visible mode for inspection
+- Sets up console message and error handlers
+- Navigates to dashboard at `http://127.0.0.1:8025/`
+
+#### 2. JavaScript Initialization Checks
+**Validates**:
+- ✓ Inline test message appears in console
+- ✓ Dashboard.js module loads successfully
+- ✓ Dashboard initialization starts
+
+**Console Messages Checked**:
+- `[INLINE TEST] JavaScript is working!`
+- `DASHBOARD.JS LOADED`
+- `Initializing dashboard`
+
+#### 3. UI Element Discovery
+**Locates and validates**:
+- Persona prompt input field (`#persona-prompt`)
+- Generate with GPT button (`#persona-generate-btn`)
+- Button visibility and enabled state
+
+#### 4. Persona Generation Trigger
+**Actions**:
+- Fills prompt input with Korean text: "풀스택 개발자 김최솔"
+- Clicks "Generate with GPT" button
+- Monitors console for event handlers
+
+**Console Events Tracked**:
+- `BUTTON CLICKED` - Button click event detected
+- `generatePersona START` - Generation function called
+- `Calling API` - API request initiated
+
+#### 5. Form Population Validation
+**Checks**:
+- Name field (`#persona-name`) populated
+- Role field (`#persona-role`) populated
+- Waits up to 5 seconds for API response
+
+#### 6. Screenshot Capture
+**Artifacts Generated**:
+- `persona_generation_test.png` - Success screenshot
+- `persona_generation_error.png` - Error screenshot (if failure)
+
+#### 7. Comprehensive Reporting
+**Output Includes**:
+- Step-by-step progress with checkmarks (✓/✗)
+- All console messages captured
+- All JavaScript errors detected
+- Form field values
+- Screenshot locations
+
+**Prerequisites**:
+```bash
+# Install Playwright (auto-installed by script if missing)
+pip install playwright
+python -m playwright install chromium
+
+# Ensure dashboard is running
+briefcase dev
+# or manually start simulation manager on port 8025
+```
+
+**Running the Test**:
+```bash
+# Run with visible browser (default)
+python .tmp/test_persona_generation_ui.py
+
+# Browser stays open for 10 seconds after completion for inspection
+```
+
+**Expected Output**:
+```
+================================================================================
+VDOS Persona Generation UI Test
+================================================================================
+
+[1] Launching Chromium browser...
+[2] Navigating to http://127.0.0.1:8025/...
+  ✓ Page loaded
+[3] Checking console for inline test message...
+  ✓ Inline test message found - JavaScript is working
+  ✓ Dashboard.js loaded successfully
+  ✓ Dashboard initialization started
+[4] Scrolling to persona section...
+[5] Finding prompt input field...
+  ✓ Prompt input found
+[6] Entering prompt: '풀스택 개발자 김최솔'...
+[7] Finding 'Generate with GPT' button...
+  ✓ Generate button found
+  - Visible: True
+  - Enabled: True
+[8] Clicking 'Generate with GPT' button...
+  ✓ Button clicked
+[9] Waiting for API response (max 30 seconds)...
+[10] Checking console output after button click...
+  ✓ Button click event detected
+  ✓ generatePersona function called
+  ✓ API call initiated
+[11] Waiting for form to be populated...
+[12] Checking form fields:
+  - Name: '김최솔'
+  - Role: '풀스택 개발자'
+  ✓ Name field populated
+  ✓ Role field populated
+[13] Screenshot saved to: .tmp\persona_generation_test.png
+
+================================================================================
+ALL CONSOLE MESSAGES:
+================================================================================
+[log] [INLINE TEST] JavaScript is working!
+[log] DASHBOARD.JS LOADED
+[log] Initializing dashboard
+[log] BUTTON CLICKED: persona-generate-btn
+[log] generatePersona START
+[log] Calling API: /api/v1/personas/generate
+[log] API response received
+[log] Form populated successfully
+
+================================================================================
+Test complete. Browser will stay open for 10 seconds for inspection...
+================================================================================
+```
+
+**Use Cases**:
+- **Regression Testing**: Verify persona generation UI works after changes
+- **Integration Testing**: Validate frontend-backend communication
+- **Debugging**: Visual inspection of UI behavior and console output
+- **Korean Locale Testing**: Ensure Korean input/output works correctly
+- **CI/CD Integration**: Automated UI testing in deployment pipeline
+
+**Troubleshooting**:
+If the test fails:
+1. **Check Dashboard Running**: Ensure simulation manager is running on port 8025
+2. **Review Console Output**: Look for JavaScript errors in test output
+3. **Inspect Screenshots**: Check generated PNG files for visual issues
+4. **Verify API Endpoint**: Test `/api/v1/personas/generate` endpoint directly
+5. **Check Browser Logs**: Review Playwright browser logs for network issues
+6. **Validate JavaScript**: Ensure `app.js` and `dashboard.js` are loading correctly
+
+**Configuration**:
+```python
+# Adjust browser visibility
+browser = await p.chromium.launch(headless=True)  # Run in background
+
+# Adjust wait times
+await page.wait_for_timeout(10000)  # Wait 10 seconds
+
+# Change dashboard URL
+await page.goto("http://localhost:8015/")  # Different port
+```
+
+**Dependencies**:
+- `playwright` - Browser automation library
+- Chromium browser (auto-installed by Playwright)
+- Running VDOS dashboard on port 8025
+- Active OpenAI API key for persona generation
 
 ## New Test: Korean Persona Integration
 
@@ -521,6 +706,16 @@ python .tmp/check_thread_status.py
 python .tmp/check_project_status.py
 ```
 
+#### UI Automation Tests
+```bash
+# Persona generation UI test (requires dashboard running on port 8025)
+python .tmp/test_persona_generation_ui.py
+
+# Install Playwright if needed
+pip install playwright
+python -m playwright install chromium
+```
+
 ### Test Configuration
 
 #### Environment Variables for Testing
@@ -657,7 +852,8 @@ python -m pytest --memray
 - ✅ **Localization**: Language switching, Korean content validation
 - ✅ **Auto-pause**: Project lifecycle management, auto-pause logic
 - ✅ **Korean Integration**: Korean persona with localization system
-- ✅ **Long-Running Stability**: 1-week simulation with continuous monitoring (NEW)
+- ✅ **Long-Running Stability**: 1-week simulation with continuous monitoring
+- ✅ **UI Automation**: Playwright-based persona generation workflow testing (NEW)
 
 ### Coverage Targets
 - **Unit Tests**: >90% line coverage for core modules

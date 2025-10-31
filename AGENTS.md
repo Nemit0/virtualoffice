@@ -159,3 +159,48 @@ When creating markdown reports or documentation files during development session
   2. Commit with message: `git commit -m "$(cat <<'EOF' ...)"`
   3. Verify with `git status`
   4. Push only if user requests: `git push`
+
+## Spec-Driven Workflow (Requirements → Design → Tasks)
+
+Use a gated, spec-first flow for any new feature or change. Draft specs in `.tmp/specs/<slug>/` (gitignored) and mirror the structure of `.kiro/specs/`. After final approval, optionally promote to `.kiro/specs/<slug>/`.
+
+1) Intake & Slug
+- Confirm scope, constraints, success criteria, and stakeholders.
+- Choose a kebab-case `<slug>` (e.g., `chat-client-interface`).
+- Scaffold spec files:
+  - `python scripts/spec_init.py --slug <slug> --title "<Title>"`
+
+2) Phase A — Requirements (Gate 1)
+- Create `.tmp/specs/<slug>/requirements.md` if not already scaffolded.
+- Write testable acceptance criteria using SHALL/WHEN phrasing.
+- Number requirements and keep them implementation-agnostic.
+- Seek explicit approval before moving on.
+
+3) Phase B — Design (Gate 2)
+- Create `.tmp/specs/<slug>/design.md`.
+- Reference requirement numbers (e.g., “Satisfies Req 2.1, 2.3”).
+- Include architecture, interfaces, data models, error handling, testing strategy.
+- Seek explicit approval before moving on.
+
+4) Phase C — Tasks & Execution
+- Create `.tmp/specs/<slug>/tasks.md`.
+- Map each task to requirement ids; define Definition of Done.
+- Execute tasks sequentially; update `tasks.md` with progress notes.
+- Keep commits focused; follow conventional commits.
+
+Prompts to use:
+- Requirements approval: “I drafted requirements at `.tmp/specs/<slug>/requirements.md`. Approve to proceed to Design?”
+- Design approval: “I drafted the design at `.tmp/specs/<slug>/design.md`. Approve to proceed to Tasks?”
+- Execution step: “Tasks are in `.tmp/specs/<slug>/tasks.md`. Proceed to execute Task N.M now?”
+
+Quality & Traceability:
+- Acceptance criteria must be observable and testable.
+- Maintain links: Design cites Requirements; Tasks cite Requirements and Design.
+- Document edge cases and error handling; prefer typed interfaces.
+
+Scaffold Helper:
+- Script: `scripts/spec_init.py`
+- Usage: `python scripts/spec_init.py --slug <slug> --title "<Title>" [--force] [--dry-run]`
+- Writes: `.tmp/specs/<slug>/{requirements.md,design.md,tasks.md}`
+
+Reference: see `agent_guide.md` for full templates and details.
