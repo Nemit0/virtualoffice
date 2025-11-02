@@ -789,7 +789,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             from virtualoffice.common import db as _db
             from virtualoffice.servers.email.app import EMAIL_SCHEMA as _EMAIL_SCHEMA  # type: ignore
             from virtualoffice.servers.chat.app import CHAT_SCHEMA as _CHAT_SCHEMA  # type: ignore
-            from .core.simulation_state import SIM_SCHEMA as _SIM_SCHEMA
+            from .engine import SIM_SCHEMA as _SIM_SCHEMA
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Schema import failed: {exc}")
 
