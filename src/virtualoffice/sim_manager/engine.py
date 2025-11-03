@@ -3130,8 +3130,21 @@ class SimulationEngine:
         return adjustments, immediate
 
     def _bootstrap_channels(self) -> None:
+        # Ensure Simulation Manager identities exist
         self.email_gateway.ensure_mailbox(self.sim_manager_email, "Simulation Manager")
         self.chat_gateway.ensure_user(self.sim_manager_handle, "Simulation Manager")
+        # Ensure all existing personas have provisioned mailboxes and chat users
+        try:
+            people = self.list_people()
+            for p in people:
+                if getattr(p, 'email_address', None):
+                    self.email_gateway.ensure_mailbox(p.email_address, p.name)
+                if getattr(p, 'chat_handle', None):
+                    self.chat_gateway.ensure_user(p.chat_handle, p.name)
+        except Exception:
+            # Non-fatal: servers may not be up at engine init; they will be
+            # provisioned lazily on first use
+            pass
 
     def _ensure_state_row(self) -> None:
         with get_connection() as conn:
