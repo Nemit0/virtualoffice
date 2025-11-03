@@ -1702,6 +1702,45 @@ class SimulationEngine:
             "created_at": row["created_at"],
         }
 
+    # ------------------------------------------------------------------
+    # Project management (delete)
+    # ------------------------------------------------------------------
+    def delete_project(self, project_id: int) -> dict[str, Any]:
+        """Delete a project and its associations (assignments),
+        and remove any events that reference the project by id or name.
+
+        Returns a small summary of what was deleted.
+        """
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM project_plans WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            if not row:
+                raise RuntimeError(f"Project id {project_id} not found")
+
+            project = self._row_to_project_plan(row)
+
+            # Delete the project (assignments are removed via ON DELETE CASCADE)
+            conn.execute("DELETE FROM project_plans WHERE id = ?", (project_id,))
+
+            # Best-effort: cleanup events that referenced the project
+            try:
+                conn.execute(
+                    "DELETE FROM events WHERE project_id = ? OR project_id = ?",
+                    (str(project_id), project["project_name"]),
+                )
+            except Exception:
+                pass
+
+        # Invalidate cache since the latest project might have been removed
+        self._project_plan_cache = None
+
+        return {
+            "deleted_id": project_id,
+            "project_name": project["project_name"],
+        }
+
     def _generate_simulation_report(self, project_plan: dict[str, Any], total_ticks: int) -> dict[str, Any]:
         if not project_plan:
             raise RuntimeError("Cannot generate simulation report without a project plan")

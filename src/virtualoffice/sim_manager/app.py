@@ -565,6 +565,20 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     ) -> list[dict[str, Any]]:
         return engine.get_planner_metrics(limit)
 
+    @app.delete(f"{API_PREFIX}/projects/{{project_id}}")
+    def delete_project(project_id: int, engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Delete a project and its associations (assignments, referencing events)."""
+        try:
+            info = engine.delete_project(project_id)
+            return {
+                "message": "Project deleted",
+                **info,
+            }
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete project: {exc}")
+
     # Track async initialization status
     _init_status = {"running": False, "error": None, "retries": 0, "max_retries": 3}
     _init_lock = threading.Lock()
