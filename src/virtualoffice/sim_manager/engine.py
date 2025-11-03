@@ -346,7 +346,7 @@ class SimulationEngine:
     # --- Scheduled comms parsing/dispatch ---
     def _schedule_from_hourly_plan(self, person: PersonRead, plan_text: str, current_tick: int) -> None:
         import re
-        ticks_per_day = max(1, self.hours_per_day)
+        ticks_per_day = max(1, self.hours_per_day * 60)
         day_index = (current_tick - 1) // ticks_per_day
         tick_of_day = (current_tick - 1) % ticks_per_day
         base_tick = day_index * ticks_per_day + 1
@@ -681,7 +681,7 @@ class SimulationEngine:
             total_minutes = int(hours) * 60 + int(minutes)
         except Exception:
             return 0
-        ticks_per_day = max(1, self.hours_per_day)
+        ticks_per_day = max(1, self.hours_per_day * 60)
         ticks_float = (total_minutes / 1440) * ticks_per_day
         if round_up:
             tick = math.ceil(ticks_float)
@@ -690,8 +690,8 @@ class SimulationEngine:
         return max(0, min(ticks_per_day, tick))
 
     def _parse_work_hours_to_ticks(self, work_hours: str) -> tuple[int, int]:
-        ticks_per_day = max(1, self.hours_per_day)
-        if ticks_per_day < 6:
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        if ticks_per_day < 60:
             return (0, ticks_per_day)
         if not work_hours or '-' not in work_hours:
             return (0, ticks_per_day)
@@ -718,7 +718,8 @@ class SimulationEngine:
         if not window:
             return True
         start_tick, end_tick = window
-        tick_of_day = (tick - 1) % self.hours_per_day
+        day_ticks = max(1, self.hours_per_day * 60)
+        tick_of_day = (tick - 1) % day_ticks
         if start_tick <= end_tick:
             return start_tick <= tick_of_day < end_tick
         return tick_of_day >= start_tick or tick_of_day < end_tick
@@ -726,23 +727,21 @@ class SimulationEngine:
     def _format_sim_time(self, tick: int) -> str:
         if tick <= 0:
             return "Day 0 00:00"
-        ticks_per_day = max(1, self.hours_per_day)
-        day_index = (tick - 1) // ticks_per_day + 1
-        tick_of_day = (tick - 1) % ticks_per_day
-        minutes = int((tick_of_day / ticks_per_day) * 1440)
-        hour = minutes // 60
-        minute = minutes % 60
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // day_ticks + 1
+        tick_of_day = (tick - 1) % day_ticks
+        hour = tick_of_day // 60
+        minute = tick_of_day % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
     def _sim_datetime_for_tick(self, tick: int) -> datetime | None:
         base = self._sim_base_dt
         if not base:
             return None
-        ticks_per_day = max(1, self.hours_per_day)
-        day_index = (tick - 1) // ticks_per_day
-        tick_of_day = (tick - 1) % ticks_per_day
-        minutes = int((tick_of_day / ticks_per_day) * 1440)
-        return base + timedelta(days=day_index, minutes=minutes)
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // day_ticks
+        tick_of_day = (tick - 1) % day_ticks
+        return base + timedelta(days=day_index, minutes=tick_of_day)
 
 
     def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -967,7 +966,8 @@ class SimulationEngine:
         if current_week is None:
             # Calculate current week from simulation state
             status = self._fetch_state()
-            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            day_ticks = max(1, self.hours_per_day * 60)
+            current_day = (status.current_tick - 1) // day_ticks if status.current_tick > 0 else 0
             current_week = (current_day // 5) + 1  # 1-indexed weeks, assuming 5-day work weeks
 
         with get_connection() as conn:
@@ -1622,9 +1622,9 @@ class SimulationEngine:
             return existing
         daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
 
-        # Use hourly summaries instead of all tick logs
-        start_hour = day_index * (self.hours_per_day // 60)
-        end_hour = (day_index + 1) * (self.hours_per_day // 60)
+        # Use hourly summaries (hour indices are 0..hours_per_day-1 per day)
+        start_hour = day_index * self.hours_per_day
+        end_hour = (day_index + 1) * self.hours_per_day
         with get_connection() as conn:
             summary_rows = conn.execute(
                 "SELECT hour_index, summary FROM hourly_summaries WHERE person_id = ? AND hour_index BETWEEN ? AND ? ORDER BY hour_index",
@@ -1862,12 +1862,12 @@ class SimulationEngine:
         self._sync_worker_runtimes(active_people)
         # Schedule a kickoff chat/email at the first working minute for each worker
         try:
-            ticks_per_day = max(1, self.hours_per_day)
+            ticks_per_day = max(1, self.hours_per_day * 60)
             for person in active_people:
                 start_end = self._work_hours_ticks.get(person.id, (0, ticks_per_day))
                 start_tick_of_day = start_end[0]
                 base_tick = 1  # day 1 start
-                kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes
+                kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes (minute ticks)
                 # pick a collaborator to target
                 recipients = self._select_collaborators(person, active_people)
                 target = recipients[0] if recipients else None
@@ -2002,9 +2002,9 @@ class SimulationEngine:
                 current_day = 0
                 current_week = 1
             else:
-                # Ensure hours_per_day is at least 1 to prevent division by zero
-                hours_per_day = max(1, self.hours_per_day)
-                current_day = (status.current_tick - 1) // hours_per_day
+                # Use minute ticks per day for calculations
+                day_ticks = max(1, self.hours_per_day * 60)
+                current_day = (status.current_tick - 1) // day_ticks
                 current_week = max(1, (current_day // 5) + 1)
             
             # Get active projects using verified calculation (start_week <= current_week <= end_week)
@@ -2115,9 +2115,9 @@ class SimulationEngine:
                         current_day = 0
                         current_week = 1
                     else:
-                        # Ensure hours_per_day is at least 1 to prevent division by zero
-                        hours_per_day = max(1, self.hours_per_day)
-                        current_day = (state.current_tick - 1) // hours_per_day
+                        # Use minute ticks per day for calculations
+                        day_ticks = max(1, self.hours_per_day * 60)
+                        current_day = (state.current_tick - 1) // day_ticks
                         current_week = max(1, (current_day // 5) + 1)
                     
                     # Get active projects for current week using enhanced calculation
@@ -2227,7 +2227,8 @@ class SimulationEngine:
             people_by_id = {person.id: person for person in people}
 
             # Calculate current week for multi-project support
-            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            day_ticks = max(1, self.hours_per_day * 60)
+            current_day = (status.current_tick - 1) // day_ticks if status.current_tick > 0 else 0
             current_week = (current_day // 5) + 1  # 1-indexed weeks, assuming 5-day work weeks
 
             emails_sent = 0
@@ -2239,8 +2240,8 @@ class SimulationEngine:
                 self._update_tick(status.current_tick, reason)
                 self._refresh_status_overrides(status.current_tick)
                 event_adjustments, _ = self._maybe_generate_events(people, status.current_tick, project_plan)
-                day_index = (status.current_tick - 1) // self.hours_per_day
-                tick_of_day = (status.current_tick - 1) % self.hours_per_day if self.hours_per_day > 0 else 0
+                day_index = (status.current_tick - 1) // day_ticks
+                tick_of_day = (status.current_tick - 1) % day_ticks if self.hours_per_day > 0 else 0
                 # Prune stale plan-attempt counters (keep only this minute)
                 if self._hourly_plan_attempts:
                     keys = list(self._hourly_plan_attempts.keys())
@@ -2287,7 +2288,7 @@ class SimulationEngine:
                         # If we sent scheduled comms at this minute, skip fallback sending to avoid duplication
                         continue
                     # Plan at the start of each worker's day (their work window), not only at absolute day start
-                    start_end = self._work_hours_ticks.get(person.id, (0, self.hours_per_day))
+                    start_end = self._work_hours_ticks.get(person.id, (0, day_ticks))
                     work_start_tick = start_end[0] if self.hours_per_day > 0 else 0
                     should_plan = (
                         bool(incoming)
@@ -2619,9 +2620,9 @@ class SimulationEngine:
                             except Exception as e:
                                 logger.warning(f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}")
 
-                # Generate daily reports at the end of each day
-                if status.current_tick % self.hours_per_day == 0:
-                    completed_day = (status.current_tick // self.hours_per_day) - 1
+                # Generate daily reports at the end of each day (hours_per_day * 60 minutes)
+                if status.current_tick % day_ticks == 0:
+                    completed_day = (status.current_tick // day_ticks) - 1
                     for person in people:
                         self._generate_daily_report(person, completed_day, project_plan)
 
@@ -2961,16 +2962,19 @@ class SimulationEngine:
             return adjustments, immediate
         rng = self._random
         # Gate event generation to humane frequencies to avoid per-minute GPT replanning.
-        tick_of_day = (tick - 1) % max(1, self.hours_per_day)
+        day_ticks = max(1, self.hours_per_day * 60)
+        tick_of_day = (tick - 1) % day_ticks
 
         # Sick leave event: consider once per day around mid-morning.
-        if tick_of_day == int(60 * max(1, self.hours_per_day) / 480):  # ~10:00
+        # Consider once per day around ~1 hour into the workday
+        if tick_of_day == 60:
             # Roughly 5% daily chance across the team
             if rng.random() < 0.05:
                 active_people = [p for p in people if self._status_overrides.get(p.id, (None, 0))[0] != 'SickLeave']
                 if active_people:
                     target = rng.choice(active_people)
-                    until_tick = tick + self.hours_per_day
+                    # Set status override until end of workday (in minute ticks)
+                    until_tick = tick + (day_ticks - tick_of_day)
                 self._set_status_override(target.id, 'SickLeave', until_tick, f'Sick leave triggered at tick {tick}')
                 rest_message = _InboundMessage(
                     sender_id=0,
@@ -3014,7 +3018,7 @@ class SimulationEngine:
                 self._record_event('sick_leave', [target.id], tick, {'until_tick': until_tick})
 
         # Client feature request: at most a few times per day (every ~2 hours), low probability.
-        if (tick_of_day % int(120 * max(1, self.hours_per_day) / 480) == 0) and (rng.random() < 0.10):
+        if (tick_of_day % 120 == 0) and (rng.random() < 0.10):
             head = next((p for p in people if getattr(p, 'is_department_head', False)), people[0])
             feature = rng.choice([
                 'refresh hero messaging',
