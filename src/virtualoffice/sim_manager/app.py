@@ -226,18 +226,29 @@ def _build_default_engine() -> SimulationEngine:
         tick_interval_seconds = float(os.getenv("VDOS_TICK_INTERVAL_SECONDS", "1.0"))
     except ValueError:
         tick_interval_seconds = 1.0
-    # Use minute-level ticks by default: 480 ticks per 8-hour workday
-    try:
-        ticks_per_day = int(os.getenv("VDOS_TICKS_PER_DAY", "480"))
-    except ValueError:
-        ticks_per_day = 480
+    # Workday configuration
+    # Primary knob: VDOS_HOURS_PER_DAY (default 8). Backward compatibility:
+    # if legacy VDOS_TICKS_PER_DAY is provided, convert to hours by dividing by 60.
+    hours_per_day_env = os.getenv("VDOS_HOURS_PER_DAY")
+    if hours_per_day_env is not None:
+        try:
+            hours_per_day = int(hours_per_day_env)
+        except ValueError:
+            hours_per_day = 8
+    else:
+        try:
+            legacy_ticks = int(os.getenv("VDOS_TICKS_PER_DAY", "480"))
+        except ValueError:
+            legacy_ticks = 480
+        # Convert ticks (minutes) to hours; ensure minimum 1 hour
+        hours_per_day = max(1, legacy_ticks // 60) if legacy_ticks > 0 else 8
     return SimulationEngine(
         email_gateway=email_gateway,
         chat_gateway=chat_gateway,
         sim_manager_email=sim_email,
         sim_manager_handle=sim_handle,
         tick_interval_seconds=tick_interval_seconds,
-        hours_per_day=ticks_per_day,
+        hours_per_day=hours_per_day,
     )
 
 
