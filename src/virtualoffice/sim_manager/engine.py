@@ -2910,6 +2910,10 @@ class SimulationEngine:
                 conn.execute("DELETE FROM chat_rooms")
                 conn.execute("DELETE FROM chat_users")
 
+                # Delete project-related tables
+                conn.execute("DELETE FROM project_chat_rooms")
+                conn.execute("DELETE FROM project_assignments")
+
                 # Delete any remaining simulation artifacts
                 conn.execute("DELETE FROM hourly_summaries")
 
