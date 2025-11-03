@@ -727,11 +727,14 @@ class SimulationEngine:
     def _format_sim_time(self, tick: int) -> str:
         if tick <= 0:
             return "Day 0 00:00"
+        # Display time on a 24h clock scaled from the workday window, so that
+        # persona work_hours like '09:00-18:00' align with the displayed HH:MM.
         day_ticks = max(1, self.hours_per_day * 60)
         day_index = (tick - 1) // day_ticks + 1
         tick_of_day = (tick - 1) % day_ticks
-        hour = tick_of_day // 60
-        minute = tick_of_day % 60
+        minutes_24h = int((tick_of_day / day_ticks) * 1440)
+        hour = minutes_24h // 60
+        minute = minutes_24h % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
     def _sim_datetime_for_tick(self, tick: int) -> datetime | None:
@@ -741,7 +744,8 @@ class SimulationEngine:
         day_ticks = max(1, self.hours_per_day * 60)
         day_index = (tick - 1) // day_ticks
         tick_of_day = (tick - 1) % day_ticks
-        return base + timedelta(days=day_index, minutes=tick_of_day)
+        minutes_24h = int((tick_of_day / day_ticks) * 1440)
+        return base + timedelta(days=day_index, minutes=minutes_24h)
 
 
     def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
