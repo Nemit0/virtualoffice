@@ -1065,6 +1065,22 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 result["rooms"] = rr.json()
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
+
+    @app.get(f"{API_PREFIX}/monitor/chat/rooms/{{person_id}}")
+    def monitor_chat_rooms(
+        person_id: int,
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> list[dict]:
+        """Return room metadata visible to a user via the chat server."""
+        chat_client = getattr(engine.chat_gateway, "client", None)
+        if chat_client is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Chat client unavailable")
+        person = engine.get_person(person_id)
+        try:
+            response = chat_client.get(f"/users/{person.chat_handle}/rooms")
+            return response.json()
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
         return result
 
     @app.get(f"{API_PREFIX}/monitor/chat/room/{{room_slug}}/messages")

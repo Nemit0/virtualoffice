@@ -200,10 +200,12 @@ function loadChatState() {
   return false;
 }
 
-// Fetch user rooms from chat server
-async function fetchUserRooms(chatHandle) {
+// Fetch user rooms via Simulation Manager proxy (avoids hardcoded ports/CORS)
+async function fetchUserRooms(chatHandleIgnored) {
   try {
-    const response = await fetch(`http://127.0.0.1:8001/users/${encodeURIComponent(chatHandle)}/rooms`);
+    const personId = getChatMonitorPersonId();
+    if (!personId) return [];
+    const response = await fetch(`${API_PREFIX}/monitor/chat/rooms/${encodeURIComponent(personId)}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch rooms: ${response.statusText}`);
     }
