@@ -2367,6 +2367,26 @@ class SimulationEngine:
                     active_projects = self._get_all_active_projects_for_person(person.id, current_week)
                     if not active_projects:
                         active_projects = [project_plan] if project_plan else []
+                    # Prefer assigned projects when multiple are active
+                    if active_projects:
+                        try:
+                            with get_connection() as conn:
+                                rows = conn.execute(
+                                    """
+                                    SELECT pp.id FROM project_plans pp
+                                    INNER JOIN project_assignments pa ON pp.id = pa.project_id
+                                    WHERE pa.person_id = ? AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                                    ORDER BY pp.start_week ASC
+                                    """,
+                                    (person.id, current_week, current_week),
+                                ).fetchall()
+                            assigned_ids = [r["id"] for r in rows]
+                            if assigned_ids:
+                                assigned_first = [p for p in active_projects if p.get("id") in assigned_ids]
+                                unassigned_rest = [p for p in active_projects if p.get("id") not in assigned_ids]
+                                active_projects = assigned_first + unassigned_rest
+                        except Exception:
+                            pass
 
                     # Skip planning if person has no active projects (idle until assigned)
                     if not active_projects:
@@ -2378,7 +2398,7 @@ class SimulationEngine:
                         )
                         continue
 
-                    # Use first project for daily plan, but pass all projects to hourly planner
+                    # Use first (assigned-first) project for daily plan, but pass all to hourly planner
                     primary_project = active_projects[0]
 
                     daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project)

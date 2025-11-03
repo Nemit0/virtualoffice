@@ -12,6 +12,7 @@ import threading
 import time
 
 from .engine import SimulationEngine
+from virtualoffice.common.db import DB_PATH
 from .gateways import HttpChatGateway, HttpEmailGateway
 from .schemas import (
     AutoPauseStatusResponse,
@@ -513,6 +514,38 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     @app.get(f"{API_PREFIX}/simulation", response_model=SimulationState)
     def get_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationState:
         return engine.get_state()
+
+    @app.get(f"{API_PREFIX}/debug/runtime")
+    def get_debug_runtime(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """Expose runtime diagnostics to help verify environment and time model."""
+        try:
+            state = engine.get_state()
+            hours_per_day = getattr(engine, 'hours_per_day', 8)
+            day_ticks = max(1, hours_per_day * 60)
+            sample = {
+                't0': engine._format_sim_time(0),
+                't1': engine._format_sim_time(1),
+                't60': engine._format_sim_time(60),
+                't480': engine._format_sim_time(480),
+                't2220': engine._format_sim_time(2220),
+            }
+            active = engine.get_active_projects_with_assignments()
+            return {
+                'db_path': str(DB_PATH),
+                'engine_module': str(SimulationEngine.__module__),
+                'engine_file': str(SimulationEngine.__qualname__),
+                'hours_per_day': hours_per_day,
+                'day_ticks': day_ticks,
+                'state': state.model_dump(),
+                'format_samples': sample,
+                'active_projects_count': len(active),
+                'active_projects': active,
+            }
+        except Exception as exc:
+            return {
+                'error': str(exc),
+                'db_path': str(DB_PATH),
+            }
 
     @app.get(f"{API_PREFIX}/metrics/planner")
     def get_planner_metrics_endpoint(
