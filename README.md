@@ -13,6 +13,7 @@
 5. [Data model](#data-model)
 6. [APIs](#apis)
 7. [Simulation loop](#simulation-loop)
+8. [Simulation time model](#simulation-time-model)
 8. [Workflows](#workflows)
 9. [Configuration](#configuration)
 10. [Run locally](#run-locally)
@@ -228,6 +229,37 @@ At each tick:
 6. **Spillover planning**: unfinished steps roll into next hour block; adjust priorities.
 7. **Metrics**: update counters, latencies, utilization.
 8. **End-of-day**: generate **daily report**; set status to `OffDuty` unless `Overtime`.
+
+---
+
+## Simulation time model
+
+The engine uses a minute-based tick model.
+
+- Tick duration: 1 tick = 1 minute of simulated time
+- Workday length: `hours_per_day * 60` ticks (default 8h → 480 ticks)
+- Hour boundaries: every 60 ticks (e.g., 10:00 is tick_of_day = 60)
+- Day boundaries: every `hours_per_day * 60` ticks
+
+Implications in the engine:
+- Time formatting: `sim_time` is computed from minute ticks (HH = tick_of_day // 60, MM = tick_of_day % 60).
+- Work windows: persona `work_hours` (e.g., `09:00-18:00`) map to minute offsets inside the workday; planning triggers at each worker’s workday start minute.
+- Hourly summaries: generated at the end of each simulated hour (`current_tick % 60 == 0`).
+- Daily reports: generated at the end of each simulated day (`current_tick % (hours_per_day*60) == 0`).
+- Event cadence: event gates use minute ticks (e.g., ~1 hour into the day is 60, every two hours is modulo 120).
+- Scheduled comms: times parsed from hourly plans (e.g., `Email at 10:30 ...`) are mapped to minute ticks and executed at the matching minute.
+
+Weeks and projects:
+- Current day: `floor((current_tick-1) / (hours_per_day*60))`
+- Current week: `floor(current_day/5) + 1` (Mon–Fri working assumption)
+- Active projects: evaluated against current week (`start_week <= week <= end_week`).
+
+Wall-clock pacing (for real-time dev UX):
+- The refresh rate of the dashboard and the auto-tick interval are independent of the tick semantics. Use the auto-tick interval control to speed up or slow down progression; the model remains minute-based.
+
+Notes:
+- If you need to simulate non-uniform workdays, set per-person `work_hours` ranges; the engine will respect their start/end minutes when deciding planning and comm dispatch windows.
+- Defaults: `hours_per_day=8`, locale EN/KO supported. You can change hours per day at engine construction time if required.
 
 ---
 
