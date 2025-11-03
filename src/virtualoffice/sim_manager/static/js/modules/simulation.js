@@ -9,7 +9,8 @@ import {
   getSelectedPeople,
   getProjects,
   setLastAutoPauseState,
-  getLastAutoPauseState
+  getLastAutoPauseState,
+  clearProjects
 } from '../core/state.js';
 
 // Import refreshAll to call after simulation operations
@@ -332,8 +333,12 @@ export async function fullResetSimulation() {
   try {
     setStatus('Performing full reset...');
     await fetchJson(`${API_PREFIX}/simulation/full-reset`, { method: 'POST' });
+
+    // Clear frontend state (projects in localStorage)
+    clearProjects();
+
     setStatus('Full reset complete (personas deleted).');
-    
+
     // Refresh dashboard after full reset
     if (refreshAllCallback) {
       await refreshAllCallback();
