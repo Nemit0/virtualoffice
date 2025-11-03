@@ -892,9 +892,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         if not person:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person with ID {person_id} not found")
 
-        # Get status overrides
-        status_overrides = engine.state.get_status_overrides()
-        override = status_overrides.get(person_id)
+        # Get status overrides (direct access since engine.state doesn't exist in old engine)
+        override = engine._status_overrides.get(person_id)
 
         if override is None:
             return None
@@ -924,8 +923,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         if not person:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person with ID {person_id} not found")
 
-        # Use public API to clear status override (handles both cache and database)
-        engine.state.clear_status_override(person_id)
+        # Clear status override (direct access since engine.state doesn't exist in old engine)
+        if person_id in engine._status_overrides:
+            engine._status_overrides.pop(person_id)
+            # Also delete from database
+            from virtualoffice.common.db import get_connection
+            with get_connection() as conn:
+                conn.execute("DELETE FROM worker_status_overrides WHERE worker_id = ?", (person_id,))
 
     # --- Monitoring proxy endpoints (avoid CORS by routing through sim_manager) ---
     @app.get(f"{API_PREFIX}/monitor/emails/{{person_id}}")

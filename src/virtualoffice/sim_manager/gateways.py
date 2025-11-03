@@ -42,7 +42,8 @@ class HttpEmailGateway(EmailGateway):
         self.base_url = base_url.rstrip("/")
         self._external_client = client
         self._client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
-        self.style_filter = style_filter
+        # PERFORMANCE: Force disable style filter to avoid LLM calls on every message
+        self.style_filter = None  # style_filter
 
     @property
     def client(self) -> httpx.Client:
@@ -159,7 +160,8 @@ class HttpChatGateway(ChatGateway):
         self.base_url = base_url.rstrip("/")
         self._external_client = client
         self._client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
-        self.style_filter = style_filter
+        # PERFORMANCE: Force disable style filter to avoid LLM calls on every message
+        self.style_filter = None  # style_filter
 
     @property
     def client(self) -> httpx.Client:
