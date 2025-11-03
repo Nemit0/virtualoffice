@@ -2286,7 +2286,15 @@ class SimulationEngine:
                     if se_pre or sc_pre:
                         # If we sent scheduled comms at this minute, skip fallback sending to avoid duplication
                         continue
-                    should_plan = bool(incoming) or bool(adjustments) or reason != 'auto' or (tick_of_day == 0)
+                    # Plan at the start of each worker's day (their work window), not only at absolute day start
+                    start_end = self._work_hours_ticks.get(person.id, (0, self.hours_per_day))
+                    work_start_tick = start_end[0] if self.hours_per_day > 0 else 0
+                    should_plan = (
+                        bool(incoming)
+                        or bool(adjustments)
+                        or reason != 'auto'
+                        or (tick_of_day == work_start_tick)
+                    )
                     if not should_plan:
                         continue
                     # Hourly planning limiter per minute
