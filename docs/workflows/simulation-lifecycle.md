@@ -57,3 +57,39 @@ Data Flow
 Notes
 - VirtualWorker is preferred when planner supports `generate_with_messages`; otherwise PlannerService is used directly.
 - All planner calls are visible in metrics for troubleshooting and optimization.
+
+---
+
+## Mermaid Overview
+
+```mermaid
+flowchart TD
+    A[Start Request\nPOST /simulation/start] --> B[Engine.start]\n
+    subgraph Init[Initialization]
+      B --> C[Seed RNG\nresolve active people]
+      C --> D[Generate Project Plan\nPlannerService -> OpenAI]
+      D --> E[Persist Plan\nproject_plans + assignments]
+      E --> F[Mark Running\nset base datetime]
+      F --> G[Sync Worker Runtimes\nbootstrap channels]
+    end
+
+    G --> H{Advance Tick\nmanual or auto}
+
+    subgraph Tick[Per Tick]
+      H --> I[Compute week/day/hour]
+      I --> J[Ensure Daily Plan]
+      J --> K[Generate Hourly Plan]
+      K --> L[Persist Plans\nPlanStore]
+      L --> M[Dispatch Comms\nCommunicationHub -> Email/Chat]
+      M --> N[Summaries/Reports\nReportStore]
+      N --> O{Auto‑pause?}
+      O -- no --> H
+    end
+
+    O -- yes --> P[Stop Auto‑ticks]
+    P --> Q[Paused]
+
+    Q --> R[Stop]
+    R --> S[Reset or Full Reset]
+    S --> T[Idle]
+```

@@ -8,6 +8,25 @@ Visual tree diagrams showing how code flows through the VDOS system.
 
 **From simulation script → all services running**
 
+```mermaid
+sequenceDiagram
+    participant Script as Simulation Script
+    participant Launcher as Server Launcher
+    participant Email as Email Server
+    participant Chat as Chat Server
+    participant Sim as Simulation Manager
+    participant DB as SQLite (vdos.db)
+
+    Script->>Launcher: _maybe_start_services()
+    Launcher->>Email: start uvicorn
+    Launcher->>Chat: start uvicorn
+    Launcher->>Sim: start uvicorn
+    Sim->>DB: create tables / migrations
+    Sim->>Email: ensure_mailbox(sim_manager)
+    Sim->>Chat: ensure_user(sim_manager)
+    Sim-->>Script: services ready
+```
+
 ```
 Script Main (e.g., quick_simulation.py::main)
 ├─ _maybe_start_services(force=True)
@@ -68,6 +87,25 @@ Script Main (e.g., quick_simulation.py::main)
 
 **GPT-based persona creation → database storage**
 
+```mermaid
+sequenceDiagram
+    participant Client as Script/UI
+    participant Sim as Simulation Manager
+    participant OpenAI as OpenAI API
+    participant Email as Email Server
+    participant Chat as Chat Server
+    participant DB as SQLite (vdos.db)
+
+    Client->>Sim: POST /api/v1/personas/generate
+    Sim->>OpenAI: generate_text(messages, model)
+    OpenAI-->>Sim: persona JSON
+    Sim->>Sim: normalize + enrich fields
+    Sim->>DB: INSERT people + schedule_blocks
+    Sim->>Email: ensure_mailbox
+    Sim->>Chat: ensure_user
+    Sim-->>Client: PersonRead
+```
+
 ```
 create_team()  (e.g., quick_simulation.py:132-198)
 ├─ [for each team member spec]
@@ -124,6 +162,24 @@ create_team()  (e.g., quick_simulation.py:132-198)
 ## 3. Simulation Initialization Flow
 
 **Project setup → daily/hourly planning**
+
+```mermaid
+sequenceDiagram
+    participant Client as Script/UI
+    participant Sim as Simulation Manager
+    participant Planner as PlannerService
+    participant OpenAI as OpenAI API
+    participant DB as SQLite (vdos.db)
+
+    Client->>Sim: POST /api/v1/simulation/start
+    Sim->>Sim: validate + set init state
+    Sim->>Planner: plan_project(team context)
+    Planner->>OpenAI: generate_text(messages)
+    OpenAI-->>Planner: plan JSON
+    Planner-->>Sim: PlanResult(plan, tokens)
+    Sim->>DB: INSERT project_plans + assignments
+    Sim-->>Client: SimulationState(is_running=true)
+```
 
 ```
 start_project_simulation()  (e.g., mobile_chat_simulation.py:345-366)

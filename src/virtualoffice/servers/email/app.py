@@ -178,6 +178,7 @@ def list_mailbox_emails(
     address: str,
     since_id: int | None = None,
     since_timestamp: str | None = None,
+    before_id: int | None = None,
     limit: int | None = None,
     conn=Depends(db_dependency)
 ):
@@ -214,6 +215,10 @@ def list_mailbox_emails(
         query += " AND e.sent_at > ?"
         params.append(since_timestamp)
 
+    if before_id is not None:
+        query += " AND er.email_id < ?"
+        params.append(before_id)
+
     query += " ORDER BY er.email_id DESC"
 
     if limit is not None:
@@ -229,6 +234,7 @@ def list_sender_emails(
     address: str,
     since_id: int | None = None,
     since_timestamp: str | None = None,
+    before_id: int | None = None,
     limit: int | None = None,
     conn=Depends(db_dependency)
 ):
@@ -255,6 +261,10 @@ def list_sender_emails(
     if since_timestamp is not None:
         query += " AND sent_at > ?"
         params.append(since_timestamp)
+
+    if before_id is not None:
+        query += " AND id < ?"
+        params.append(before_id)
 
     query += " ORDER BY id DESC"
 

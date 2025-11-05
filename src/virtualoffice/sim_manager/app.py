@@ -12,7 +12,7 @@ import threading
 import time
 
 from .engine import SimulationEngine
-from virtualoffice.common.db import DB_PATH
+from virtualoffice.common.db import DB_PATH, get_connection
 from .gateways import HttpChatGateway, HttpEmailGateway
 from .schemas import (
     AutoPauseStatusResponse,
@@ -38,6 +38,50 @@ from .schemas import (
 )
 
 API_PREFIX = "/api/v1"
+
+# OpenAPI tags metadata for organized API documentation
+tags_metadata = [
+    {
+        "name": "Personas",
+        "description": "Manage virtual worker personas - create, update, delete, and generate AI personas with GPT-4o"
+    },
+    {
+        "name": "Simulation Control",
+        "description": "Core simulation lifecycle - start, stop, reset, advance ticks, and configure auto-tick behavior"
+    },
+    {
+        "name": "Projects",
+        "description": "Multi-project configuration and management - create projects, assign teams, and configure timelines"
+    },
+    {
+        "name": "Reports & Analytics",
+        "description": "Worker plans, daily reports, simulation summaries, token usage, and performance metrics"
+    },
+    {
+        "name": "Events",
+        "description": "Inject custom events into the simulation timeline for testing scenarios"
+    },
+    {
+        "name": "Monitoring",
+        "description": "Real-time monitoring of emails and chat messages via proxy endpoints (CORS-friendly)"
+    },
+    {
+        "name": "Style Filter",
+        "description": "Communication style filter configuration and metrics - personalize message generation"
+    },
+    {
+        "name": "Import/Export",
+        "description": "Backup and restore personas and project configurations via JSON"
+    },
+    {
+        "name": "Admin",
+        "description": "⚠️ Administrative operations - hard reset, soft reset, rewind (use with caution)"
+    },
+    {
+        "name": "Dashboard",
+        "description": "Web dashboard interface"
+    }
+]
 
 
 def _generate_persona_text(messages: list[dict[str, str]], model: str) -> tuple[str, int | None]:
@@ -253,14 +297,19 @@ def _build_default_engine() -> SimulationEngine:
 
 
 def create_app(engine: SimulationEngine | None = None) -> FastAPI:
-    app = FastAPI(title="VDOS Simulation Manager", version="0.1.0")
+    app = FastAPI(
+        title="VDOS Simulation Manager",
+        version="0.1.0",
+        openapi_tags=tags_metadata,
+        description="Virtual Department Operations Simulator - Generate realistic departmental communications for testing and development"
+    )
     app.state.engine = engine or _build_default_engine()
 
     # Mount static files
     static_path = os.path.join(os.path.dirname(__file__), "static")
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.get("/", response_class=HTMLResponse, tags=["Dashboard"])
     def dashboard() -> HTMLResponse:
         # Read dashboard HTML fresh each request so UI updates without server restart
         try:
@@ -279,15 +328,15 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     def get_engine(request: Request) -> SimulationEngine:
         return request.app.state.engine
 
-    @app.get(f"{API_PREFIX}/people", response_model=list[PersonRead])
+    @app.get(f"{API_PREFIX}/people", response_model=list[PersonRead], tags=["Personas"])
     def list_people(engine: SimulationEngine = Depends(get_engine)) -> list[PersonRead]:
         return engine.list_people()
 
-    @app.post(f"{API_PREFIX}/people", response_model=PersonRead, status_code=status.HTTP_201_CREATED)
+    @app.post(f"{API_PREFIX}/people", response_model=PersonRead, status_code=status.HTTP_201_CREATED, tags=["Personas"])
     def create_person(payload: PersonCreate, engine: SimulationEngine = Depends(get_engine)) -> PersonRead:
         return engine.create_person(payload)
 
-    @app.post(f"{API_PREFIX}/personas/generate")
+    @app.post(f"{API_PREFIX}/personas/generate", tags=["Personas"])
     def generate_persona(
         payload: PersonaGenerateRequest = Body(...),
         engine: SimulationEngine = Depends(get_engine),
@@ -295,13 +344,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         persona = _generate_persona_from_prompt(payload.prompt, payload.model_hint, payload.explicit_name)
         return {"persona": persona}
 
-    @app.delete(f"{API_PREFIX}/people/by-name/{{person_name}}", status_code=status.HTTP_204_NO_CONTENT)
+    @app.delete(f"{API_PREFIX}/people/by-name/{{person_name}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Personas"])
     def delete_person(person_name: str, engine: SimulationEngine = Depends(get_engine)) -> None:
         deleted = engine.delete_person_by_name(person_name)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
     
-    @app.post(f"{API_PREFIX}/people/{{person_id}}/regenerate-style-examples")
+    @app.post(f"{API_PREFIX}/people/{{person_id}}/regenerate-style-examples", tags=["Personas"])
     def regenerate_style_examples(
         person_id: int,
         engine: SimulationEngine = Depends(get_engine)
@@ -332,7 +381,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 detail=f"Failed to regenerate style examples: {str(exc)}"
             )
     
-    @app.post(f"{API_PREFIX}/personas/generate-style-examples")
+    @app.post(f"{API_PREFIX}/personas/generate-style-examples", tags=["Personas"])
     async def generate_style_examples_from_attributes(
         payload: dict[str, Any] = Body(...),
         engine: SimulationEngine = Depends(get_engine)
@@ -401,7 +450,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 detail=f"Failed to generate style examples: {str(exc)}"
             )
     
-    @app.post(f"{API_PREFIX}/personas/preview-filter")
+    @app.post(f"{API_PREFIX}/personas/preview-filter", tags=["Personas"])
     def preview_style_filter(
         payload: dict[str, Any] = Body(...),
         engine: SimulationEngine = Depends(get_engine)
@@ -481,17 +530,17 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 detail=f"Failed to preview filter: {str(exc)}"
             )
 
-    @app.get(f"{API_PREFIX}/simulation/project-plan", response_model=ProjectPlanRead | None)
+    @app.get(f"{API_PREFIX}/simulation/project-plan", response_model=ProjectPlanRead | None, tags=["Projects"])
     def get_project_plan(engine: SimulationEngine = Depends(get_engine)) -> ProjectPlanRead | None:
         plan = engine.get_project_plan()
         return plan if plan is not None else None
 
-    @app.get(f"{API_PREFIX}/simulation/active-projects")
+    @app.get(f"{API_PREFIX}/simulation/active-projects", tags=["Projects"])
     def get_active_projects(engine: SimulationEngine = Depends(get_engine)) -> list[dict]:
         """Get all active projects with their team assignments for the current simulation week."""
         return engine.get_active_projects_with_assignments()
 
-    @app.get(f"{API_PREFIX}/people/{{person_id}}/plans", response_model=list[WorkerPlanRead])
+    @app.get(f"{API_PREFIX}/people/{{person_id}}/plans", response_model=list[WorkerPlanRead], tags=["Reports & Analytics"])
     def get_worker_plans(
         person_id: int,
         plan_type: PlanTypeLiteral | None = Query(default=None),
@@ -500,7 +549,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     ) -> list[WorkerPlanRead]:
         return engine.list_worker_plans(person_id, plan_type=plan_type, limit=limit)
 
-    @app.get(f"{API_PREFIX}/people/{{person_id}}/daily-reports", response_model=list[DailyReportRead])
+    @app.get(f"{API_PREFIX}/people/{{person_id}}/daily-reports", response_model=list[DailyReportRead], tags=["Reports & Analytics"])
     def get_daily_reports(
         person_id: int,
         day_index: int | None = Query(default=None, ge=0),
@@ -509,24 +558,24 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     ) -> list[DailyReportRead]:
         return engine.list_daily_reports(person_id, day_index=day_index, limit=limit)
 
-    @app.get(f"{API_PREFIX}/simulation/reports", response_model=list[SimulationReportRead])
+    @app.get(f"{API_PREFIX}/simulation/reports", response_model=list[SimulationReportRead], tags=["Reports & Analytics"])
     def get_simulation_reports(
         limit: int | None = Query(default=10, ge=1, le=200),
         engine: SimulationEngine = Depends(get_engine),
     ) -> list[SimulationReportRead]:
         return engine.list_simulation_reports(limit=limit)
 
-    @app.get(f"{API_PREFIX}/simulation/token-usage", response_model=TokenUsageSummary)
+    @app.get(f"{API_PREFIX}/simulation/token-usage", response_model=TokenUsageSummary, tags=["Reports & Analytics"])
     def get_token_usage(engine: SimulationEngine = Depends(get_engine)) -> TokenUsageSummary:
         usage = engine.get_token_usage()
         total = sum(usage.values())
         return TokenUsageSummary(per_model=usage, total_tokens=total)
 
-    @app.get(f"{API_PREFIX}/simulation", response_model=SimulationState)
+    @app.get(f"{API_PREFIX}/simulation", response_model=SimulationState, tags=["Simulation Control"])
     def get_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationState:
         return engine.get_state()
 
-    @app.get(f"{API_PREFIX}/debug/runtime")
+    @app.get(f"{API_PREFIX}/debug/runtime", tags=["Reports & Analytics"])
     def get_debug_runtime(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Expose runtime diagnostics to help verify environment and time model."""
         try:
@@ -558,14 +607,14 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 'db_path': str(DB_PATH),
             }
 
-    @app.get(f"{API_PREFIX}/metrics/planner")
+    @app.get(f"{API_PREFIX}/metrics/planner", tags=["Reports & Analytics"])
     def get_planner_metrics_endpoint(
         limit: int = Query(default=50, ge=1, le=500),
         engine: SimulationEngine = Depends(get_engine),
     ) -> list[dict[str, Any]]:
         return engine.get_planner_metrics(limit)
 
-    @app.delete(f"{API_PREFIX}/projects/{{project_id}}")
+    @app.delete(f"{API_PREFIX}/projects/{{project_id}}", tags=["Projects"])
     def delete_project(project_id: int, engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Delete a project and its associations (assignments, referencing events)."""
         try:
@@ -617,7 +666,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 print(f"❌ Simulation initialization failed after {max_retries} attempts")
                 raise
 
-    @app.post(f"{API_PREFIX}/simulation/start", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/simulation/start", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def start_simulation(
         background_tasks: BackgroundTasks,
         payload: SimulationStartRequest | None = Body(default=None),
@@ -679,7 +728,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 message=message,
             )
 
-    @app.get(f"{API_PREFIX}/simulation/init-status")
+    @app.get(f"{API_PREFIX}/simulation/init-status", tags=["Simulation Control"])
     def get_init_status() -> dict[str, Any]:
         """Check async initialization status."""
         with _init_lock:
@@ -690,7 +739,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 "error": _init_status["error"],
             }
 
-    @app.post(f"{API_PREFIX}/simulation/stop", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/simulation/stop", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def stop_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         state = engine.stop()
         return SimulationControlResponse(
@@ -701,7 +750,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Simulation stopped",
         )
 
-    @app.post(f"{API_PREFIX}/simulation/reset", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/simulation/reset", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def reset_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         state = engine.reset()
         return SimulationControlResponse(
@@ -712,7 +761,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Simulation reset",
         )
 
-    @app.post(f"{API_PREFIX}/simulation/full-reset", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/simulation/full-reset", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def full_reset_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         state = engine.reset_full()
         return SimulationControlResponse(
@@ -724,11 +773,11 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         )
 
     # Back-compat alias for dashboards that call a shorter path.
-    @app.post(f"{API_PREFIX}/sim/full-reset", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/sim/full-reset", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def full_reset_simulation_alias(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         return full_reset_simulation(engine)
 
-    @app.post(f"{API_PREFIX}/simulation/ticks/start", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/simulation/ticks/start", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def start_ticks(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         try:
             state = engine.start_auto_ticks()
@@ -742,7 +791,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Automatic ticking enabled",
         )
 
-    @app.post(f"{API_PREFIX}/simulation/ticks/stop", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/simulation/ticks/stop", response_model=SimulationControlResponse, tags=["Simulation Control"])
     def stop_ticks(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         state = engine.stop_auto_ticks()
         return SimulationControlResponse(
@@ -753,7 +802,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Automatic ticking disabled",
         )
 
-    @app.put(f"{API_PREFIX}/simulation/ticks/interval")
+    @app.put(f"{API_PREFIX}/simulation/ticks/interval", tags=["Simulation Control"])
     def set_tick_interval(
         interval: float = Body(..., ge=0.0, le=60.0, embed=True),
         engine: SimulationEngine = Depends(get_engine)
@@ -764,12 +813,12 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    @app.get(f"{API_PREFIX}/simulation/ticks/interval")
+    @app.get(f"{API_PREFIX}/simulation/ticks/interval", tags=["Simulation Control"])
     def get_tick_interval(engine: SimulationEngine = Depends(get_engine)) -> dict[str, float]:
         """Get the current auto-tick interval in seconds."""
         return {"tick_interval_seconds": engine.get_tick_interval()}
 
-    @app.get(f"{API_PREFIX}/simulation/auto-pause/status", response_model=AutoPauseStatusResponse)
+    @app.get(f"{API_PREFIX}/simulation/auto-pause/status", response_model=AutoPauseStatusResponse, tags=["Projects"])
     def get_auto_pause_status(engine: SimulationEngine = Depends(get_engine)) -> AutoPauseStatusResponse:
         """Get comprehensive project and status information for auto-pause feature."""
         try:
@@ -787,7 +836,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 error=str(exc)
             )
 
-    @app.post(f"{API_PREFIX}/simulation/auto-pause/toggle", response_model=AutoPauseStatusResponse)
+    @app.post(f"{API_PREFIX}/simulation/auto-pause/toggle", response_model=AutoPauseStatusResponse, tags=["Projects"])
     def toggle_auto_pause(
         payload: AutoPauseToggleRequest,
         engine: SimulationEngine = Depends(get_engine)
@@ -803,12 +852,12 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             ) from exc
 
     # Backward compatibility endpoint (deprecated)
-    @app.get(f"{API_PREFIX}/simulation/auto-pause-status")
+    @app.get(f"{API_PREFIX}/simulation/auto-pause-status", tags=["Projects"])
     def get_auto_pause_status_legacy(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Get information about auto-pause on project end status (legacy endpoint)."""
         return engine.get_auto_pause_status()
 
-    @app.post(f"{API_PREFIX}/simulation/advance", response_model=SimulationAdvanceResult)
+    @app.post(f"{API_PREFIX}/simulation/advance", response_model=SimulationAdvanceResult, tags=["Simulation Control"])
     def advance_simulation(
         payload: SimulationAdvanceRequest,
         engine: SimulationEngine = Depends(get_engine),
@@ -825,7 +874,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     #  - Delete the shared SQLite file
     #  - Re-create Email/Chat/Sim schemas
     #  - Reset engine runtime view of state
-    @app.post(f"{API_PREFIX}/admin/hard-reset", response_model=SimulationControlResponse)
+    @app.post(f"{API_PREFIX}/admin/hard-reset", response_model=SimulationControlResponse, tags=["Admin"])
     def admin_hard_reset(engine: SimulationEngine = Depends(get_engine)) -> SimulationControlResponse:
         """
         ⚠️  DANGEROUS: Complete database reset for development use only.
@@ -890,15 +939,184 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message="Hard reset complete (DB recreated)",
         )
 
-    @app.post(f"{API_PREFIX}/events", response_model=EventRead, status_code=status.HTTP_201_CREATED)
+    @app.post(f"{API_PREFIX}/admin/soft-reset-preserve", tags=["Admin"])
+    def admin_soft_reset_preserve(
+        delete_project_name: str | None = Body(default="Dashboard Project"),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> dict[str, Any]:
+        """Wipe runtime data but preserve personas and projects (except an optional project to delete).
+
+        - Preserves: people, schedule_blocks, project_plans (except the one named by delete_project_name), project_assignments
+        - Wipes: worker_plans, hourly_summaries, daily_reports, simulation_reports,
+                 worker_runtime_messages, worker_exchange_log, worker_status_overrides,
+                 events, tick_log
+        - Email tables: deletes all rows (emails, email_recipients, drafts, mailboxes)
+        - Chat tables: deletes all rows (chat_messages, chat_members, chat_rooms, chat_users)
+        - Resets simulation_state to tick=0, is_running=0, auto_tick=0
+        """
+        try:
+            try:
+                engine.stop_auto_ticks()
+            except Exception:
+                pass
+
+            summary: dict[str, Any] = {"deleted": {}}
+
+            with get_connection() as conn:
+                # Optionally delete one project by name (and cascading assignments)
+                if delete_project_name:
+                    conn.execute("DELETE FROM project_plans WHERE project_name = ?", (delete_project_name,))
+                    summary["deleted"]["project_name"] = delete_project_name
+
+                # Emails: delete recipients first, then emails, then drafts/mailboxes
+                for tbl in ("email_recipients", "emails", "drafts", "mailboxes"):
+                    try:
+                        conn.execute(f"DELETE FROM {tbl}")
+                        summary["deleted"][tbl] = "all"
+                    except Exception:
+                        pass
+
+                # Chat: messages → members → rooms → users
+                for tbl in ("chat_messages", "chat_members", "chat_rooms", "chat_users"):
+                    try:
+                        conn.execute(f"DELETE FROM {tbl}")
+                        summary["deleted"][tbl] = "all"
+                    except Exception:
+                        pass
+
+                # Simulation runtime artifacts
+                for tbl in (
+                    "worker_plans",
+                    "hourly_summaries",
+                    "daily_reports",
+                    "simulation_reports",
+                    "worker_runtime_messages",
+                    "worker_exchange_log",
+                    "worker_status_overrides",
+                    "events",
+                    "tick_log",
+                ):
+                    try:
+                        conn.execute(f"DELETE FROM {tbl}")
+                        summary["deleted"][tbl] = "all"
+                    except Exception:
+                        pass
+
+                # Reset simulation_state row (create if missing)
+                conn.execute(
+                    "INSERT INTO simulation_state(id, current_tick, is_running, auto_tick)\n"
+                    "VALUES(1, 0, 0, 0)\n"
+                    "ON CONFLICT(id) DO UPDATE SET current_tick=0, is_running=0, auto_tick=0"
+                )
+
+            state = engine.get_state()
+            return {
+                "message": "Soft reset complete; personas and projects preserved (except optional deletion)",
+                "current_tick": state.current_tick,
+                "is_running": state.is_running,
+                "auto_tick": state.auto_tick,
+                "deleted": summary.get("deleted", {}),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Soft reset failed: {exc}")
+
+    @app.post(f"{API_PREFIX}/admin/rewind", tags=["Admin"])
+    def admin_rewind(
+        tick: int = Body(..., embed=True, ge=0),
+        engine: SimulationEngine = Depends(get_engine),
+    ) -> dict[str, Any]:
+        """Rewind the simulation to a specific tick and purge later data.
+
+        Actions:
+        - Stops auto-ticks (best effort)
+        - Updates simulation_state.current_tick to the cutoff
+        - Deletes worker plans/summaries/reports/exchanges/tick logs after cutoff
+        - Deletes events with at_tick strictly greater than cutoff
+        - Deletes emails and chats with sent_at after the simulated cutoff datetime (when available)
+        """
+        try:
+            # Best effort stop
+            try:
+                engine.stop_auto_ticks()
+            except Exception:
+                pass
+
+            state = engine.get_state()
+            cutoff = max(0, min(int(tick), state.current_tick))
+            hours_per_day = getattr(engine, 'hours_per_day', 8)
+            day_ticks = max(1, hours_per_day * 60)
+            hour_index_cutoff = (cutoff - 1) // 60 if cutoff > 0 else 0
+            day_index_cutoff = (cutoff - 1) // day_ticks if cutoff > 0 else 0
+
+            # Compute simulated cutoff datetime for email/chat purges if base is known
+            try:
+                cutoff_dt = engine._sim_datetime_for_tick(cutoff)
+                cutoff_iso = cutoff_dt.isoformat() if cutoff_dt else None
+            except Exception:
+                cutoff_iso = None
+
+            deleted: dict[str, int] = {}
+            with get_connection() as conn:
+                def _exists(table: str) -> bool:
+                    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+                    return bool(row)
+
+                def _count(table: str, where: str, params: tuple) -> int:
+                    row = conn.execute(f"SELECT COUNT(*) as c FROM {table} WHERE {where}", params).fetchone()
+                    return int(row["c"]) if row else 0
+
+                # Engine-owned artifacts
+                if _exists('worker_plans'):
+                    deleted['worker_plans'] = _count('worker_plans', 'tick > ?', (cutoff,))
+                    conn.execute('DELETE FROM worker_plans WHERE tick > ?', (cutoff,))
+                if _exists('hourly_summaries'):
+                    deleted['hourly_summaries'] = _count('hourly_summaries', 'hour_index > ?', (hour_index_cutoff,))
+                    conn.execute('DELETE FROM hourly_summaries WHERE hour_index > ?', (hour_index_cutoff,))
+                if _exists('daily_reports'):
+                    deleted['daily_reports'] = _count('daily_reports', 'day_index > ?', (day_index_cutoff,))
+                    conn.execute('DELETE FROM daily_reports WHERE day_index > ?', (day_index_cutoff,))
+                if _exists('worker_exchange_log'):
+                    deleted['worker_exchange_log'] = _count('worker_exchange_log', 'tick > ?', (cutoff,))
+                    conn.execute('DELETE FROM worker_exchange_log WHERE tick > ?', (cutoff,))
+                if _exists('tick_log'):
+                    deleted['tick_log'] = _count('tick_log', 'tick > ?', (cutoff,))
+                    conn.execute('DELETE FROM tick_log WHERE tick > ?', (cutoff,))
+                if _exists('events'):
+                    deleted['events'] = _count('events', 'at_tick IS NOT NULL AND at_tick > ?', (cutoff,))
+                    conn.execute('DELETE FROM events WHERE at_tick IS NOT NULL AND at_tick > ?', (cutoff,))
+
+                # Email/Chat based on simulated time cutoff
+                if cutoff_iso and _exists('emails'):
+                    deleted['emails'] = _count('emails', 'sent_at > ?', (cutoff_iso,))
+                    conn.execute('DELETE FROM emails WHERE sent_at > ?', (cutoff_iso,))
+                if cutoff_iso and _exists('chat_messages'):
+                    deleted['chat_messages'] = _count('chat_messages', 'sent_at > ?', (cutoff_iso,))
+                    conn.execute('DELETE FROM chat_messages WHERE sent_at > ?', (cutoff_iso,))
+
+                # Update simulation state
+                if _exists('simulation_state'):
+                    conn.execute('UPDATE simulation_state SET current_tick = ? WHERE id = 1', (cutoff,))
+
+            return {
+                'message': f'Rewound to tick {cutoff}',
+                'cutoff': cutoff,
+                'hour_index_cutoff': hour_index_cutoff,
+                'day_index_cutoff': day_index_cutoff,
+                'cutoff_iso': cutoff_iso,
+                'deleted': deleted,
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Failed to rewind: {exc}')
+
+    @app.post(f"{API_PREFIX}/events", response_model=EventRead, status_code=status.HTTP_201_CREATED, tags=["Events"])
     def create_event(payload: EventCreate, engine: SimulationEngine = Depends(get_engine)) -> EventRead:
         return EventRead(**engine.inject_event(payload))
 
-    @app.get(f"{API_PREFIX}/events", response_model=list[EventRead])
+    @app.get(f"{API_PREFIX}/events", response_model=list[EventRead], tags=["Events"])
     def list_events(engine: SimulationEngine = Depends(get_engine)) -> list[EventRead]:
         return [EventRead(**event) for event in engine.list_events()]
 
-    @app.post(f"{API_PREFIX}/people/status-override", response_model=StatusOverrideResponse)
+    @app.post(f"{API_PREFIX}/people/status-override", response_model=StatusOverrideResponse, tags=["Personas"])
     def set_status_override(payload: StatusOverrideRequest, engine: SimulationEngine = Depends(get_engine)) -> StatusOverrideResponse:
         """Set a persona's status to Absent/Offline/SickLeave for external integration.
 
@@ -941,7 +1159,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message=f"Status override set for {person.name} until tick {until_tick}"
         )
 
-    @app.get(f"{API_PREFIX}/people/{{person_id}}/status-override", response_model=StatusOverrideResponse | None)
+    @app.get(f"{API_PREFIX}/people/{{person_id}}/status-override", response_model=StatusOverrideResponse | None, tags=["Personas"])
     def get_status_override(person_id: int, engine: SimulationEngine = Depends(get_engine)) -> StatusOverrideResponse | None:
         """Get the current status override for a persona, if any."""
         # Check if person exists
@@ -972,7 +1190,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             message=f"Status override active for {person.name} until tick {until_tick}"
         )
 
-    @app.delete(f"{API_PREFIX}/people/{{person_id}}/status-override", status_code=status.HTTP_204_NO_CONTENT)
+    @app.delete(f"{API_PREFIX}/people/{{person_id}}/status-override", status_code=status.HTTP_204_NO_CONTENT, tags=["Personas"])
     def clear_status_override(person_id: int, engine: SimulationEngine = Depends(get_engine)) -> None:
         """Clear a persona's status override, making them available again."""
         # Check if person exists
@@ -990,13 +1208,14 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 conn.execute("DELETE FROM worker_status_overrides WHERE worker_id = ?", (person_id,))
 
     # --- Monitoring proxy endpoints (avoid CORS by routing through sim_manager) ---
-    @app.get(f"{API_PREFIX}/monitor/emails/{{person_id}}")
+    @app.get(f"{API_PREFIX}/monitor/emails/{{person_id}}", tags=["Monitoring"])
     def monitor_emails(
         person_id: int,
         box: str = Query(default="all", pattern="^(all|inbox|sent)$"),
         limit: int | None = Query(default=50, ge=1, le=500),
         since_id: int | None = Query(default=None),
         since_timestamp: str | None = Query(default=None),
+        before_id: int | None = Query(default=None),
         engine: SimulationEngine = Depends(get_engine),
     ) -> dict[str, list[dict]]:
         """Return inbox/sent emails for the given person by proxying the email server."""
@@ -1014,6 +1233,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             params["since_id"] = since_id
         if since_timestamp is not None:
             params["since_timestamp"] = since_timestamp
+        if before_id is not None:
+            params["before_id"] = before_id
 
         result: dict[str, list[dict]] = {"inbox": [], "sent": []}
         try:
@@ -1029,7 +1250,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Email proxy failed: {exc}")
         return result
 
-    @app.get(f"{API_PREFIX}/monitor/chat/messages/{{person_id}}")
+    @app.get(f"{API_PREFIX}/monitor/chat/messages/{{person_id}}", tags=["Monitoring"])
     def monitor_chat_messages(
         person_id: int,
         scope: str = Query(default="all", pattern="^(all|dms|rooms)$"),
@@ -1065,8 +1286,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 result["rooms"] = rr.json()
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
-
-    @app.get(f"{API_PREFIX}/monitor/chat/rooms/{{person_id}}")
+        return result
+    @app.get(f"{API_PREFIX}/monitor/chat/rooms/{{person_id}}", tags=["Monitoring"])
     def monitor_chat_rooms(
         person_id: int,
         engine: SimulationEngine = Depends(get_engine),
@@ -1081,9 +1302,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             return response.json()
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
-        return result
 
-    @app.get(f"{API_PREFIX}/monitor/chat/room/{{room_slug}}/messages")
+    @app.get(f"{API_PREFIX}/monitor/chat/room/{{room_slug}}/messages", tags=["Monitoring"])
     def monitor_room_messages(
         room_slug: str,
         limit: int | None = Query(default=100, ge=1, le=1000),
@@ -1110,7 +1330,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
 
     # --- Export/Import endpoints ---
-    @app.get(f"{API_PREFIX}/export/personas")
+    @app.get(f"{API_PREFIX}/export/personas", tags=["Import/Export"])
     def export_personas(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Export all personas to JSON format for backup/sharing."""
         people = engine.list_people()
@@ -1139,17 +1359,18 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 "objectives": list(person.objectives) if person.objectives else [],
                 "metrics": list(person.metrics) if person.metrics else [],
                 "planning_guidelines": list(person.planning_guidelines) if person.planning_guidelines else [],
-                "schedule": [{"start": block.start, "end": block.end, "activity": block.activity} 
+                "schedule": [{"start": block.start, "end": block.end, "activity": block.activity}
                            for block in person.schedule] if person.schedule else [],
                 "event_playbook": dict(person.event_playbook) if person.event_playbook else {},
                 "statuses": list(person.statuses) if person.statuses else [],
+                "style_examples": person.style_examples if person.style_examples else None,
                 "persona_markdown": person.persona_markdown
             }
             export_data["personas"].append(persona_data)
         
         return export_data
 
-    @app.post(f"{API_PREFIX}/import/personas")
+    @app.post(f"{API_PREFIX}/import/personas", tags=["Import/Export"])
     def import_personas(
         import_data: dict[str, Any] = Body(...),
         engine: SimulationEngine = Depends(get_engine)
@@ -1210,7 +1431,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             "message": f"Successfully imported {imported_count} personas, skipped {skipped_count}"
         }
 
-    @app.get(f"{API_PREFIX}/export/projects")
+    @app.get(f"{API_PREFIX}/export/projects", tags=["Import/Export"])
     def export_projects(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Export current project configuration to JSON format."""
         # Note: Projects are stored in the frontend JavaScript, not in the database
@@ -1236,7 +1457,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         
         return export_data
 
-    @app.post(f"{API_PREFIX}/import/projects")
+    @app.post(f"{API_PREFIX}/import/projects", tags=["Import/Export"])
     def import_projects(
         import_data: dict[str, Any] = Body(...),
         engine: SimulationEngine = Depends(get_engine)
@@ -1288,8 +1509,8 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         }
 
     # ===== Style Filter Configuration Endpoints =====
-    
-    @app.get(f"{API_PREFIX}/style-filter/config")
+
+    @app.get(f"{API_PREFIX}/style-filter/config", tags=["Style Filter"])
     def get_style_filter_config(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Get the current style filter configuration."""
         try:
@@ -1315,7 +1536,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 detail=f"Failed to get style filter config: {str(exc)}"
             )
     
-    @app.post(f"{API_PREFIX}/style-filter/config")
+    @app.post(f"{API_PREFIX}/style-filter/config", tags=["Style Filter"])
     def update_style_filter_config(
         payload: dict[str, bool] = Body(...),
         engine: SimulationEngine = Depends(get_engine)
@@ -1351,7 +1572,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 detail=f"Failed to update style filter config: {str(exc)}"
             )
     
-    @app.get(f"{API_PREFIX}/style-filter/metrics")
+    @app.get(f"{API_PREFIX}/style-filter/metrics", tags=["Style Filter"])
     def get_style_filter_metrics(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
         """Get style filter usage metrics for the current session."""
         try:

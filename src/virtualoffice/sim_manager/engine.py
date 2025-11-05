@@ -271,6 +271,13 @@ class SimulationEngine:
         # Email threading support
         self._recent_emails: dict[int, deque] = {}  # {person_id: deque of recent emails}
         self._email_threads: dict[str, str] = {}  # {thread_key: thread_id}
+        # Communication staggering to avoid synchronized blasts
+        try:
+            self._comm_stagger_max_minutes = int(os.getenv("VDOS_COMM_STAGGER_MAX_MINUTES", "7"))
+        except ValueError:
+            self._comm_stagger_max_minutes = 7
+        self._avoid_round_minutes = os.getenv("VDOS_AVOID_ROUND_MINUTES", "true").strip().lower() in {"1", "true", "yes", "on"}
+        self._current_seed: int | None = None
         # Planner strict mode: if True, do not fall back to stub on GPT failures
         if planner_strict is None:
             env = os.getenv("VDOS_PLANNER_STRICT", "0").strip().lower()
@@ -646,6 +653,24 @@ class SimulationEngine:
                                 if recipient_person.id not in self._recent_emails:
                                     self._recent_emails[recipient_person.id] = deque(maxlen=10)
                                 self._recent_emails[recipient_person.id].append(email_record)
+                        # Queue an inbound message to the primary recipient to enable a natural reply/ack during their next planning
+                        primary_recipient = email_index.get((email_to or '').lower())
+                        if primary_recipient is not None:
+                            # Derive a short action item from the subject when possible
+                            action_item = None
+                            if subject:
+                                action_item = subject.strip()
+                            inbound = _InboundMessage(
+                                sender_id=person.id,
+                                sender_name=person.name,
+                                subject=subject,
+                                summary=(body[:140] + '...') if isinstance(body, str) and len(body) > 160 else (body or subject or ''),
+                                action_item=action_item,
+                                message_type='email',
+                                channel='email',
+                                tick=current_tick,
+                            )
+                            self._queue_runtime_message(primary_recipient, inbound)
             elif channel == 'chat' and chat_to:
                 # Deterministic guard: only the lexicographically smaller handle sends to avoid mirrored DMs.
                 s_handle = person.chat_handle.lower()
@@ -655,6 +680,20 @@ class SimulationEngine:
                 if self._can_send(tick=current_tick, channel='chat', sender=person.chat_handle, recipient_key=(chat_to,), subject=None, body=payload):
                     self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso)
                     chats += 1
+                    # Queue inbound for recipient to enable conversational acks during their next planning cycle
+                    recipient = handle_index.get(r_handle)
+                    if recipient is not None:
+                        inbound = _InboundMessage(
+                            sender_id=person.id,
+                            sender_name=person.name,
+                            subject=f"DM from {person.name}",
+                            summary=payload,
+                            action_item=None,
+                            message_type='dm',
+                            channel='chat',
+                            tick=current_tick,
+                        )
+                        self._queue_runtime_message(recipient, inbound)
         return emails, chats
     def _schedule_direct_comm(self, person_id: int, tick: int, channel: str, target: str, payload: str) -> None:
         by_tick = self._scheduled_comms.setdefault(person_id, {})
@@ -714,11 +753,19 @@ class SimulationEngine:
     def _is_within_work_hours(self, person: PersonRead, tick: int) -> bool:
         if not self.hours_per_day:
             return True
+
+        # Check if it's a weekend (5-day work week: days 5-6 are Saturday-Sunday)
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // day_ticks
+        day_of_week = day_index % 7
+        # Days 5 and 6 of each week are Saturday and Sunday
+        if day_of_week >= 5:
+            return False
+
         window = self._work_hours_ticks.get(person.id)
         if not window:
             return True
         start_tick, end_tick = window
-        day_ticks = max(1, self.hours_per_day * 60)
         tick_of_day = (tick - 1) % day_ticks
         if start_tick <= end_tick:
             return start_tick <= tick_of_day < end_tick
@@ -746,6 +793,26 @@ class SimulationEngine:
         tick_of_day = (tick - 1) % day_ticks
         minutes_24h = int((tick_of_day / day_ticks) * 1440)
         return base + timedelta(days=day_index, minutes=minutes_24h)
+
+    def _compute_comm_stagger(self, person_id: int, day_index: int) -> int:
+        """Compute a deterministic minute-level stagger for scheduled communications.
+
+        The offset is derived from the simulation seed, person ID, and day index
+        to ensure reproducibility while avoiding synchronized sends. Returns a
+        small offset in [-max, +max] minutes, where max is configured by
+        VDOS_COMM_STAGGER_MAX_MINUTES (default 7).
+        """
+        max_min = max(0, int(self._comm_stagger_max_minutes))
+        if max_min == 0:
+            return 0
+        base_seed = self._current_seed if self._current_seed is not None else 0
+        local_seed = (base_seed * 1315423911) ^ (person_id * 2654435761) ^ (day_index * 97531)
+        rng = random.Random(local_seed & 0xFFFFFFFF)
+        offset = rng.randint(-max_min, max_min)
+        if offset == 0 and max_min > 0:
+            # Nudge away from 0 to ensure actual staggering
+            offset = 1 if (person_id + day_index) % 2 == 0 else -1
+        return offset
 
 
     def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -1163,13 +1230,16 @@ class SimulationEngine:
                 )
                 return person
 
-            with ThreadPoolExecutor(max_workers=min(4, len(team))) as executor:
-                futures = [executor.submit(generate_initial_plans_for_person, person) for person in team]
-                for future in as_completed(futures):
-                    try:
-                        future.result()
-                    except Exception as e:
-                        logger.error(f"Failed to generate initial plans: {e}", exc_info=True)
+            # Optional: disable tick-0 initial planning for strict off-hours starts
+            disable_initial = (os.getenv("VDOS_DISABLE_INITIAL_PLANNING", "0").strip().lower() in {"1", "true", "yes", "on"})
+            if not disable_initial:
+                with ThreadPoolExecutor(max_workers=min(4, len(team))) as executor:
+                    futures = [executor.submit(generate_initial_plans_for_person, person) for person in team]
+                    for future in as_completed(futures):
+                        try:
+                            future.result()
+                        except Exception as e:
+                            logger.error(f"Failed to generate initial plans: {e}", exc_info=True)
 
     def _get_active_project_for_person(self, person_id: int, week: int) -> dict[str, Any] | None:
         """Get the active project for a person at a given week, considering project timelines."""
@@ -1516,7 +1586,8 @@ class SimulationEngine:
     def _summarise_plan(self, plan_text: str, max_lines: int = 4) -> str:
         lines = [line.strip() for line in plan_text.splitlines() if line.strip()]
         if not lines:
-            return "No plan provided yet."
+            # Return empty summary so callers can choose a sensible fallback
+            return ""
         # Drop placeholder headers and meta lines
         filtered: list[str] = []
         for line in lines:
@@ -1873,6 +1944,7 @@ class SimulationEngine:
 
     def start(self, request: SimulationStartRequest | None = None) -> SimulationState:
         seed = self._derive_seed(request)
+        self._current_seed = seed
         self._random.seed(seed)
         self._reset_runtime_state()
         all_people = self.list_people()
@@ -2302,6 +2374,15 @@ class SimulationEngine:
                     working = self._is_within_work_hours(person, status.current_tick)
                     adjustments: list[str] = list(event_adjustments.get(person.id, []))
                     override = self._status_overrides.get(person.id)
+                    # Respect offline-style overrides: do not plan while unavailable
+                    offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "휴가", "병가", "자리비움"}
+                    if override and (override[0] in offline_statuses):
+                        # Drain incoming into queue as reminders and skip planning
+                        if incoming:
+                            for message in incoming:
+                                self._get_worker_runtime(person).queue(message)
+                        logger.info("Skipping planning for %s at tick %s due to status override: %s", person.name, status.current_tick, override[0])
+                        continue
                     if override and override[0] == 'SickLeave':
                         incoming = []
                         adjustments.append('Observe sick leave and hold tasks until recovered.')
@@ -2500,7 +2581,7 @@ class SimulationEngine:
                         self._schedule_from_hourly_plan(person, hourly_result.content, status.current_tick)
                     except Exception:
                         pass
-                    if override and override[0] == 'SickLeave':
+                    if override and (override[0] in {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "휴가", "병가", "자리비움"}):
                         continue
 
                     recipients = self._select_collaborators(person, people)
@@ -3023,9 +3104,16 @@ class SimulationEngine:
         immediate: dict[int, list[_InboundMessage]] = {}
         if not people:
             return adjustments, immediate
+
+        # Skip event generation on weekends (5-day work week)
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // day_ticks
+        day_of_week = day_index % 7
+        if day_of_week >= 5:
+            return adjustments, immediate
+
         rng = self._random
         # Gate event generation to humane frequencies to avoid per-minute GPT replanning.
-        day_ticks = max(1, self.hours_per_day * 60)
         tick_of_day = (tick - 1) % day_ticks
 
         # Sick leave event: consider once per day around mid-morning.

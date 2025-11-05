@@ -4,6 +4,20 @@
 
 VDOS is a three-tier architecture with FastAPI services, a Web Dashboard, and a shared SQLite database. The simulation engine has been refactored into modular components for improved maintainability and testability.
 
+```mermaid
+graph LR
+  Dashboard[Web Dashboard] -->|HTTP| Sim[Simulation Manager :8015]
+  Sim -->|HTTP| Email[Email Server :8000]
+  Sim -->|HTTP| Chat[Chat Server :8001]
+  Sim -->|OpenAI| OA[(api.openai.com)]
+
+  subgraph DB[(SQLite vdos.db)]
+  end
+  Sim ----> DB
+  Email ----> DB
+  Chat ----> DB
+```
+
 ```
 ┌───────────────────────────────────────────────────────────────┐
 │                        Web Dashboard                           │

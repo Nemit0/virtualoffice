@@ -25,6 +25,8 @@ import {
 
 // Email state variables (migrated from dashboard.js)
 let lastEmailRefresh = 0;
+const EMAIL_PAGE_SIZE = 200;
+let lastFetchLimit = EMAIL_PAGE_SIZE;
 let emailAutoOpenFirst = false;
 let emailSearchTimeout = null;
 let scrollTimeout = null;
@@ -59,6 +61,7 @@ export async function refreshEmailsTab(forceRefresh = false) {
     // Performance optimization: Use larger limit for better caching
     const currentList = emailCache[getEmailFolder()] || [];
     const limit = currentList.length > 100 ? 500 : 200;
+    lastFetchLimit = limit;
     const data = await fetchJson(`${API_PREFIX}/monitor/emails/${emailMonitorPersonId}?box=all&limit=${limit}`);
     
     setEmailCache({
@@ -304,6 +307,9 @@ export function renderEmailList(items) {
 
   // Set up keyboard navigation for the email list
   setupEmailListKeyboardNavigation(listEl, sortedItems);
+
+  // Ensure Load More control exists and wire up action
+  ensureLoadMoreControl(sortedItems);
 }
 
 /**
@@ -521,6 +527,65 @@ function renderEmailPanels() {
   const emailSelected = getEmailSelected();
   const sel = filteredList.find(m => m.id === emailSelected.id) || null;
   renderEmailDetail(sel);
+}
+
+/**
+ * Ensure Load More control appears below list and handles older-page fetch.
+ */
+function ensureLoadMoreControl(sortedItems) {
+  const container = document.querySelector('.email-list-container');
+  if (!container) return;
+
+  let btn = document.getElementById('email-load-more');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'email-load-more';
+    btn.className = 'secondary';
+    btn.style.margin = '8px 12px';
+    btn.textContent = 'Load more';
+    btn.addEventListener('click', onLoadMoreClick);
+    container.appendChild(btn);
+  }
+  // Always show; if nothing more returns, we can briefly indicate
+  btn.disabled = false;
+}
+
+async function onLoadMoreClick() {
+  try {
+    const personId = getEmailMonitorPersonId();
+    if (!personId) return;
+    const folder = getEmailFolder();
+    const cache = getEmailCache();
+    const list = cache[folder] || [];
+    if (list.length === 0) return;
+    const oldestId = list.reduce((min, m) => Math.min(min, m.id), list[0].id);
+    const url = `${API_PREFIX}/monitor/emails/${personId}?box=${folder}&limit=${EMAIL_PAGE_SIZE}&before_id=${oldestId}`;
+    const data = await fetchJson(url);
+    const incoming = (folder === 'inbox' ? (data.inbox || []) : (data.sent || []));
+    if (!incoming.length) {
+      // Nothing more to load
+      const btn = document.getElementById('email-load-more');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'No more emails';
+        setTimeout(() => { btn.textContent = 'Load more'; btn.disabled = false; }, 2000);
+      }
+      return;
+    }
+    // Merge and dedupe
+    const byId = new Map();
+    for (const m of list) byId.set(m.id, m);
+    for (const m of incoming) byId.set(m.id, m);
+    const merged = Array.from(byId.values());
+    cache[folder] = merged;
+    setEmailCache(cache);
+    // Clear caches and re-render
+    getEmailRenderCache().clear();
+    getEmailSortCache().clear();
+    renderEmailPanels();
+  } catch (err) {
+    console.error('Load more failed:', err);
+  }
 }
 
 /**

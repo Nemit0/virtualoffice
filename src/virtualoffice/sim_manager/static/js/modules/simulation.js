@@ -175,32 +175,23 @@ export async function startSimulation() {
     const seedText = document.getElementById('random-seed').value.trim();
     const modelHint = document.getElementById('model-hint').value.trim();
 
-    let payload;
-
-    // If multi-project configuration is provided, use it
+    // Require at least one project to be configured
     const projects = getProjects();
-    if (projects.length > 0) {
-      // Multi-project mode
-      payload = {
-        projects: projects.map(p => ({
-          project_name: p.name,
-          project_summary: p.summary,
-          assigned_person_ids: p.team_ids,
-          start_week: p.start_week,
-          duration_weeks: p.duration_weeks
-        }))
-      };
-    } else {
-      // Backwards-compatible single project mode (legacy)
-      const projectName = document.getElementById('project-name')?.value.trim() || 'Dashboard Project';
-      const projectSummary = document.getElementById('project-summary')?.value.trim() || 'Generated from web dashboard';
-      const duration = parseInt(document.getElementById('project-duration')?.value, 10) || 1;
-      payload = {
-        project_name: projectName,
-        project_summary: projectSummary,
-        duration_weeks: duration
-      };
+    if (projects.length === 0) {
+      setStatus('Please add at least one project before starting the simulation', true);
+      return;
     }
+
+    // Multi-project mode
+    const payload = {
+      projects: projects.map(p => ({
+        project_name: p.name,
+        project_summary: p.summary,
+        assigned_person_ids: p.team_ids,
+        start_week: p.start_week,
+        duration_weeks: p.duration_weeks
+      }))
+    };
 
     if (includeIds.length) { payload.include_person_ids = includeIds; }
     if (excludeIds.length) { payload.exclude_person_ids = excludeIds; }

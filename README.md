@@ -50,6 +50,22 @@ In many orgs, the **data you want to analyze doesn’t exist yet** or can’t be
 
 ## System architecture
 
+```mermaid
+graph LR
+  Launcher[Server Launcher\nsrc/virtualoffice/app.py] -->|start| Email[Email Server :8000]\n  Launcher -->|start| Chat[Chat Server :8001]\n  Launcher -->|start| Sim[Simulation Manager :8015]\n
+  Dashboard[Web Dashboard\nsrc/virtualoffice/sim_manager/index_new.html] -->|HTTP| Sim
+  Sim -->|HTTP| Email
+  Sim -->|HTTP| Chat
+
+  subgraph DB[(SQLite vdos.db)]
+  end
+  Sim ----> DB
+  Email ----> DB
+  Chat ----> DB
+
+  Sim -->|LLM calls| OpenAI[(api.openai.com)]
+```
+
 ### Modular Architecture (Refactored Engine)
 
 VDOS has been refactored from a monolithic 2360+ line engine into a modular, maintainable architecture:
