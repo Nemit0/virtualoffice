@@ -35,6 +35,10 @@ from .schemas import (
     SimulationStartRequest,
     SimulationState,
 )
+from .communication_generator import CommunicationGenerator
+from .inbox_manager import InboxManager
+from .participation_balancer import ParticipationBalancer
+from .quality_metrics import QualityMetricsTracker
 
 logger = logging.getLogger(__name__)
 
@@ -249,9 +253,9 @@ class SimulationEngine:
         self.chat_gateway = chat_gateway
         self.sim_manager_email = sim_manager_email
         self.sim_manager_handle = sim_manager_handle
-        self.planner = planner or GPTPlanner()
-        self._stub_planner = StubPlanner()
         self.hours_per_day = hours_per_day
+        self.planner = planner or GPTPlanner(hours_per_day=hours_per_day)
+        self._stub_planner = StubPlanner()
         self.project_duration_weeks = 4
         self._project_plan_cache: dict[str, Any] | None = None
         self._planner_model_hint: str | None = None
@@ -326,6 +330,69 @@ class SimulationEngine:
             logger.error(f"Failed to parse auto-pause configuration, defaulting to enabled: {exc}")
             self._auto_pause_enabled = True
         
+        # Initialize communication diversity components
+        # Note: These will be properly initialized in start() when seed is available
+        self.communication_generator: CommunicationGenerator | None = None
+        self.inbox_manager = InboxManager()
+        self.participation_balancer = ParticipationBalancer(
+            enabled=os.getenv("VDOS_PARTICIPATION_BALANCE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+        )
+        self.quality_metrics = QualityMetricsTracker()
+        
+        # Daily message limits tracking (safety net)
+        # Key: (person_id, day_index), Value: {"email": count, "chat": count}
+        self._daily_message_counts: dict[tuple[int, int], dict[str, int]] = {}
+        
+        # Volume metrics tracking for monitoring and debugging
+        # Key: day_index, Value: dict with metrics
+        self._volume_metrics: dict[int, dict[str, Any]] = {}
+        
+        # Email Volume Reduction Configuration (v2.0)
+        # New configuration variables for purposeful communication
+        try:
+            env_auto_fallback = os.getenv("VDOS_ENABLE_AUTO_FALLBACK", "false").strip().lower()
+            self._enable_auto_fallback = env_auto_fallback in {"1", "true", "yes", "on"}
+            logger.info(f"Auto-fallback communication: {'enabled' if self._enable_auto_fallback else 'disabled'}")
+        except Exception as exc:
+            logger.error(f"Failed to parse VDOS_ENABLE_AUTO_FALLBACK, defaulting to disabled: {exc}")
+            self._enable_auto_fallback = False
+        
+        try:
+            env_inbox_replies = os.getenv("VDOS_ENABLE_INBOX_REPLIES", "true").strip().lower()
+            self._enable_inbox_replies = env_inbox_replies in {"1", "true", "yes", "on"}
+            logger.info(f"Inbox-driven replies: {'enabled' if self._enable_inbox_replies else 'disabled'}")
+        except Exception as exc:
+            logger.error(f"Failed to parse VDOS_ENABLE_INBOX_REPLIES, defaulting to enabled: {exc}")
+            self._enable_inbox_replies = True
+        
+        try:
+            self._inbox_reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.3"))
+            if not 0.0 <= self._inbox_reply_probability <= 1.0:
+                logger.warning(f"VDOS_INBOX_REPLY_PROBABILITY must be between 0.0 and 1.0, got {self._inbox_reply_probability}, defaulting to 0.3")
+                self._inbox_reply_probability = 0.3
+        except ValueError:
+            logger.warning("Invalid VDOS_INBOX_REPLY_PROBABILITY value, defaulting to 0.3")
+            self._inbox_reply_probability = 0.3
+        
+        # Communication diversity configuration (legacy, used when auto-fallback enabled)
+        try:
+            self._threading_rate = float(os.getenv("VDOS_THREADING_RATE", "0.3"))
+            if not 0.0 <= self._threading_rate <= 1.0:
+                logger.warning(f"VDOS_THREADING_RATE must be between 0.0 and 1.0, got {self._threading_rate}, defaulting to 0.3")
+                self._threading_rate = 0.3
+        except ValueError:
+            logger.warning("Invalid VDOS_THREADING_RATE value, defaulting to 0.3")
+            self._threading_rate = 0.3
+        
+        try:
+            self._fallback_probability = float(os.getenv("VDOS_FALLBACK_PROBABILITY", "0.6"))
+            if not 0.0 <= self._fallback_probability <= 1.0:
+                logger.warning(f"VDOS_FALLBACK_PROBABILITY must be between 0.0 and 1.0, got {self._fallback_probability}, defaulting to 0.6")
+                self._fallback_probability = 0.6
+        except ValueError:
+            logger.warning("Invalid VDOS_FALLBACK_PROBABILITY value, defaulting to 0.6")
+            self._fallback_probability = 0.6
+        
         # Initialise DB and runtime state
         execute_script(SIM_SCHEMA)
         self._apply_migrations()
@@ -350,9 +417,956 @@ class SimulationEngine:
         self._last_contact[cooldown_key] = tick
         return True
     
+    def _check_daily_limits(
+        self,
+        person_id: int,
+        day_index: int,
+        channel: str
+    ) -> bool:
+        """
+        Check if persona has reached daily message limits.
+        
+        Returns True if message can be sent, False if limit reached.
+        """
+        try:
+            max_emails = int(os.getenv("VDOS_MAX_EMAILS_PER_DAY", "50"))
+        except ValueError:
+            logger.warning("Invalid VDOS_MAX_EMAILS_PER_DAY value, defaulting to 50")
+            max_emails = 50
+        
+        try:
+            max_chats = int(os.getenv("VDOS_MAX_CHATS_PER_DAY", "100"))
+        except ValueError:
+            logger.warning("Invalid VDOS_MAX_CHATS_PER_DAY value, defaulting to 100")
+            max_chats = 100
+        
+        key = (person_id, day_index)
+        counts = self._daily_message_counts.get(key, {"email": 0, "chat": 0})
+        
+        if channel == "email" and counts["email"] >= max_emails:
+            logger.warning(
+                f"[DAILY_LIMIT] Person {person_id} reached email limit "
+                f"({max_emails}/day) on day {day_index}"
+            )
+            # Track that limit was hit
+            if day_index not in self._volume_metrics:
+                self._volume_metrics[day_index] = {
+                    "total_emails": 0,
+                    "total_chats": 0,
+                    "emails_by_person": {},
+                    "chats_by_person": {},
+                    "json_communications": 0,
+                    "inbox_replies": 0,
+                    "daily_limits_hit": [],
+                }
+            limit_event = {"person_id": person_id, "channel": "email", "limit": max_emails}
+            if limit_event not in self._volume_metrics[day_index]["daily_limits_hit"]:
+                self._volume_metrics[day_index]["daily_limits_hit"].append(limit_event)
+            return False
+        
+        if channel == "chat" and counts["chat"] >= max_chats:
+            logger.warning(
+                f"[DAILY_LIMIT] Person {person_id} reached chat limit "
+                f"({max_chats}/day) on day {day_index}"
+            )
+            # Track that limit was hit
+            if day_index not in self._volume_metrics:
+                self._volume_metrics[day_index] = {
+                    "total_emails": 0,
+                    "total_chats": 0,
+                    "emails_by_person": {},
+                    "chats_by_person": {},
+                    "json_communications": 0,
+                    "inbox_replies": 0,
+                    "daily_limits_hit": [],
+                }
+            limit_event = {"person_id": person_id, "channel": "chat", "limit": max_chats}
+            if limit_event not in self._volume_metrics[day_index]["daily_limits_hit"]:
+                self._volume_metrics[day_index]["daily_limits_hit"].append(limit_event)
+            return False
+        
+        return True
+    
+    def _record_daily_message(
+        self,
+        person_id: int,
+        day_index: int,
+        channel: str
+    ) -> None:
+        """Record a sent message for daily limit tracking."""
+        key = (person_id, day_index)
+        if key not in self._daily_message_counts:
+            self._daily_message_counts[key] = {"email": 0, "chat": 0}
+        
+        self._daily_message_counts[key][channel] += 1
+        
+        # Also update volume metrics
+        self._update_volume_metrics(person_id, day_index, channel)
+    
+    def _update_volume_metrics(
+        self,
+        person_id: int,
+        day_index: int,
+        channel: str,
+        source: str = "unknown"
+    ) -> None:
+        """Update volume metrics for monitoring and debugging."""
+        if day_index not in self._volume_metrics:
+            self._volume_metrics[day_index] = {
+                "total_emails": 0,
+                "total_chats": 0,
+                "emails_by_person": {},
+                "chats_by_person": {},
+                "json_communications": 0,
+                "inbox_replies": 0,
+                "daily_limits_hit": [],
+            }
+        
+        metrics = self._volume_metrics[day_index]
+        
+        if channel == "email":
+            metrics["total_emails"] += 1
+            metrics["emails_by_person"][person_id] = metrics["emails_by_person"].get(person_id, 0) + 1
+        elif channel == "chat":
+            metrics["total_chats"] += 1
+            metrics["chats_by_person"][person_id] = metrics["chats_by_person"].get(person_id, 0) + 1
+        
+        # Track source if provided
+        if source == "json":
+            metrics["json_communications"] += 1
+        elif source == "inbox_reply":
+            metrics["inbox_replies"] += 1
+    
+    def get_volume_metrics(self) -> dict[str, Any]:
+        """Get volume metrics for the current simulation day."""
+        state = self.get_state()
+        current_tick = state.current_tick
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (current_tick - 1) // day_ticks if current_tick > 0 else 0
+        
+        # Get metrics for current day
+        metrics = self._volume_metrics.get(day_index, {
+            "total_emails": 0,
+            "total_chats": 0,
+            "emails_by_person": {},
+            "chats_by_person": {},
+            "json_communications": 0,
+            "inbox_replies": 0,
+            "daily_limits_hit": [],
+        })
+        
+        # Calculate averages
+        people = self.list_people()
+        active_people_count = len(people) if people else 1
+        
+        avg_emails_per_person = metrics["total_emails"] / active_people_count if active_people_count > 0 else 0
+        avg_chats_per_person = metrics["total_chats"] / active_people_count if active_people_count > 0 else 0
+        
+        # Calculate rates
+        total_communications = metrics["json_communications"] + metrics["inbox_replies"]
+        json_communication_rate = (
+            metrics["json_communications"] / total_communications 
+            if total_communications > 0 else 0
+        )
+        inbox_reply_rate = (
+            metrics["inbox_replies"] / total_communications 
+            if total_communications > 0 else 0
+        )
+        
+        # Get threading rate from quality metrics
+        quality_metrics = self.quality_metrics.get_all_metrics()
+        threading_rate = quality_metrics.get("threading_rate", {}).get("current", 0)
+        
+        return {
+            "day_index": day_index,
+            "current_tick": current_tick,
+            "total_emails_today": metrics["total_emails"],
+            "total_chats_today": metrics["total_chats"],
+            "avg_emails_per_person": round(avg_emails_per_person, 2),
+            "avg_chats_per_person": round(avg_chats_per_person, 2),
+            "json_communication_rate": round(json_communication_rate, 3),
+            "inbox_reply_rate": round(inbox_reply_rate, 3),
+            "threading_rate": round(threading_rate, 3),
+            "daily_limits_hit": metrics.get("daily_limits_hit", []),
+            "emails_by_person": metrics["emails_by_person"],
+            "chats_by_person": metrics["chats_by_person"],
+        }
+    
     # --- Scheduled comms parsing/dispatch ---
+
+    def _try_parse_json_communications(self, plan_text: str) -> list[dict[str, Any]] | None:
+        """
+        Attempt to extract and parse JSON communications block from plan text.
+        Returns list of communication dicts if successful, None if JSON not found or invalid.
+        """
+        import json
+        import re
+
+        # Try to find JSON block in the plan (between ```json and ``` or just {...})
+        json_patterns = [
+            r'```json\s*\n(.*?)\n```',  # Markdown JSON code block
+            r'```\s*\n(\{.*?\})\n```',   # Generic code block with JSON
+            r'(\{[\s\S]*"communications"[\s\S]*\})',  # Raw JSON object
+        ]
+
+        json_text = None
+        for pattern in json_patterns:
+            match = re.search(pattern, plan_text, re.DOTALL | re.IGNORECASE)
+            if match:
+                json_text = match.group(1).strip()
+                break
+
+        if not json_text:
+            return None
+
+        # Try to parse JSON
+        try:
+            data = json.loads(json_text)
+            if isinstance(data, dict) and 'communications' in data:
+                return data['communications']
+            return None
+        except json.JSONDecodeError:
+            # Attempt to repair common JSON errors
+            repaired = self._repair_json(json_text)
+            if repaired:
+                try:
+                    data = json.loads(repaired)
+                    if isinstance(data, dict) and 'communications' in data:
+                        logger.info(f"Successfully repaired malformed JSON in plan")
+                        return data['communications']
+                except json.JSONDecodeError:
+                    pass
+
+            logger.debug(f"Failed to parse JSON communications block")
+            return None
+
+    def _repair_json(self, json_text: str) -> str | None:
+        """
+        Attempt to fix common JSON formatting errors made by LLMs.
+        Returns repaired JSON string or None if repair fails.
+        """
+        try:
+            # Fix common issues
+            repaired = json_text
+
+            # Remove trailing commas before } or ]
+            repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
+
+            # Replace single quotes with double quotes (be careful with apostrophes)
+            # Only replace if they're likely JSON quotes (after : or [ or ,)
+            repaired = re.sub(r"(?<=:)\s*'([^']*)'", r' "\1"', repaired)
+            repaired = re.sub(r"(?<=\[)\s*'([^']*)'", r' "\1"', repaired)
+            repaired = re.sub(r"(?<=,)\s*'([^']*)'", r' "\1"', repaired)
+
+            # Remove JSON comments (// ... or /* ... */)
+            repaired = re.sub(r'//.*?$', '', repaired, flags=re.MULTILINE)
+            repaired = re.sub(r'/\*.*?\*/', '', repaired, flags=re.DOTALL)
+
+            # Fix unescaped newlines in strings (rough heuristic)
+            # This is tricky, so we'll skip it for now
+
+            return repaired
+        except Exception:
+            return None
+
+    def _process_json_communications(
+        self,
+        communications: list[dict[str, Any]],
+        current_tick: int,
+        person: PersonRead,
+        source: str = "json"
+    ) -> None:
+        """
+        Process parsed JSON communications and schedule them.
+        
+        Args:
+            communications: List of communication dicts
+            current_tick: Current simulation tick
+            person: Persona sending the communications
+            source: Source of communications ('json' or 'fallback')
+        """
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        day_index = (current_tick - 1) // ticks_per_day
+        tick_of_day = (current_tick - 1) % ticks_per_day
+        base_tick = day_index * ticks_per_day + 1
+        sched = self._scheduled_comms.setdefault(person.id, {})
+
+        for comm in communications:
+            try:
+                comm_type = comm.get('type', '').lower()
+                time_str = comm.get('time', '')
+
+                if not time_str or not comm_type:
+                    continue
+
+                # Parse time
+                try:
+                    hh, mm = [int(x) for x in time_str.split(':', 1)]
+                    minutes = hh * 60 + mm
+                    scheduled_tick_of_day = int(round(minutes * ticks_per_day / 1440))
+                except Exception:
+                    logger.warning(f"Invalid time format in JSON communication: {time_str}")
+                    continue
+
+                # Skip if time already passed
+                if scheduled_tick_of_day <= tick_of_day:
+                    continue
+
+                t = base_tick + scheduled_tick_of_day
+
+                # Build entry based on type
+                if comm_type == 'email':
+                    target = comm.get('to', '').strip()
+                    if not target:
+                        continue
+
+                    # Combine subject and body with | separator
+                    subject = comm.get('subject', '').strip()
+                    body = comm.get('body', '').strip()
+                    payload = f"{subject} | {body}" if subject and body else subject or body
+
+                    entry = {
+                        'channel': 'email',
+                        'target': target,
+                        'payload': payload,
+                        '_source': source  # Track source for metrics
+                    }
+
+                    # Add cc/bcc if present
+                    cc = comm.get('cc', [])
+                    bcc = comm.get('bcc', [])
+                    if cc:
+                        entry['cc'] = cc if isinstance(cc, list) else [x.strip() for x in cc.split(',')]
+                    if bcc:
+                        entry['bcc'] = bcc if isinstance(bcc, list) else [x.strip() for x in bcc.split(',')]
+
+                    # Check for reply_to
+                    reply_to = comm.get('reply_to')
+                    if reply_to:
+                        entry['reply_to_email_id'] = reply_to
+
+                elif comm_type == 'chat':
+                    target = comm.get('target', '').strip()
+                    message = comm.get('message', '').strip()
+
+                    if not target or not message:
+                        continue
+
+                    entry = {
+                        'channel': 'chat',
+                        'target': target,
+                        'payload': message,
+                        '_source': source  # Track source for metrics
+                    }
+
+                else:
+                    logger.warning(f"Unknown communication type in JSON: {comm_type}")
+                    continue
+
+                # Add to schedule (deduplicate)
+                existing = sched.setdefault(t, [])
+                if entry not in existing:
+                    existing.append(entry)
+
+            except Exception as e:
+                logger.warning(f"Error processing JSON communication: {e}")
+                continue
+
+    def _get_recent_hourly_plan(self, person_id: int) -> str | None:
+        """
+        Get the most recent hourly plan for a persona.
+        
+        Used to provide context when generating inbox-driven replies.
+        
+        Args:
+            person_id: ID of the persona
+            
+        Returns:
+            Most recent hourly plan content, or None if not found
+        """
+        try:
+            with get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT content FROM worker_plans
+                    WHERE person_id = ? AND plan_type = 'hourly'
+                    ORDER BY tick DESC LIMIT 1
+                """, (person_id,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            logger.warning(f"Failed to get recent hourly plan for person_id={person_id}: {e}")
+            return None
+
+    def _get_recent_daily_plan(self, person_id: int) -> str | None:
+        """
+        Get the most recent daily plan for a persona.
+        
+        Used to provide context when generating inbox-driven replies.
+        
+        Args:
+            person_id: ID of the persona
+            
+        Returns:
+            Most recent daily plan content, or None if not found
+        """
+        try:
+            with get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT content FROM worker_plans
+                    WHERE person_id = ? AND plan_type = 'daily'
+                    ORDER BY tick DESC LIMIT 1
+                """, (person_id,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            logger.warning(f"Failed to get recent daily plan for person_id={person_id}: {e}")
+            return None
+
+    def _try_generate_inbox_reply(
+        self,
+        person: PersonRead,
+        current_tick: int,
+        people_by_id: dict[int, PersonRead]
+    ) -> bool:
+        """
+        Generate a reply to an unreplied inbox message if appropriate.
+        
+        This method implements inbox-driven reply generation as part of the
+        email volume reduction strategy. Instead of automatic fallback communications,
+        personas now reply to received messages that need responses.
+        
+        Requirements: R-2.1, R-2.2, R-2.3, R-2.4, R-2.5
+        
+        Args:
+            person: The persona who might reply
+            current_tick: Current simulation tick
+            people_by_id: Dictionary of all personas by ID
+            
+        Returns:
+            True if a reply was generated and sent, False otherwise
+        """
+        # Check if inbox replies are enabled
+        inbox_replies_enabled = os.getenv("VDOS_ENABLE_INBOX_REPLIES", "true").strip().lower() in {"1", "true", "yes", "on"}
+        if not inbox_replies_enabled:
+            return False
+        
+        # Task 6: Block ALL communication generation for away/offline personas
+        # Check status before attempting any communication generation
+        override = self._status_overrides.get(person.id)
+        offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+        if override and (override[0] in offline_statuses):
+            logger.debug(
+                f"[STATUS_BLOCK] Blocking inbox reply for {person.name} due to status: {override[0]} "
+                f"(tick={current_tick})"
+            )
+            return False
+        
+        # Get reply probability from environment
+        reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.3"))
+        if reply_probability <= 0:
+            return False
+        
+        # Get unreplied messages from inbox
+        inbox_messages = self.inbox_manager.get_inbox(person.id, max_messages=5)
+        unreplied = [msg for msg in inbox_messages if msg.needs_reply and msg.replied_tick is None]
+        
+        if not unreplied:
+            logger.debug(f"[INBOX_REPLY] No unreplied messages for {person.name}")
+            return False
+        
+        # Limit to 1 reply per hour to avoid reply storms
+        # Check if already replied this hour
+        hour_start = (current_tick // 60) * 60
+        recent_replies = [
+            msg for msg in inbox_messages 
+            if msg.replied_tick and msg.replied_tick >= hour_start
+        ]
+        if recent_replies:
+            logger.debug(
+                f"[INBOX_REPLY] Already replied this hour for {person.name}, skipping "
+                f"(replied_tick={recent_replies[0].replied_tick}, hour_start={hour_start})"
+            )
+            return False
+        
+        # Probabilistic reply decision (deterministic with seed)
+        if self._random.random() > reply_probability:
+            logger.debug(
+                f"[INBOX_REPLY] Probability check failed for {person.name} "
+                f"(probability={reply_probability})"
+            )
+            return False
+        
+        # Select message to reply to (prioritize questions and requests)
+        # InboxManager already prioritizes messages needing replies
+        message_to_reply = unreplied[0]
+        
+        logger.info(
+            f"[INBOX_REPLY] Attempting to generate reply for {person.name} "
+            f"to message from {message_to_reply.sender_name} "
+            f"(type={message_to_reply.message_type}, tick={current_tick})"
+        )
+        
+        # Generate reply using CommunicationGenerator
+        if self.communication_generator is None:
+            logger.warning(
+                f"[INBOX_REPLY] CommunicationGenerator not available for {person.name}, "
+                f"skipping inbox reply"
+            )
+            return False
+        
+        try:
+            # Get project context and collaborators
+            ticks_per_day = max(1, self.hours_per_day * 60)
+            current_week = (current_tick - 1) // (ticks_per_day * 5)
+            active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+            project = active_projects[0] if active_projects else None
+            
+            # Get project-specific collaborators (only people on same projects)
+            collaborators = self._get_project_collaborators(
+                person_id=person.id,
+                current_week=current_week,
+                all_people=people_by_id
+            )
+            
+            # Get recent hourly and daily plans for context
+            hourly_plan = self._get_recent_hourly_plan(person.id)
+            daily_plan = self._get_recent_daily_plan(person.id)
+            
+            # Format inbox message for CommunicationGenerator
+            inbox_context = [{
+                "sender_name": message_to_reply.sender_name,
+                "subject": message_to_reply.subject,
+                "body": message_to_reply.body,
+                "message_type": message_to_reply.message_type,
+                "thread_id": message_to_reply.thread_id
+            }]
+            
+            # Generate reply
+            logger.debug(
+                f"[INBOX_REPLY] Calling CommunicationGenerator for {person.name} "
+                f"with inbox_context={len(inbox_context)} messages"
+            )
+            
+            generated_comms = self.communication_generator.generate_fallback_communications(
+                person=person,
+                current_tick=current_tick,
+                hourly_plan=hourly_plan,
+                daily_plan=daily_plan,
+                project=project,
+                inbox_messages=inbox_context,
+                collaborators=collaborators
+            )
+            
+            if not generated_comms:
+                logger.debug(
+                    f"[INBOX_REPLY] No communications generated for {person.name}"
+                )
+                return False
+            
+            logger.info(
+                f"[INBOX_REPLY] Generated {len(generated_comms)} communications "
+                f"for {person.name} in response to {message_to_reply.sender_name}"
+            )
+            
+            # Process the generated reply through the standard communication pipeline
+            # Add time field to communications (schedule for immediate dispatch)
+            current_hour = (current_tick % (ticks_per_day)) // 60
+            current_minute = (current_tick % (ticks_per_day)) % 60
+            time_str = f"{current_hour:02d}:{current_minute:02d}"
+            
+            for comm in generated_comms:
+                if 'time' not in comm:
+                    comm['time'] = time_str
+                # If replying to an email, add thread_id for threading
+                if comm.get('type') == 'email' and message_to_reply.thread_id:
+                    comm['thread_id'] = message_to_reply.thread_id
+            
+            self._process_json_communications(
+                generated_comms, 
+                current_tick, 
+                person, 
+                source="inbox_reply"
+            )
+            
+            # Dispatch the reply immediately
+            se, sc = self._dispatch_scheduled(person, current_tick, people_by_id)
+            
+            if se > 0 or sc > 0:
+                # Mark message as replied
+                self.inbox_manager.mark_replied(
+                    person_id=person.id,
+                    message_id=message_to_reply.message_id,
+                    replied_tick=current_tick
+                )
+                logger.info(
+                    f"[INBOX_REPLY] {person.name} replied to message from "
+                    f"{message_to_reply.sender_name} (emails={se}, chats={sc}, tick={current_tick})"
+                )
+                return True
+            else:
+                logger.debug(
+                    f"[INBOX_REPLY] No messages dispatched for {person.name} "
+                    f"after generating reply"
+                )
+                return False
+        
+        except Exception as e:
+            logger.warning(
+                f"[INBOX_REPLY] Failed to generate inbox reply for {person.name}: {e}",
+                exc_info=True
+            )
+            return False
+
+    def _prepare_inbox_reply_request(
+        self,
+        person: PersonRead,
+        current_tick: int,
+        people_by_id: dict[int, PersonRead],
+        day_index: int,
+        person_project: dict[str, Any],
+        hourly_summary: str,
+        daily_summary: str,
+        current_week: int
+    ) -> dict[str, Any] | None:
+        """
+        Check if a persona should generate an inbox reply and prepare the request data.
+
+        This method performs all the checks (enabled, status, probability, limits)
+        and returns a request dict if the persona should reply, or None otherwise.
+
+        Used by batch processing to collect all inbox reply requests before processing.
+
+        Args:
+            person: The persona who might reply
+            current_tick: Current simulation tick
+            people_by_id: Dictionary of all personas by ID
+            day_index: Current day index
+            person_project: Project context for the persona
+            hourly_summary: Summary of hourly plan
+            daily_summary: Summary of daily plan
+            current_week: Current week number
+
+        Returns:
+            Request dict if persona should reply, None otherwise
+        """
+        # Check if inbox replies are enabled
+        inbox_replies_enabled = os.getenv("VDOS_ENABLE_INBOX_REPLIES", "true").strip().lower() in {"1", "true", "yes", "on"}
+        if not inbox_replies_enabled:
+            return None
+
+        # Task 6: Block ALL communication generation for away/offline personas
+        override = self._status_overrides.get(person.id)
+        offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+        if override and (override[0] in offline_statuses):
+            logger.debug(
+                f"[INBOX_REPLY_BATCH] Blocking inbox reply for {person.name} due to status: {override[0]} "
+                f"(tick={current_tick})"
+            )
+            return None
+
+        # Get reply probability from environment
+        reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.3"))
+        if reply_probability <= 0:
+            return None
+
+        # Get unreplied messages from inbox
+        inbox_messages = self.inbox_manager.get_inbox(person.id, max_messages=5)
+        unreplied = [msg for msg in inbox_messages if msg.needs_reply and msg.replied_tick is None]
+
+        if not unreplied:
+            return None
+
+        # Limit to 1 reply per hour to avoid reply storms
+        hour_start = (current_tick // 60) * 60
+        recent_replies = [
+            msg for msg in inbox_messages
+            if msg.replied_tick and msg.replied_tick >= hour_start
+        ]
+        if recent_replies:
+            logger.debug(
+                f"[INBOX_REPLY_BATCH] Already replied this hour for {person.name}, skipping "
+                f"(replied_tick={recent_replies[0].replied_tick}, hour_start={hour_start})"
+            )
+            return None
+
+        # Probabilistic reply decision (deterministic with seed)
+        if self._random.random() > reply_probability:
+            return None
+
+        # Check if CommunicationGenerator is available
+        if self.communication_generator is None:
+            logger.warning(
+                f"[INBOX_REPLY_BATCH] CommunicationGenerator not available for {person.name}, "
+                f"skipping inbox reply"
+            )
+            return None
+
+        # Select message to reply to (prioritize questions and requests)
+        message_to_reply = unreplied[0]
+
+        # Get project context and collaborators
+        active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+        project = active_projects[0] if active_projects else None
+        
+        # Get project-specific collaborators (only people on same projects)
+        collaborators = self._get_project_collaborators(
+            person_id=person.id,
+            current_week=current_week,
+            all_people=people_by_id
+        )
+        
+        hourly_plan = self._get_recent_hourly_plan(person.id)
+        daily_plan = self._get_recent_daily_plan(person.id)
+
+        # Format inbox message for CommunicationGenerator
+        inbox_context = [{
+            "sender_name": message_to_reply.sender_name,
+            "subject": message_to_reply.subject,
+            "body": message_to_reply.body,
+            "message_type": message_to_reply.message_type,
+            "thread_id": message_to_reply.thread_id
+        }]
+
+        logger.info(
+            f"[INBOX_REPLY_BATCH] Collecting reply request for {person.name} "
+            f"to message from {message_to_reply.sender_name} "
+            f"(type={message_to_reply.message_type}, tick={current_tick})"
+        )
+
+        # Return request dict for batch processing
+        return {
+            "person": person,
+            "current_tick": current_tick,
+            "hourly_plan": hourly_plan,
+            "daily_plan": daily_plan,
+            "project": project,
+            "inbox_messages": inbox_context,
+            "collaborators": collaborators,
+            "message_to_reply": message_to_reply,
+            "day_index": day_index
+        }
+
+    def _process_inbox_reply_batch(
+        self,
+        inbox_reply_requests: list[dict[str, Any]],
+        current_tick: int,
+        people_by_id: dict[int, PersonRead]
+    ) -> tuple[int, int]:
+        """
+        Process multiple inbox reply requests in batch using async parallelization.
+
+        This method implements batch processing for inbox replies, providing 4-5x
+        performance improvement over sequential processing when multiple personas
+        need to reply at the same time.
+
+        Performance: O(max(n)) instead of O(sum(n)) for n GPT API calls
+
+        Args:
+            inbox_reply_requests: List of request dicts from _prepare_inbox_reply_request
+            current_tick: Current simulation tick
+            people_by_id: Dictionary of all personas by ID
+
+        Returns:
+            Tuple of (emails_sent, chats_sent)
+        """
+        if not inbox_reply_requests:
+            return (0, 0)
+
+        logger.info(
+            f"[INBOX_REPLY_BATCH] Processing {len(inbox_reply_requests)} inbox reply requests "
+            f"(tick={current_tick})"
+        )
+
+        emails_sent = 0
+        chats_sent = 0
+
+        try:
+            # Use async batch processing for performance
+            import asyncio
+
+            batch_results = asyncio.run(
+                self.communication_generator.generate_batch_async(inbox_reply_requests)
+            )
+
+            # Process each result
+            for person, generated_comms in batch_results:
+                if not generated_comms:
+                    logger.debug(
+                        f"[INBOX_REPLY_BATCH] No communications generated for {person.name}"
+                    )
+                    continue
+
+                # Find the original request to get message context
+                req = next((r for r in inbox_reply_requests if r["person"].id == person.id), None)
+                if not req:
+                    logger.warning(
+                        f"[INBOX_REPLY_BATCH] Could not find request for {person.name}, skipping"
+                    )
+                    continue
+
+                message_to_reply = req["message_to_reply"]
+                day_index = req["day_index"]
+
+                logger.info(
+                    f"[INBOX_REPLY_BATCH] Generated {len(generated_comms)} communications "
+                    f"for {person.name} in response to {message_to_reply.sender_name}"
+                )
+
+                # Add time and thread_id to communications
+                ticks_per_day = max(1, self.hours_per_day * 60)
+                current_hour = (current_tick % ticks_per_day) // 60
+                current_minute = (current_tick % ticks_per_day) % 60
+                time_str = f"{current_hour:02d}:{current_minute:02d}"
+
+                for comm in generated_comms:
+                    if 'time' not in comm:
+                        comm['time'] = time_str
+                    # Add thread_id for email replies
+                    if comm.get('type') == 'email' and message_to_reply.thread_id:
+                        comm['thread_id'] = message_to_reply.thread_id
+
+                # Process through standard pipeline
+                self._process_json_communications(
+                    generated_comms,
+                    current_tick,
+                    person,
+                    source="inbox_reply_batch"
+                )
+
+                # Dispatch immediately
+                se, sc = self._dispatch_scheduled(person, current_tick, people_by_id)
+                emails_sent += se
+                chats_sent += sc
+
+                # Mark as replied and record stats
+                if se > 0 or sc > 0:
+                    self.inbox_manager.mark_replied(
+                        person_id=person.id,
+                        message_id=message_to_reply.message_id,
+                        replied_tick=current_tick
+                    )
+
+                    # Record for daily limits tracking
+                    if se > 0:
+                        self._record_daily_message(person.id, day_index, 'email')
+                    if sc > 0:
+                        self._record_daily_message(person.id, day_index, 'chat')
+
+                    logger.info(
+                        f"[INBOX_REPLY_BATCH] {person.name} replied to {message_to_reply.sender_name} "
+                        f"(emails={se}, chats={sc}, tick={current_tick})"
+                    )
+                else:
+                    logger.debug(
+                        f"[INBOX_REPLY_BATCH] No messages dispatched for {person.name} "
+                        f"after generating reply"
+                    )
+
+            logger.info(
+                f"[INBOX_REPLY_BATCH] Batch processing complete: "
+                f"{emails_sent} emails, {chats_sent} chats sent (tick={current_tick})"
+            )
+
+        except Exception as e:
+            logger.warning(
+                f"[INBOX_REPLY_BATCH] Batch processing failed: {e}, "
+                f"falling back to synchronous processing",
+                exc_info=True
+            )
+
+            # Fallback to synchronous processing if batch fails
+            for req in inbox_reply_requests:
+                try:
+                    person = req["person"]
+                    message_to_reply = req["message_to_reply"]
+                    day_index = req["day_index"]
+
+                    logger.debug(
+                        f"[INBOX_REPLY_FALLBACK] Processing request for {person.name} "
+                        f"synchronously"
+                    )
+
+                    # Generate reply synchronously
+                    generated_comms = self.communication_generator.generate_fallback_communications(
+                        person=person,
+                        current_tick=req["current_tick"],
+                        hourly_plan=req["hourly_plan"],
+                        daily_plan=req["daily_plan"],
+                        project=req["project"],
+                        inbox_messages=req["inbox_messages"],
+                        collaborators=req["collaborators"]
+                    )
+
+                    if not generated_comms:
+                        continue
+
+                    # Same processing as batch path
+                    ticks_per_day = max(1, self.hours_per_day * 60)
+                    current_hour = (current_tick % ticks_per_day) // 60
+                    current_minute = (current_tick % ticks_per_day) % 60
+                    time_str = f"{current_hour:02d}:{current_minute:02d}"
+
+                    for comm in generated_comms:
+                        if 'time' not in comm:
+                            comm['time'] = time_str
+                        if comm.get('type') == 'email' and message_to_reply.thread_id:
+                            comm['thread_id'] = message_to_reply.thread_id
+
+                    self._process_json_communications(
+                        generated_comms,
+                        current_tick,
+                        person,
+                        source="inbox_reply_fallback"
+                    )
+
+                    se, sc = self._dispatch_scheduled(person, current_tick, people_by_id)
+                    emails_sent += se
+                    chats_sent += sc
+
+                    if se > 0 or sc > 0:
+                        self.inbox_manager.mark_replied(
+                            person_id=person.id,
+                            message_id=message_to_reply.message_id,
+                            replied_tick=current_tick
+                        )
+
+                        if se > 0:
+                            self._record_daily_message(person.id, day_index, 'email')
+                        if sc > 0:
+                            self._record_daily_message(person.id, day_index, 'chat')
+
+                        logger.info(
+                            f"[INBOX_REPLY_FALLBACK] {person.name} replied to {message_to_reply.sender_name} "
+                            f"(emails={se}, chats={sc}, tick={current_tick})"
+                        )
+
+                except Exception as e2:
+                    logger.warning(
+                        f"[INBOX_REPLY_FALLBACK] Failed for {person.name}: {e2}",
+                        exc_info=True
+                    )
+
+        return (emails_sent, chats_sent)
+
     def _schedule_from_hourly_plan(self, person: PersonRead, plan_text: str, current_tick: int) -> None:
         import re
+
+        # Try JSON parsing first
+        json_comms = self._try_parse_json_communications(plan_text)
+        if json_comms is not None:
+            logger.info(
+                f"[JSON_COMMS] Parsed {len(json_comms)} communications from JSON "
+                f"for {person.name} (tick={current_tick})"
+            )
+            self._process_json_communications(json_comms, current_tick, person)
+            return
+
+        # Fall back to regex parsing (supports both English and Korean)
+        logger.debug(
+            f"[REGEX_FALLBACK] No JSON found, using regex parsing "
+            f"for {person.name} (tick={current_tick})"
+        )
+
         ticks_per_day = max(1, self.hours_per_day * 60)
         day_index = (current_tick - 1) // ticks_per_day
         tick_of_day = (current_tick - 1) % ticks_per_day
@@ -361,14 +1375,14 @@ class SimulationEngine:
         if not lines:
             return
         sched = self._scheduled_comms.setdefault(person.id, {})
-        # Accept optional cc/bcc prior to ':'
+
+        # English patterns
         email_re = re.compile(
             r"^Email\s+at\s+(\d{2}:\d{2})\s+to\s+([^:]+?)"
             r"(?:\s+cc\s+([^:]+?))?"
             r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
-        # Reply to email syntax: "Reply at HH:MM to [email-id] cc PERSON: Subject | Body"
         reply_re = re.compile(
             r"^Reply\s+at\s+(\d{2}:\d{2})\s+to\s+\[([^\]]+)\]"
             r"(?:\s+cc\s+([^:]+?))?"
@@ -376,8 +1390,23 @@ class SimulationEngine:
             re.I,
         )
         chat_re = re.compile(r"^Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
+
+        # Korean patterns (이메일, 채팅, 답장)
+        email_ko_re = re.compile(
+            r"^이메일\s+(\d{2}:\d{2})에\s+([^:]+?)"
+            r"(?:\s+참조\s+([^:]+?))?"
+            r"(?:\s+숨은참조\s+([^:]+?))?\s*:\s*(.*)$",
+            re.I,
+        )
+        reply_ko_re = re.compile(
+            r"^답장\s+(\d{2}:\d{2})에\s+\[([^\]]+)\]"
+            r"(?:\s+참조\s+([^:]+?))?"
+            r"(?:\s+숨은참조\s+([^:]+?))?\s*:\s*(.*)$",
+            re.I,
+        )
+        chat_ko_re = re.compile(r"^채팅\s+(\d{2}:\d{2})에\s+([^:]+)(?:과|와):\s*(.*)$", re.I)
+
         for ln in lines:
-            m = email_re.match(ln)
             channel = None
             when = None
             target = None
@@ -385,6 +1414,9 @@ class SimulationEngine:
             cc_raw = None
             bcc_raw = None
             reply_to_email_id = None
+
+            # Try English email pattern
+            m = email_re.match(ln)
             if m:
                 channel = 'email'
                 when = m.group(1)
@@ -393,21 +1425,48 @@ class SimulationEngine:
                 bcc_raw = (m.group(4) or '').strip()
                 payload = (m.group(5) or '').strip()
             else:
-                # Try reply syntax
-                m = reply_re.match(ln)
+                # Try Korean email pattern
+                m = email_ko_re.match(ln)
                 if m:
                     channel = 'email'
                     when = m.group(1)
-                    reply_to_email_id = (m.group(2) or '').strip()
+                    target = (m.group(2) or '').strip()
                     cc_raw = (m.group(3) or '').strip()
                     bcc_raw = (m.group(4) or '').strip()
                     payload = (m.group(5) or '').strip()
-                    # target will be determined from the parent email
                 else:
-                    m = chat_re.match(ln)
+                    # Try English reply syntax
+                    m = reply_re.match(ln)
                     if m:
-                        channel = 'chat'
-                        when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+                        channel = 'email'
+                        when = m.group(1)
+                        reply_to_email_id = (m.group(2) or '').strip()
+                        cc_raw = (m.group(3) or '').strip()
+                        bcc_raw = (m.group(4) or '').strip()
+                        payload = (m.group(5) or '').strip()
+                    else:
+                        # Try Korean reply syntax
+                        m = reply_ko_re.match(ln)
+                        if m:
+                            channel = 'email'
+                            when = m.group(1)
+                            reply_to_email_id = (m.group(2) or '').strip()
+                            cc_raw = (m.group(3) or '').strip()
+                            bcc_raw = (m.group(4) or '').strip()
+                            payload = (m.group(5) or '').strip()
+                        else:
+                            # Try English chat pattern
+                            m = chat_re.match(ln)
+                            if m:
+                                channel = 'chat'
+                                when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+                            else:
+                                # Try Korean chat pattern
+                                m = chat_ko_re.match(ln)
+                                if m:
+                                    channel = 'chat'
+                                    when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+
             if not channel:
                 continue
             try:
@@ -448,6 +1507,10 @@ class SimulationEngine:
         actions = by_tick.pop(current_tick, [])
         if not actions:
             return 0, 0
+        
+        # Calculate day index for daily limit tracking
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (current_tick - 1) // day_ticks
         # Helper to avoid simultaneous mirrored DMs: if both sides scheduled the same message
         # at the same minute, only the lower-id sender will fire.
         handle_index = {p.chat_handle.lower(): p for p in people_by_id.values()}
@@ -566,6 +1629,10 @@ class SimulationEngine:
                 if original_sender:
                     # If we found the parent email, reply to its sender
                     target = original_sender
+                    logger.info(
+                        f"[INBOX] Generating reply for {person.name} to email-id [{reply_to_email_id}] "
+                        f"(thread_id={thread_id}, tick={current_tick})"
+                    )
                 else:
                     # If email-id not found, log warning and skip
                     logger.warning(f"Reply email-id [{reply_to_email_id}] not found in recent emails for {person.name}")
@@ -617,6 +1684,10 @@ class SimulationEngine:
                 if thread_id is None:
                     thread_id = f"thread-{uuid.uuid4().hex[:16]}"
 
+                # Check daily limits before sending
+                if not self._check_daily_limits(person.id, day_index, 'email'):
+                    continue
+                
                 if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=body):
                     result = self.email_gateway.send_email(
                         sender=person.email_address,
@@ -626,9 +1697,32 @@ class SimulationEngine:
                         cc=cc_emails,
                         bcc=bcc_emails,
                         thread_id=thread_id,
-                        sent_at_iso=dt_iso
+                        sent_at_iso=dt_iso,
+                        persona_id=person.id
                     )
                     emails += 1
+                    
+                    # Get source for tracking
+                    source = act.get('_source', 'unknown')
+                    
+                    # Record the sent email for daily limit tracking and volume metrics
+                    self._record_daily_message(person.id, day_index, 'email')
+                    self._update_volume_metrics(person.id, day_index, 'email', source)
+                    
+                    # Track quality metrics
+                    # Check if message has project context (mentions project name or common project terms)
+                    has_project_context = False
+                    text_to_check = (subject + " " + body).lower()
+                    if any(term in text_to_check for term in ['project', '프로젝트', '[', 'milestone', '마일스톤']):
+                        has_project_context = True
+                    
+                    self.quality_metrics.record_email(
+                        subject=subject,
+                        thread_id=thread_id,
+                        has_project_context=has_project_context,
+                        source=source,
+                        person_id=person.id
+                    )
 
                     # Track sent email for threading context (store email_id if available)
                     if result and isinstance(result, dict):
@@ -653,6 +1747,24 @@ class SimulationEngine:
                                 if recipient_person.id not in self._recent_emails:
                                     self._recent_emails[recipient_person.id] = deque(maxlen=10)
                                 self._recent_emails[recipient_person.id].append(email_record)
+                                
+                                # Add to InboxManager for tracking and reply generation
+                                from .inbox_manager import InboxMessage
+                                message_type, needs_reply = self.inbox_manager.classify_message_type(subject, body, self._locale)
+                                inbox_msg = InboxMessage(
+                                    message_id=email_id,
+                                    sender_id=person.id,
+                                    sender_name=person.name,
+                                    subject=subject,
+                                    body=body,
+                                    thread_id=thread_id,
+                                    received_tick=current_tick,
+                                    message_type=message_type,
+                                    needs_reply=needs_reply,
+                                    channel='email'
+                                )
+                                self.inbox_manager.add_message(recipient_person.id, inbox_msg)
+                        
                         # Queue an inbound message to the primary recipient to enable a natural reply/ack during their next planning
                         primary_recipient = email_index.get((email_to or '').lower())
                         if primary_recipient is not None:
@@ -677,12 +1789,56 @@ class SimulationEngine:
                 r_handle = chat_to.lower()
                 if s_handle > r_handle:
                     continue
+                # Check daily limits before sending
+                if not self._check_daily_limits(person.id, day_index, 'chat'):
+                    continue
+                
                 if self._can_send(tick=current_tick, channel='chat', sender=person.chat_handle, recipient_key=(chat_to,), subject=None, body=payload):
-                    self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso)
+                    result = self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso, persona_id=person.id)
                     chats += 1
+                    
+                    # Get source for tracking
+                    source = act.get('_source', 'unknown')
+                    
+                    # Record the sent chat for daily limit tracking and volume metrics
+                    self._record_daily_message(person.id, day_index, 'chat')
+                    self._update_volume_metrics(person.id, day_index, 'chat', source)
+                    
+                    # Track quality metrics
+                    has_project_context = False
+                    text_to_check = payload.lower()
+                    if any(term in text_to_check for term in ['project', '프로젝트', '[', 'milestone', '마일스톤']):
+                        has_project_context = True
+                    
+                    source = act.get('_source', 'unknown')
+                    
+                    self.quality_metrics.record_chat(
+                        has_project_context=has_project_context,
+                        source=source,
+                        person_id=person.id
+                    )
+                    
                     # Queue inbound for recipient to enable conversational acks during their next planning cycle
                     recipient = handle_index.get(r_handle)
                     if recipient is not None:
+                        # Add to InboxManager for tracking
+                        from .inbox_manager import InboxMessage
+                        message_id = result.get('id', f'chat-{current_tick}-{chats}') if isinstance(result, dict) else f'chat-{current_tick}-{chats}'
+                        message_type, needs_reply = self.inbox_manager.classify_message_type(None, payload, self._locale)
+                        inbox_msg = InboxMessage(
+                            message_id=message_id,
+                            sender_id=person.id,
+                            sender_name=person.name,
+                            subject="",
+                            body=payload,
+                            thread_id=None,
+                            received_tick=current_tick,
+                            message_type=message_type,
+                            needs_reply=needs_reply,
+                            channel='chat'
+                        )
+                        self.inbox_manager.add_message(recipient.id, inbox_msg)
+                        
                         inbound = _InboundMessage(
                             sender_id=person.id,
                             sender_name=person.name,
@@ -1302,6 +2458,81 @@ class SimulationEngine:
 
             all_rows = list(rows) + [r for r in unassigned_rows if r["id"] not in assigned_ids]
             return [self._row_to_project_plan(row) for row in all_rows]
+
+    def _get_project_collaborators(
+        self,
+        person_id: int,
+        current_week: int,
+        all_people: dict[int, PersonRead]
+    ) -> list[PersonRead]:
+        """
+        Get collaborators for a person based on shared project assignments.
+        
+        Returns personas who are assigned to at least one of the same projects
+        as the given person. If a person has no project assignments (works on
+        unassigned projects), returns all other personas.
+        
+        Args:
+            person_id: ID of the person to get collaborators for
+            current_week: Current simulation week
+            all_people: Dictionary of all personas by ID
+            
+        Returns:
+            List of PersonRead objects representing project collaborators
+        """
+        with get_connection() as conn:
+            # Get projects assigned to this person
+            person_projects = conn.execute(
+                """
+                SELECT DISTINCT pa.project_id
+                FROM project_assignments pa
+                INNER JOIN project_plans pp ON pa.project_id = pp.id
+                WHERE pa.person_id = ?
+                AND pp.start_week <= ?
+                AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                """,
+                (person_id, current_week, current_week)
+            ).fetchall()
+            
+            person_project_ids = {row['project_id'] for row in person_projects}
+            
+            # If person has no specific project assignments, they work on unassigned projects
+            # In this case, return all other personas (existing behavior)
+            if not person_project_ids:
+                return [p for p in all_people.values() if p.id != person_id]
+            
+            # Get all people assigned to the same projects
+            collaborator_rows = conn.execute(
+                """
+                SELECT DISTINCT pa.person_id
+                FROM project_assignments pa
+                INNER JOIN project_plans pp ON pa.project_id = pp.id
+                WHERE pa.project_id IN ({})
+                AND pa.person_id != ?
+                AND pp.start_week <= ?
+                AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                """.format(','.join('?' * len(person_project_ids))),
+                (*person_project_ids, person_id, current_week, current_week)
+            ).fetchall()
+            
+            collaborator_ids = {row['person_id'] for row in collaborator_rows}
+            
+            # Also include people with no assignments (they work on unassigned projects)
+            people_with_no_assignments = conn.execute(
+                """
+                SELECT DISTINCT p.id
+                FROM people p
+                WHERE p.id NOT IN (SELECT DISTINCT person_id FROM project_assignments)
+                AND p.id != ?
+                """,
+                (person_id,)
+            ).fetchall()
+            
+            for row in people_with_no_assignments:
+                collaborator_ids.add(row['id'])
+            
+            # Return PersonRead objects for collaborators
+            return [all_people[pid] for pid in collaborator_ids if pid in all_people]
 
     def _resolve_department_head(
         self, people: Sequence[PersonRead], requested_name: str | None
@@ -1947,6 +3178,15 @@ class SimulationEngine:
         self._current_seed = seed
         self._random.seed(seed)
         self._reset_runtime_state()
+        
+        # Initialize CommunicationGenerator with seed, planner, and locale
+        self.communication_generator = CommunicationGenerator(
+            planner=self.planner,
+            locale=self._locale,
+            random_seed=seed
+        )
+        logger.info(f"Initialized CommunicationGenerator with seed={seed}, locale={self._locale}")
+        
         all_people = self.list_people()
         if not all_people:
             raise RuntimeError("Cannot start simulation without any personas")
@@ -1989,10 +3229,10 @@ class SimulationEngine:
                 if target:
                     if self._locale == 'ko':
                         self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?")
-                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "제목: 킥오프\n본문: 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
+                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "킥오프 | 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
                     else:
                         self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, f"Morning! Quick sync on priorities?")
-                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Subject: Quick kickoff\nBody: Lining up tasks for today — ping me with blockers.")
+                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Quick kickoff | Lining up tasks for today — ping me with blockers.")
         except Exception:
             pass
         status = self._fetch_state()
@@ -2375,7 +3615,7 @@ class SimulationEngine:
                     adjustments: list[str] = list(event_adjustments.get(person.id, []))
                     override = self._status_overrides.get(person.id)
                     # Respect offline-style overrides: do not plan while unavailable
-                    offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "휴가", "병가", "자리비움"}
+                    offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
                     if override and (override[0] in offline_statuses):
                         # Drain incoming into queue as reminders and skip planning
                         if incoming:
@@ -2472,6 +3712,7 @@ class SimulationEngine:
                                 recipient=sender_person.chat_handle,
                                 body=ack_body,
                                 sent_at_iso=(dt.isoformat() if dt else None),
+                                persona_id=person.id
                             )
                             chats_sent += 1
                         self._log_exchange(status.current_tick, person.id, sender_person.id, 'chat', None, ack_body)
@@ -2556,6 +3797,8 @@ class SimulationEngine:
                     plan_results = []
 
                 # PHASE 3: Process results and send communications
+                inbox_reply_requests = []  # Collect inbox reply requests for batch processing
+
                 for person, hourly_result in plan_results:
                     context = person_contexts[person.id]
                     override = context['override']
@@ -2576,176 +3819,60 @@ class SimulationEngine:
                         context=None,
                     )
 
+                    # Task 6: Block ALL communication generation for away/offline personas
+                    # Check status early before scheduling or dispatching any communications
+                    offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+                    if override and (override[0] in offline_statuses):
+                        logger.debug(
+                            f"[STATUS_BLOCK] Blocking all communications for {person.name} due to status: {override[0]} "
+                            f"(tick={status.current_tick})"
+                        )
+                        continue
+
                     # Schedule any explicitly timed comms from the hourly plan
                     try:
                         self._schedule_from_hourly_plan(person, hourly_result.content, status.current_tick)
                     except Exception:
                         pass
-                    if override and (override[0] in {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "휴가", "병가", "자리비움"}):
-                        continue
 
-                    recipients = self._select_collaborators(person, people)
-                    # Dispatch scheduled comms for this tick before any fallback sends
+                    # Dispatch scheduled communications from hourly plans
                     se, sc = self._dispatch_scheduled(person, status.current_tick, people_by_id)
                     emails_sent += se
                     chats_sent += sc
-                    if se or sc:
-                        continue
-                    if not recipients:
-                        subject = f"Update for {person.name}"
-                        body_lines = [
-                            f"Project: {person_project['project_name']}",
-                            f"Daily focus:\n{daily_summary}",
-                            "",
-                            f"Hourly plan:\n{hourly_summary}",
-                            "",
-                            "Keep the runway clear for surprises.",
-                        ]
-                        body_text = "\n".join(body_lines)
-                        if self._can_send(
-                            tick=status.current_tick,
-                            channel='email',
-                            sender=self.sim_manager_email,
-                            recipient_key=(person.email_address,),
-                            subject=subject,
-                            body=body_text,
-                        ):
-                            dt = self._sim_datetime_for_tick(status.current_tick)
-                            self.email_gateway.send_email(
-                                sender=self.sim_manager_email,
-                                to=[person.email_address],
-                                subject=subject,
-                                body=body_text,
-                                sent_at_iso=(dt.isoformat() if dt else None),
-                            )
-                            emails_sent += 1
-                        self._log_exchange(status.current_tick, None, person.id, "email", subject, body_text)
-                        chat_body = f"Quick update: {hourly_summary.replace('\n', ' / ')}\nLet me know if you need support."
-                        if self._can_send(
-                            tick=status.current_tick,
-                            channel='chat',
-                            sender=self.sim_manager_handle,
-                            recipient_key=(person.chat_handle,),
-                            subject=None,
-                            body=chat_body,
-                        ):
-                            dt = self._sim_datetime_for_tick(status.current_tick)
-                            self.chat_gateway.send_dm(
-                                sender=self.sim_manager_handle,
-                                recipient=person.chat_handle,
-                                body=chat_body,
-                                sent_at_iso=(dt.isoformat() if dt else None),
-                            )
-                            chats_sent += 1
-                        self._log_exchange(status.current_tick, None, person.id, "chat", None, chat_body)
-                        continue
-                    action_item = self._derive_action_item(hourly_summary, daily_summary)
-                    for i, recipient in enumerate(recipients):
-                        subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name} → {recipient.name}"
-                        if self._locale == 'ko':
-                            body_lines = [
-                                f"{recipient.name.split()[0]}님 안녕하세요,",
-                                "",
-                                "현재 집중 작업:",
-                                hourly_summary or daily_summary or "주요 작업에 집중하고 있습니다.",
-                                "",
-                                f"요청: {action_item}",
-                                "필요하시면 언제든 말씀해 주세요.",
-                            ]
-                        else:
-                            body_lines = [
-                                f"Hey {recipient.name.split()[0]},",
-                                "",
-                                "Current focus:",
-                                hourly_summary or daily_summary or "Heads down on deliverables.",
-                                "",
-                                f"Request: {action_item}",
-                                "Ping me if you need anything shifted.",
-                            ]
-                        body = "\n".join(body_lines)
-                        # Suggest CCs for fallback emails (dept head + one relevant peer)
-                        cc_suggest: list[str] = []
-                        try:
-                            head = next((p for p in people if getattr(p, 'is_department_head', False)), None)
-                        except Exception:
-                            head = None
-                        if head and head.id not in {person.id, recipient.id}:
-                            cc_email = getattr(head, 'email_address', None)
-                            if cc_email:
-                                cc_suggest.append(cc_email)
-                        def _role(s: str | None) -> str:
-                            return (s or '').strip().lower()
-                        s_role = _role(getattr(person, 'role', None))
-                        want_peer = None
-                        if any(k in s_role for k in ("devops", "site reliability")):
-                            want_peer = "dev"
-                        elif any(k in s_role for k in ("developer", "engineer", "dev")):
-                            want_peer = "designer"
-                        elif any(k in s_role for k in ("design", "designer")):
-                            want_peer = "dev"
-                        elif any(k in s_role for k in ("product", "pm", "manager")):
-                            want_peer = "dev"
-                        if want_peer:
-                            for p in people:
-                                if p.id in {person.id, recipient.id}:
-                                    continue
-                                if want_peer in _role(getattr(p, 'role', None)):
-                                    peer_email = getattr(p, 'email_address', None)
-                                    if peer_email:
-                                        cc_suggest.append(peer_email)
-                                        break
-                        if self._can_send(
-                            tick=status.current_tick,
-                            channel='email',
-                            sender=person.email_address,
-                            recipient_key=(recipient.email_address,),
-                            subject=subject,
-                            body=body,
-                        ):
-                            dt = self._sim_datetime_for_tick(status.current_tick)
-                            self.email_gateway.send_email(
-                                sender=person.email_address,
-                                to=[recipient.email_address],
-                                subject=subject,
-                                body=body,
-                                cc=cc_suggest,
-                                sent_at_iso=(dt.isoformat() if dt else None),
-                            )
-                            emails_sent += 1
-                        self._log_exchange(status.current_tick, person.id, recipient.id, "email", subject, body)
 
-                        # Reduce frequency of auto-generated updates for more natural communication
-                        if i == 0 and os.getenv("VDOS_REDUCE_AUTO_UPDATES", "false").lower() != "true":
-                            chat_body = (f"간단 업데이트: {action_item}" if self._locale == 'ko' else f"Quick update: {action_item}")
-                            if self._can_send(
-                                tick=status.current_tick,
-                                channel='chat',
-                                sender=person.chat_handle,
-                                recipient_key=(recipient.chat_handle,),
-                                subject=None,
-                                body=chat_body,
-                            ):
-                                dt = self._sim_datetime_for_tick(status.current_tick)
-                                self.chat_gateway.send_dm(
-                                    sender=person.chat_handle,
-                                    recipient=recipient.chat_handle,
-                                    body=chat_body,
-                                    sent_at_iso=(dt.isoformat() if dt else None),
-                                )
-                                chats_sent += 1
-                        self._log_exchange(status.current_tick, person.id, recipient.id, "chat", None, chat_body)
+                    # BATCH OPTIMIZATION: Collect inbox reply requests instead of processing one-by-one
+                    # Check if this persona should generate an inbox reply
+                    # Note: We collect requests here and process them in batch in PHASE 4
+                    inbox_reply_request = self._prepare_inbox_reply_request(
+                        person=person,
+                        current_tick=status.current_tick,
+                        people_by_id=people_by_id,
+                        day_index=day_index,
+                        person_project=person_project,
+                        hourly_summary=hourly_summary,
+                        daily_summary=daily_summary,
+                        current_week=current_week
+                    )
+                    if inbox_reply_request:
+                        inbox_reply_requests.append(inbox_reply_request)
 
-                        inbound = _InboundMessage(
-                            sender_id=person.id,
-                            sender_name=person.name,
-                            subject=subject,
-                            summary=action_item,
-                            action_item=action_item,
-                            message_type="update",
-                            channel="email+chat",
-                            tick=status.current_tick,
-                        )
-                        self._queue_runtime_message(recipient, inbound)
+                    # Automatic fallback generation removed as part of email volume reduction (Task 1)
+                    # Personas now only communicate when:
+                    # 1. They have explicit JSON communications in their hourly plans
+                    # 2. They are responding to inbox messages (inbox-driven replies - Task 4 IMPLEMENTED with BATCH PROCESSING)
+                    # 3. Event-driven notifications (sick leave, etc.) are triggered by the event injection system
+
+                # PHASE 4: Process inbox reply requests in batch for performance optimization
+                # This phase processes all collected inbox reply requests concurrently using async batch processing
+                # Performance: 4-5x faster than sequential processing for multiple personas
+                if inbox_reply_requests:
+                    batch_emails, batch_chats = self._process_inbox_reply_batch(
+                        inbox_reply_requests=inbox_reply_requests,
+                        current_tick=status.current_tick,
+                        people_by_id=people_by_id
+                    )
+                    emails_sent += batch_emails
+                    chats_sent += batch_chats
 
                 # Generate hourly summaries at the end of each hour (every 60 ticks)
                 # PERFORMANCE: Parallelized to avoid blocking - runs 5x faster with ThreadPoolExecutor
@@ -3193,7 +4320,16 @@ class SimulationEngine:
             immediate.setdefault(head.id, []).append(head_message)
             adjustments.setdefault(head.id, []).append(f'Plan response to client request: {feature}.')
 
-            collaborators = [p for p in people if p.id != head.id]
+            # Get project-specific collaborators for the department head
+            # This ensures the partner is from the same project(s)
+            ticks_per_day = max(1, self.hours_per_day * 60)
+            current_week = (tick - 1) // (ticks_per_day * 5) + 1
+            people_by_id = {p.id: p for p in people}
+            collaborators = self._get_project_collaborators(
+                person_id=head.id,
+                current_week=current_week,
+                all_people=people_by_id
+            )
             if collaborators:
                 partner = rng.choice(collaborators)
                 partner_message = _InboundMessage(
