@@ -190,6 +190,39 @@ VDOS has been refactored from a monolithic 2360+ line engine into a modular, mai
 - **metrics**
   - `tick`, `emails_sent`, `chats_sent`, `avg_response_minutes`, `utilization_pct`, `events_injected`
 
+### Communication Diversity Tables (Optional)
+
+The following tables support the Communication Diversity feature for enhanced realism and observability. These are **optional** and disabled by default.
+
+- **inbox_messages** (R-2.3, R-12.1)
+  - `id`, `person_id`, `message_id`, `message_type` (email/chat), `sender_id`, `sender_name`, `subject`, `body`, `thread_id`, `received_tick`, `needs_reply`, `replied_tick`, `message_category`, `created_at`
+  - **Purpose:** Track received messages for threading and reply generation
+  - **Indexes:** (person_id, needs_reply), (message_id), (received_tick)
+
+- **participation_stats** (R-5.1, R-12.1)
+  - `id`, `person_id`, `day_index`, `email_count`, `chat_count`, `total_count`, `probability_modifier`, `updated_at`
+  - **Purpose:** Track message counts for participation balancing
+  - **Indexes:** (day_index), (person_id)
+  - **Unique:** (person_id, day_index)
+
+- **communication_generation_log** (O-2, O-6)
+  - `id`, `person_id`, `tick`, `generation_type` (json/gpt_fallback/template), `channel` (email/chat), `success`, `error_message`, `token_count`, `latency_ms`, `context_size`, `created_at`
+  - **Purpose:** Log communication generation events for observability
+  - **Indexes:** (person_id, tick), (generation_type), (tick)
+
+**To enable these tables:**
+```bash
+# Run migrations
+python -m virtualoffice.sim_manager.migrations.run_migrations
+
+# Enable persistence (optional)
+export VDOS_INBOX_PERSIST=true
+export VDOS_PARTICIPATION_PERSIST=true
+export VDOS_COMM_GEN_LOG_PERSIST=true
+```
+
+See [Communication Diversity Documentation](docs/modules/communication_generator.md) for details.
+
 ---
 
 ## APIs
@@ -203,6 +236,7 @@ All endpoints are versioned under `/api/v1`.
 - `GET /api/v1/simulation` → Get current simulation state
 - `GET /api/v1/simulation/reports` → Get simulation reports
 - `GET /api/v1/simulation/token-usage` → Get token usage summary
+- `GET /api/v1/simulation/volume-metrics` → Get email/chat volume metrics (v2.0)
 
 ### People Management
 - `POST /api/v1/people` → Create person with full persona spec
@@ -324,7 +358,221 @@ Environment variables (see `.env.template` for full list):
 - `VDOS_DEFAULT_BREAK_PATTERN` (e.g., `25/5, 90/lunch/60`)
 - `VDOS_LOCALE_TZ` (default `Asia/Seoul`)
 - `VDOS_LOCALE` (default `en`) – Language locale (`en` for English, `ko` for Korean with comprehensive localization)
+
+**Communication Diversity & Realism:**
 - `VDOS_STYLE_FILTER_ENABLED` (default `true`) – Enable GPT-4o powered communication style filter for persona-consistent messages
+
+**Email Volume Reduction (New in v2.0):**
+- `VDOS_ENABLE_AUTO_FALLBACK` (default `false`) – Enable/disable automatic fallback communication generation
+  - **Default changed from `true` to `false`** to reduce excessive email volume
+  - When `false`: Personas only communicate when they have something specific to say (realistic behavior)
+  - When `true`: Restores legacy behavior with automatic fallback communications
+  - **Migration Note**: If you need the old behavior, set this to `true`
+- `VDOS_ENABLE_INBOX_REPLIES` (default `true`) – Enable inbox-driven reply generation ✅ **IMPLEMENTED**
+  - When enabled, personas reply to unreplied messages in their inbox
+  - Maintains threading and realistic communication patterns
+  - Limits to 1 reply per hour per persona to avoid reply storms
+  - Uses `InboxManager` to prioritize questions and requests
+  - Deterministic with random seed
+- `VDOS_INBOX_REPLY_PROBABILITY` (default `0.3`) – Probability (0.0-1.0) of replying to inbox messages ✅ **IMPLEMENTED**
+  - Controls how often personas reply to received messages
+  - 0.3 = 30% of unreplied messages get replies
+  - Higher values create more conversational threads
+  - Deterministic with random seed for reproducible simulations
+- `VDOS_MAX_EMAILS_PER_DAY` (default `50`) – Hard limit on emails per persona per day (safety net) ✅ **IMPLEMENTED**
+  - Prevents runaway email generation bugs
+  - Applies to ALL communications (JSON and inbox-driven)
+  - WARNING logs when limits reached
+  - Limits reset at start of new simulation day
+- `VDOS_MAX_CHATS_PER_DAY` (default `100`) – Hard limit on chats per persona per day (safety net) ✅ **IMPLEMENTED**
+  - Prevents runaway chat generation bugs
+  - Applies to ALL communications (JSON and inbox-driven)
+  - WARNING logs when limits reached
+  - Limits reset at start of new simulation day
+
+**Legacy Communication Settings (Deprecated):**
+- `VDOS_GPT_FALLBACK_ENABLED` (deprecated, use `VDOS_ENABLE_AUTO_FALLBACK`) – Enable GPT-powered fallback communication generation
+- `VDOS_FALLBACK_PROBABILITY` (default `0.6`) – Base probability (0.0-1.0) for generating fallback communications
+  - Only applies when `VDOS_ENABLE_AUTO_FALLBACK=true`
+- `VDOS_FALLBACK_MODEL` (default `gpt-4o-mini`) – Model for fallback communication generation
+  - Options: `gpt-4o-mini` (cost-effective, fast) or `gpt-4o` (higher quality, more expensive)
+- `VDOS_THREADING_RATE` (default `0.3`) – Target rate (0.0-1.0) for generating threaded email replies
+  - Controls how often personas reply to received emails in legacy mode
+- `VDOS_PARTICIPATION_BALANCE_ENABLED` (default `true`) – Enable participation balancing ✅ **ENHANCED**
+  - Throttles high-volume senders (>1.3x team average by default) by 90%
+  - Boosts low-volume senders (<0.5x team average) by 50%
+  - Ensures realistic distribution of communications across all personas
+  - More aggressive thresholds in v2.0 (1.3x vs 2.0x)
+- `VDOS_PARTICIPATION_THROTTLE_RATIO` (default `1.3`) – Threshold ratio for throttling high-volume senders ✅ **IMPLEMENTED**
+  - Personas exceeding this ratio times team average will be throttled
+  - Lower values = more aggressive throttling (e.g., 1.3 = throttle at 130% of average)
+  - Changed from 2.0x to 1.3x in v2.0 for better volume control
+- `VDOS_PARTICIPATION_THROTTLE_PROBABILITY` (default `0.1`) – Probability for throttled senders ✅ **IMPLEMENTED**
+  - When throttled, senders have this probability of generating messages (0.1 = 90% reduction)
+  - Lower values = stronger throttling effect
+  - Changed from 0.3 to 0.1 in v2.0 for stronger throttling
+
+---
+
+## Migration Guide: Email Volume Reduction (v2.0)
+
+### What Changed?
+
+**VDOS v2.0 significantly reduces email volume** from ~2,700 emails/day to ~300-500 emails/day for a 12-person team (80-85% reduction). This makes simulations more realistic and improves performance.
+
+**Key Changes:**
+1. **Automatic fallback communications disabled by default** (`VDOS_ENABLE_AUTO_FALLBACK=false`)
+   - Personas no longer send automatic status updates every hour
+   - Communications only happen when there's a specific reason (planned work or inbox response)
+   - Silence is now treated as valid (focused work doesn't require communication)
+
+2. **Inbox-driven replies enabled** (`VDOS_ENABLE_INBOX_REPLIES=true`)
+   - Personas reply to ~30% of received messages (configurable)
+   - Maintains threading and realistic communication patterns
+   - Replaces automatic fallback with purposeful responses
+
+3. **Daily message limits added** (safety net)
+   - Hard limits: 50 emails/day, 100 chats/day per persona
+   - Prevents runaway generation bugs
+   - Configurable via environment variables
+
+### Expected Behavior Changes
+
+**Before (v1.x):**
+- ~2,700 emails/day for 12 people (~225 emails/person/day)
+- Automatic "Update:" emails every hour
+- Automatic "Quick update" chats
+- High GPT API costs
+
+**After (v2.0):**
+- ~300-500 emails/day for 12 people (~25-40 emails/person/day)
+- Only purposeful communications (questions, deliverables, coordination)
+- Inbox-driven replies maintain threading
+- 80% reduction in GPT API costs
+
+### Migration Steps
+
+**Option 1: Use New Behavior (Recommended)**
+
+No action needed! The new defaults provide realistic email volume.
+
+**Option 2: Restore Legacy Behavior**
+
+If you need the old behavior temporarily:
+
+1. Add to your `.env` file:
+   ```bash
+   VDOS_ENABLE_AUTO_FALLBACK=true
+   ```
+
+2. Restart the simulation
+
+3. You'll get the old volume levels (~2,700 emails/day)
+
+**Option 3: Custom Configuration**
+
+Fine-tune the behavior:
+
+```bash
+# Enable inbox replies but adjust probability
+VDOS_ENABLE_INBOX_REPLIES=true
+VDOS_INBOX_REPLY_PROBABILITY=0.5  # 50% reply rate (higher threading)
+
+# Adjust daily limits for larger teams
+VDOS_MAX_EMAILS_PER_DAY=75
+VDOS_MAX_CHATS_PER_DAY=150
+
+# Disable automatic fallback (recommended)
+VDOS_ENABLE_AUTO_FALLBACK=false
+```
+
+### Rollback Procedure
+
+If you encounter issues with the new behavior:
+
+1. **Immediate rollback** (restore old behavior):
+   ```bash
+   # Add to .env file
+   VDOS_ENABLE_AUTO_FALLBACK=true
+   VDOS_ENABLE_INBOX_REPLIES=false
+   ```
+
+2. **Restart simulation** - changes take effect immediately
+
+3. **Report issues** - Open a GitHub issue with:
+   - Your configuration settings
+   - Expected vs. actual email volume
+   - Any error messages
+
+### Testing Your Configuration
+
+After changing settings:
+
+1. Run a short simulation (1-2 days)
+2. Check email volume: `GET /api/v1/simulation/volume-metrics`
+3. Verify expected behavior:
+   - New mode: ~25-40 emails/person/day
+   - Legacy mode: ~225 emails/person/day
+
+### Troubleshooting
+
+**Issue: Email volume still too high after upgrade**
+
+Check your configuration:
+```bash
+# Verify auto fallback is disabled
+grep VDOS_ENABLE_AUTO_FALLBACK .env
+# Should be: VDOS_ENABLE_AUTO_FALLBACK=false (or not set)
+
+# Check volume metrics
+curl http://127.0.0.1:8015/api/v1/simulation/volume-metrics
+```
+
+If volume is still high:
+- Verify no legacy `VDOS_GPT_FALLBACK_ENABLED=true` in your `.env`
+- Check daily limits are being enforced (look for WARNING logs)
+- Ensure inbox reply probability is reasonable (default: 0.3)
+
+**Issue: Not enough communication / threading broken**
+
+Increase inbox reply probability:
+```bash
+# In .env file
+VDOS_INBOX_REPLY_PROBABILITY=0.5  # 50% reply rate (higher threading)
+```
+
+Or enable legacy mode temporarily:
+```bash
+VDOS_ENABLE_AUTO_FALLBACK=true
+```
+
+**Issue: Daily limits being hit too often**
+
+Increase limits for larger teams:
+```bash
+# In .env file
+VDOS_MAX_EMAILS_PER_DAY=75   # For teams >15 people
+VDOS_MAX_CHATS_PER_DAY=150
+```
+
+**Issue: Want to test both modes**
+
+Run simulations with different configurations:
+```bash
+# Test new mode (realistic volume)
+VDOS_ENABLE_AUTO_FALLBACK=false python scripts/test_simulation.py
+
+# Test legacy mode (high volume)
+VDOS_ENABLE_AUTO_FALLBACK=true python scripts/test_simulation.py
+```
+
+### Need Help?
+
+- See [Configuration](#configuration) section for all environment variables
+- Check [Observability](#observability) for monitoring email volume
+- Review [Troubleshooting](#troubleshooting) section above
+- Check volume metrics: `GET /api/v1/simulation/volume-metrics`
+- Open a GitHub issue for support
 
 ---
 
@@ -513,6 +761,8 @@ VDOS includes a centralized prompt management system for AI-powered features:
 * **Persona generation**: GPT-4o assisted creation of realistic worker profiles with Korean localization support
 * **Worker-driven planning**: Virtual workers autonomously plan and adapt using PromptManager
 * **Drafting messages**: Generate polite, role-consistent emails/chats with personality preservation
+* **Communication diversity**: GPT-powered fallback generation creates diverse, context-aware communications when JSON absent (uses GPT-4o-mini, ~$0.00024 per call)
+* **Communication style filter**: Transform messages to match persona writing styles with GPT-4o
 * **Report generation**: Summarize completed/blocked/next tasks with consistent rubrics
 * **Event reactions**: Workers respond to simulation events with context-aware adjustments
 * **Korean localization**: Set `VDOS_LOCALE=ko` for natural Korean workplace communication across all AI features
@@ -549,6 +799,163 @@ validation_rules:
 See `docs/guides/template_authoring.md` for complete guide.
 
 > Keep a deterministic seed for reproducibility.
+
+---
+
+## Communication System (v2.0 - Realistic Volume)
+
+**VDOS v2.0** implements a realistic communication model that reduces email volume by 80-85% while maintaining quality and purposefulness.
+
+### Core Principle
+
+**Silence is valid.** Personas only communicate when they have something specific to say.
+
+### Communication Model
+
+**Primary: JSON Communications (Purposeful)**
+- Explicitly planned in hourly plans
+- Context-aware and intentional
+- Examples: questions when blocked, sharing deliverables, coordinating dependencies
+- Never throttled or limited
+
+**Secondary: Event-Driven Notifications (Preserved)**
+- System notifications (sick leave coverage, project milestones)
+- Triggered by simulation events
+- Always delivered regardless of volume
+
+**Tertiary: Inbox-Driven Replies** ✅ **IMPLEMENTED**
+- Responding to received messages that need replies
+- Maintains threading and conversational flow
+- Configurable reply probability (default: 30%)
+- Limits to 1 reply per hour per persona to avoid reply storms
+- Uses `InboxManager` to prioritize questions and requests
+- **Filters collaborators to only include personas on same project(s)**
+- **Prevents cross-project communications in multi-project simulations**
+- Deterministic with random seed
+
+### What Changed in v2.0
+
+**Removed (Disabled by Default):**
+- ❌ Automatic template fallback emails ("Update: Person A → Person B")
+- ❌ Automatic status update chats ("Quick update: ...")
+- ❌ GPT-powered automatic fallback generation
+- ❌ Hourly communication generation when JSON absent
+
+**Added:**
+- ✅ Daily message limits (50 emails/day, 100 chats/day per persona)
+- ✅ Inbox-driven reply generation (30% reply rate by default)
+- ✅ Improved hourly planning prompts emphasizing purposeful communication
+- ✅ Configuration to restore legacy behavior if needed
+
+### Expected Behavior
+
+**v2.0 (Current - Realistic):**
+- ~300-500 emails/day for 12 people (~25-40 emails/person/day)
+- Only purposeful communications (questions, deliverables, coordination)
+- Inbox-driven replies maintain threading (~30% reply rate)
+- No automatic status updates
+- 80% reduction in GPT API costs
+- 50% faster tick advancement
+
+**v1.x (Legacy - Excessive):**
+- ~2,700 emails/day for 12 people (~225 emails/person/day)
+- Automatic "Update:" emails every hour
+- Automatic "Quick update" chats
+- High GPT API costs
+
+### Configuration
+
+**New in v2.0:**
+```bash
+# Disable automatic fallback (default: false - realistic volume)
+VDOS_ENABLE_AUTO_FALLBACK=false
+
+# Enable inbox-driven replies (IMPLEMENTED - default: true)
+VDOS_ENABLE_INBOX_REPLIES=true
+VDOS_INBOX_REPLY_PROBABILITY=0.3  # 30% reply rate (deterministic with seed)
+
+# Daily message limits (safety net)
+VDOS_MAX_EMAILS_PER_DAY=50
+VDOS_MAX_CHATS_PER_DAY=100
+```
+
+**Legacy Mode (Restore v1.x Behavior):**
+```bash
+# Enable automatic fallback (restores high volume)
+VDOS_ENABLE_AUTO_FALLBACK=true
+
+# Legacy configuration (only applies when auto fallback enabled)
+VDOS_FALLBACK_PROBABILITY=0.6
+VDOS_THREADING_RATE=0.3
+VDOS_PARTICIPATION_BALANCE_ENABLED=true
+VDOS_FALLBACK_MODEL=gpt-4o-mini
+```
+
+### Multi-Project Communication Boundaries
+
+**Feature:** Automatic collaborator filtering based on project assignments
+
+**Behavior:**
+- When generating communications (inbox replies, fallback), the system filters collaborators
+- Only includes personas assigned to at least one of the same projects as the sender
+- Prevents project managers from receiving emails about other projects
+- Maintains proper communication boundaries in multi-project simulations
+
+**Example:**
+```
+Project A: Mobile App (Team: Alice, Bob, Manager Carol)
+Project B: Dashboard (Team: Dave, Eve, Manager Frank)
+
+Result: Alice only generates emails to Bob and Carol (Project A team)
+        Dave only generates emails to Eve and Frank (Project B team)
+```
+
+**Unassigned Projects:**
+- Personas with no specific project assignments work on "unassigned" projects
+- These personas can communicate with everyone (backward compatibility)
+- Useful for single-project simulations or shared resources
+
+**Implementation:**
+- `_get_project_collaborators()` method in `SimulationEngine`
+- Queries `project_assignments` table with timeline awareness
+- Respects project start_week and duration_weeks
+- Returns union of collaborators across all assigned projects
+
+**Benefits:**
+- Realistic multi-project simulation behavior
+- Improved GPT-generated message quality (better context)
+- Prevents unrealistic cross-project communications
+- No configuration required (automatic)
+
+### Migration from v1.x
+
+**No action needed!** The new defaults provide realistic email volume.
+
+**To restore legacy behavior temporarily:**
+1. Add to `.env` file: `VDOS_ENABLE_AUTO_FALLBACK=true`
+2. Restart simulation
+3. You'll get the old volume levels (~2,700 emails/day)
+
+See [Migration Guide](#migration-guide-email-volume-reduction-v20) above for detailed instructions.
+
+### Quality Metrics (v2.0)
+
+- **Email Volume**: 300-500/day (down from 2,700, 80% reduction)
+- **Per-Person Volume**: 25-40/day (down from 225, 80% reduction)
+- **Threading Rate**: ≥30% (maintained via inbox-driven replies)
+- **Purposeful Communications**: 100% (all communications have clear intent)
+- **Performance**: 50% faster tick advancement
+- **API Costs**: 80% reduction in GPT API calls
+
+### Documentation
+
+For detailed implementation and architecture:
+- Requirements: `.kiro/specs/reduce-email-volume/requirements.md`
+- Design: `.kiro/specs/reduce-email-volume/design.md`
+- Tasks: `.kiro/specs/reduce-email-volume/tasks.md`
+- Architecture: `docs/architecture.md` (Email Volume Reduction System section)
+- Legacy docs: `docs/modules/communication_generator.md` (deprecated)
+- Legacy docs: `docs/modules/participation_balancer.md` (deprecated)
 
 ---
 
@@ -753,6 +1160,48 @@ MIT (placeholder—adjust as needed).
   "planned_next": ["Implement client-side checks", "Update API docs"]
 }
 ```
+
+**Volume metrics (v2.0):**
+
+```bash
+# Get current email/chat volume metrics
+curl http://127.0.0.1:8015/api/v1/simulation/volume-metrics
+```
+
+Response:
+```json
+{
+  "current_day": 2,
+  "total_emails_today": 287,
+  "total_chats_today": 156,
+  "avg_emails_per_person": 23.9,
+  "avg_chats_per_person": 13.0,
+  "json_communication_rate": 0.45,
+  "inbox_reply_rate": 0.31,
+  "threading_rate": 0.33,
+  "daily_limits_hit": {
+    "emails": 0,
+    "chats": 0
+  },
+  "per_person_stats": {
+    "person-1": {
+      "emails": 28,
+      "chats": 15,
+      "json_comms": 12,
+      "inbox_replies": 9
+    }
+  }
+}
+```
+
+**Metrics Explanation:**
+- `total_emails_today` / `total_chats_today`: Total messages sent today
+- `avg_emails_per_person` / `avg_chats_per_person`: Average per persona
+- `json_communication_rate`: Percentage of communications from hourly plans (0.0-1.0)
+- `inbox_reply_rate`: Percentage of communications from inbox replies (0.0-1.0)
+- `threading_rate`: Percentage of emails that are replies to previous emails (0.0-1.0)
+- `daily_limits_hit`: Count of personas who hit daily limits today
+- `per_person_stats`: Detailed breakdown per persona (optional, for debugging)
 
 ---
 

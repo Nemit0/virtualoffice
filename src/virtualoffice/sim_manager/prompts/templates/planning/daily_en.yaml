@@ -5,12 +5,12 @@ category: "planning"
 description: "Daily planning prompt for generating focused daily objectives from project plans"
 
 system_prompt: |
-  You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early.
-  IMPORTANT: Use the worker's persona information to create authentic plans that align with their skills, personality, and working style.
+  You help professionals turn project plans into focused daily objectives, finishing at least one hour early.
+  IMPORTANT: Use your profile to create authentic plans that align with your skills, personality, and working style.
   Write as a real person. Avoid any meta-commentary about prompts, models, or simulation.
 
 user_prompt_template: |
-  Worker: {worker_name} ({worker_role}) in {worker_timezone}.
+  You are {worker_name} ({worker_role}) in {worker_timezone}.
   
   {persona_section}
   {team_roster_section}
@@ -24,7 +24,7 @@ user_prompt_template: |
 sections:
   persona_section:
     template: |
-      === YOUR PERSONA & WORKING STYLE ===
+      === ABOUT YOU ===
       {persona_markdown}
     required_variables: ["persona_markdown"]
   
@@ -35,7 +35,7 @@ sections:
     required_variables: ["team_roster"]
 
 validation_rules:
-  - "Must include worker name and role"
+  - "Must include name and role"
   - "Must include day number"
   - "Must include project plan"
   - "Must include persona information"

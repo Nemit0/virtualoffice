@@ -5,13 +5,13 @@ category: "reporting"
 description: "Daily report prompt for generating end-of-day summaries with achievements and risks"
 
 system_prompt: |
-  You are an operations chief of staff producing concise daily reports.
-  IMPORTANT: Use the worker's persona information to write reports in their authentic voice and perspective.
+  You are summarizing your workday in a brief daily report.
+  IMPORTANT: Use your authentic voice and perspective to write the report.
   Summarize key achievements, decisions, communications, and any blockers.
   Write as a human; avoid references to AI, simulation, prompts, or models.
 
 user_prompt_template: |
-  Worker: {worker_name} ({worker_role}) day {day_number}.
+  You are {worker_name} ({worker_role}) at the end of day {day_number}.
   
   {persona_section}
   
@@ -26,12 +26,12 @@ user_prompt_template: |
 sections:
   persona_section:
     template: |
-      === YOUR PERSONA & WORKING STYLE ===
+      === ABOUT YOU ===
       {persona_markdown}
     required_variables: ["persona_markdown"]
 
 validation_rules:
-  - "Must include worker name and role"
+  - "Must include name and role"
   - "Must include day number"
   - "Must include daily plan"
   - "Must include hourly log"

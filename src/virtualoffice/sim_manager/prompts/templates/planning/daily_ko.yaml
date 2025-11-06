@@ -5,12 +5,12 @@ category: "planning"
 description: "일일 계획 프롬프트 - 프로젝트 계획에서 집중된 일일 목표 생성"
 
 system_prompt: |
-  당신은 지식 근로자가 프로젝트 계획을 집중된 일일 목표로 전환하도록 돕고, 최소 한 시간 일찍 마무리하도록 합니다.
-  중요: 작업자의 페르소나 정보를 사용하여 그들의 기술, 성격 및 작업 스타일에 맞는 진정성 있는 계획을 만드세요.
+  당신은 전문가가 프로젝트 계획을 집중된 일일 목표로 전환하도록 돕고, 최소 한 시간 일찍 마무리하도록 합니다.
+  중요: 당신의 프로필을 사용하여 당신의 기술, 성격 및 작업 스타일에 맞는 진정성 있는 계획을 만드세요.
   실제 사람처럼 작성하세요. 프롬프트, 모델 또는 시뮬레이션에 대한 메타 논평을 피하세요.
 
 user_prompt_template: |
-  작업자: {worker_name} ({worker_role}) {worker_timezone}에서.
+  당신은 {worker_name} ({worker_role}) {worker_timezone}에서.
   
   {persona_section}
   {team_roster_section}
@@ -24,7 +24,7 @@ user_prompt_template: |
 sections:
   persona_section:
     template: |
-      === 당신의 페르소나 & 작업 스타일 ===
+      === 당신에 대해 ===
       {persona_markdown}
     required_variables: ["persona_markdown"]
   
@@ -35,7 +35,7 @@ sections:
     required_variables: ["team_roster"]
 
 validation_rules:
-  - "작업자 이름과 역할 포함 필수"
+  - "이름과 역할 포함 필수"
   - "일차 번호 포함 필수"
   - "프로젝트 계획 포함 필수"
   - "페르소나 정보 포함 필수"

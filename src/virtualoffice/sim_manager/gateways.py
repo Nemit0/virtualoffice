@@ -42,8 +42,8 @@ class HttpEmailGateway(EmailGateway):
         self.base_url = base_url.rstrip("/")
         self._external_client = client
         self._client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
-        # PERFORMANCE: Force disable style filter to avoid LLM calls on every message
-        self.style_filter = None  # style_filter
+        # Style filter: enabled/disabled controlled by database config
+        self.style_filter = style_filter
 
     @property
     def client(self) -> httpx.Client:
@@ -79,21 +79,36 @@ class HttpEmailGateway(EmailGateway):
                         "Consider making gateway methods async."
                     )
                 else:
-                    filter_result = loop.run_until_complete(
+                    # Filter subject
+                    subject_filter_result = loop.run_until_complete(
+                        self.style_filter.apply_filter(
+                            message=subject,
+                            persona_id=persona_id,
+                            message_type="email",
+                        )
+                    )
+                    subject = subject_filter_result.styled_message
+
+                    # Filter body
+                    body_filter_result = loop.run_until_complete(
                         self.style_filter.apply_filter(
                             message=body,
                             persona_id=persona_id,
                             message_type="email",
                         )
                     )
-                    body = filter_result.styled_message
+                    body = body_filter_result.styled_message
+
                     logger.debug(
-                        f"Style filter applied to email: success={filter_result.success}, "
-                        f"tokens={filter_result.tokens_used}, latency={filter_result.latency_ms:.1f}ms"
+                        f"Style filter applied to email: "
+                        f"subject_tokens={subject_filter_result.tokens_used}, "
+                        f"body_tokens={body_filter_result.tokens_used}, "
+                        f"subject_latency={subject_filter_result.latency_ms:.1f}ms, "
+                        f"body_latency={body_filter_result.latency_ms:.1f}ms"
                     )
             except Exception as e:
                 logger.error(f"Style filter failed, using original message: {e}", exc_info=True)
-                # Continue with original body on error
+                # Continue with original subject and body on error
         
         # Filter out empty/invalid email addresses using centralized validation
         cleaned_to = filter_valid_emails(to, normalize=False, strict=False)
@@ -160,8 +175,8 @@ class HttpChatGateway(ChatGateway):
         self.base_url = base_url.rstrip("/")
         self._external_client = client
         self._client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
-        # PERFORMANCE: Force disable style filter to avoid LLM calls on every message
-        self.style_filter = None  # style_filter
+        # Style filter: enabled/disabled controlled by database config
+        self.style_filter = style_filter
 
     @property
     def client(self) -> httpx.Client:

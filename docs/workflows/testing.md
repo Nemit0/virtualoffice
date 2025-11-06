@@ -15,6 +15,7 @@ tests/
 ├── test_auto_pause_unit.py             # Auto-pause unit tests
 ├── test_auto_pause_workflow_integration.py # Auto-pause workflow tests
 ├── test_chat_server.py                  # Chat server REST API tests
+├── test_communication_generator.py      # Communication generator unit tests
 ├── test_dashboard_web.py                # Web dashboard tests
 ├── test_email_client_integration.py     # Email client integration tests
 ├── test_email_client_interface.py       # Email client interface tests
@@ -42,7 +43,8 @@ test_korean_persona.py                   # Korean persona integration test (NEW)
 ├── diagnose_stuck_simulation.py         # Diagnostic tool for stuck simulations
 ├── full_simulation_test.py              # Comprehensive 5-tick workflow test
 ├── test_1week_simulation.py             # 1-week long-running stability test
-├── test_persona_generation_ui.py        # Playwright UI automation test for persona generation (NEW)
+├── test_persona_generation_ui.py        # Playwright UI automation test for persona generation
+├── test_quality_validation_gpt.py       # GPT-4o quality validation for communication diversity (NEW)
 ├── test_auto_tick_long_wait.py          # Auto-tick monitoring test
 ├── test_auto_tick_with_logging.py       # Auto-tick database state monitoring
 ├── test_auto_tick_detailed.py           # Auto-tick with detailed error capture
@@ -447,6 +449,295 @@ await page.goto("http://localhost:8015/")  # Different port
 - Chromium browser (auto-installed by Playwright)
 - Running VDOS dashboard on port 8025
 - Active OpenAI API key for persona generation
+
+## New Test: GPT-4o Quality Validation
+
+### File: `.tmp/test_quality_validation_gpt.py`
+
+**Purpose**: Uses GPT-4o to evaluate the quality of generated communications from the communication diversity system, validating realism and role differentiation.
+
+**Key Features**:
+- **Automated Quality Assessment**: Uses GPT-4o as an expert evaluator
+- **Realism Scoring**: Rates messages on 1-10 scale for workplace realism
+- **Role Identification**: Tests if roles can be identified from message content alone
+- **Batch Processing**: Evaluates 50 messages in efficient batches
+- **Statistical Analysis**: Provides score distributions and accuracy metrics
+- **Target Validation**: Verifies system meets quality targets (≥7.5/10 realism, ≥75% role accuracy)
+
+**Test Workflow**:
+
+#### 1. Message Sampling
+```python
+messages = sample_messages(db_path, sample_size=50)
+```
+- Samples 50 random messages from simulation database
+- Includes both emails (with subject/body) and chat messages
+- Joins with `people` table to get sender role information
+- Filters for meaningful content (>20 chars for emails, >10 for chats)
+- Shuffles and balances email/chat ratio
+
+**SQL Queries**:
+```sql
+-- Email sampling
+SELECT e.subject, e.body, p.name, p.role
+FROM emails e
+JOIN people p ON e.sender = p.email
+WHERE e.subject IS NOT NULL AND LENGTH(e.body) > 20
+ORDER BY RANDOM() LIMIT 50
+
+-- Chat sampling  
+SELECT cm.message, p.name, p.role
+FROM chat_messages cm
+JOIN people p ON cm.sender_handle = p.chat_handle
+WHERE cm.message IS NOT NULL AND LENGTH(cm.message) > 10
+ORDER BY RANDOM() LIMIT 25
+```
+
+#### 2. Realism Evaluation
+```python
+avg_score, evaluations = evaluate_realism_batch(messages)
+```
+
+**GPT-4o Evaluation Criteria**:
+- **10**: Indistinguishable from real workplace communication
+- **8-9**: Very realistic with minor artificial patterns
+- **6-7**: Mostly realistic but with some template-like qualities
+- **4-5**: Somewhat realistic but clearly generated
+- **1-3**: Unrealistic, repetitive, or obviously templated
+
+**Factors Considered**:
+- Natural language flow and variety
+- Appropriate formality and tone
+- Specific details vs. generic statements
+- Conversational patterns
+- Role-appropriate vocabulary
+
+**Response Format**:
+```json
+{
+  "evaluations": [
+    {"message_id": 1, "score": 8, "reasoning": "Natural language with specific details"},
+    {"message_id": 2, "score": 7, "reasoning": "Good but slightly formal"}
+  ],
+  "average_score": 7.5,
+  "overall_assessment": "Messages show good realism with natural variation"
+}
+```
+
+#### 3. Role Identification
+```python
+accuracy, predictions = identify_roles_batch(messages)
+```
+
+**GPT-4o Role Detection**:
+Analyzes message content to identify sender's role based on:
+- Technical terminology and jargon
+- Communication style and formality
+- Topics discussed
+- Vocabulary choices
+
+**Possible Roles**:
+- **Developer/Engineer (개발자)**: Technical terms, code references, API discussions
+- **Designer (디자이너)**: Visual design, UI/UX, mockups, prototypes
+- **QA/Tester (QA)**: Testing, bugs, test cases, quality assurance
+- **Marketer (마케터)**: Campaigns, metrics, CTR, conversion rates
+- **Manager/PM (매니저)**: Coordination, timelines, stakeholders, planning
+
+**Accuracy Calculation**:
+```python
+# Normalize role names for comparison
+role_matches = {
+    'developer': ['developer', 'engineer', '개발자', 'dev'],
+    'designer': ['designer', '디자이너', 'design'],
+    'qa': ['qa', 'tester', 'test', 'quality'],
+    'marketer': ['marketer', 'marketing', '마케터'],
+    'manager': ['manager', 'pm', '매니저', 'lead'],
+}
+
+# Check if predicted role matches actual role category
+accuracy = correct_predictions / total_predictions
+```
+
+#### 4. Comprehensive Reporting
+
+**Score Distribution**:
+```
+Score Distribution:
+  10/10: ████ (4)
+   9/10: ████████ (8)
+   8/10: ████████████ (12)
+   7/10: ██████████ (10)
+   6/10: ████████ (8)
+   5/10: ████ (4)
+   4/10: ██ (2)
+   3/10: ██ (2)
+```
+
+**Sample Evaluations**:
+```
+Message 1: 8/10 - Natural language with specific technical details
+Message 2: 7/10 - Good context but slightly formal tone
+Message 3: 9/10 - Excellent conversational flow and role-appropriate terms
+```
+
+**Role Predictions**:
+```
+Message 1: Developer (actual: 개발자) ✓
+  Reasoning: Uses technical terms like API, database, code review
+Message 2: Designer (actual: 디자이너) ✓
+  Reasoning: Discusses UI/UX, mockups, visual design
+Message 3: Manager (actual: 매니저) ✓
+  Reasoning: Coordination language, timeline references
+```
+
+#### 5. Success Criteria Validation
+
+**Pass Conditions**:
+- ✅ Average realism score ≥7.5/10
+- ✅ Role identification accuracy ≥75%
+
+**Output**:
+```
+================================================================================
+OVERALL RESULTS
+================================================================================
+Realism Score: 7.82/10 (target: ≥7.5) ✅
+Role Accuracy: 78.0% (target: ≥75%) ✅
+
+✅ ALL QUALITY TARGETS MET
+
+The communication diversity system successfully generates:
+  - Realistic, natural workplace communications
+  - Role-differentiated messages with appropriate vocabulary
+  - Diverse content that avoids template repetition
+```
+
+**Prerequisites**:
+```bash
+# Ensure simulation has run and generated messages
+briefcase dev
+# Run simulation to generate at least 50 messages
+
+# Ensure OpenAI API key is configured
+export OPENAI_API_KEY=sk-...
+```
+
+**Running the Test**:
+```bash
+# Run quality validation
+python .tmp/test_quality_validation_gpt.py
+
+# Expected duration: 2-3 minutes (2 GPT-4o API calls)
+# Expected cost: ~$0.02 (GPT-4o token usage)
+```
+
+**Expected Output**:
+```
+================================================================================
+Task 8.8: Quality Validation with GPT Evaluation
+================================================================================
+
+Using database: src/virtualoffice/vdos.db
+
+Sampling 50 random messages from simulation...
+Sampled 50 messages:
+  - 35 emails
+  - 15 chat messages
+
+--------------------------------------------------------------------------------
+1. REALISM EVALUATION
+--------------------------------------------------------------------------------
+Evaluating message realism with GPT-4o...
+Used 2847 tokens
+
+Average Realism Score: 7.82/10
+Target: ≥7.5/10
+Status: ✅ PASS
+
+Score Distribution:
+   9/10: ████████ (8)
+   8/10: ████████████ (12)
+   7/10: ██████████ (10)
+   6/10: ████████ (8)
+
+Sample Evaluations:
+  Message 1: 8/10 - Natural language with specific details
+  Message 2: 9/10 - Excellent role-appropriate vocabulary
+  Message 3: 7/10 - Good but slightly formal
+
+--------------------------------------------------------------------------------
+2. ROLE IDENTIFICATION
+--------------------------------------------------------------------------------
+Identifying roles with GPT-4o...
+Used 3124 tokens
+
+Role Identification Accuracy: 78.0%
+Target: ≥75%
+Status: ✅ PASS
+
+Sample Predictions:
+  Message 1: Developer (actual: 개발자) ✓
+    Reasoning: Uses technical terms like API
+  Message 2: Designer (actual: 디자이너) ✓
+    Reasoning: Discusses UI/UX and mockups
+  Message 3: Manager (actual: 매니저) ✓
+    Reasoning: Coordination and timeline focus
+
+================================================================================
+OVERALL RESULTS
+================================================================================
+Realism Score: 7.82/10 (target: ≥7.5) ✅
+Role Accuracy: 78.0% (target: ≥75%) ✅
+
+✅ ALL QUALITY TARGETS MET
+```
+
+**Use Cases**:
+- **Quality Assurance**: Validate communication diversity improvements
+- **Regression Testing**: Ensure quality doesn't degrade with changes
+- **Benchmarking**: Compare different generation approaches
+- **A/B Testing**: Evaluate template-based vs. GPT-generated messages
+- **Continuous Monitoring**: Track quality metrics over time
+
+**Troubleshooting**:
+If the test fails:
+1. **Insufficient Messages**: Run longer simulation to generate more messages
+2. **Database Not Found**: Ensure `src/virtualoffice/vdos.db` exists
+3. **API Key Issues**: Verify `OPENAI_API_KEY` is set correctly
+4. **Low Realism Score**: Review generated messages for template patterns
+5. **Low Role Accuracy**: Check if role-specific vocabulary is being used
+6. **JSON Parse Errors**: GPT-4o response format may have changed
+
+**Configuration**:
+```python
+# Adjust sample size
+messages = sample_messages(db_path, sample_size=100)  # More messages
+
+# Change evaluation model
+response, tokens = generate_text(prompt, model="gpt-4o", temperature=0.3)
+
+# Adjust scoring criteria
+# Edit system prompt in evaluate_realism_batch() function
+```
+
+**Token Usage**:
+- **Realism Evaluation**: ~3000 tokens (50 messages)
+- **Role Identification**: ~3000 tokens (50 messages)
+- **Total**: ~6000 tokens per run
+- **Cost**: ~$0.02 per run (GPT-4o pricing)
+
+**Dependencies**:
+- `sqlite3` - Database access (built-in)
+- `json` - JSON parsing (built-in)
+- `random` - Message sampling (built-in)
+- `virtualoffice.utils.completion_util` - GPT API wrapper
+- Active OpenAI API key
+- Simulation database with generated messages
+
+**Related Tests**:
+- `tests/test_communication_generator.py` - Unit tests for generator
+- `tests/integration/test_communication_diversity.py` - Integration tests
+- `.tmp/benchmark_communication_diversity.py` - Performance benchmarks
 
 ## New Test: Korean Persona Integration
 

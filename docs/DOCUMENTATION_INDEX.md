@@ -82,6 +82,9 @@ docs/
 │   ├── planner.md                           # ✓ Created - Planner system documentation
 │   ├── database.md                          # ✓ Created (2025-10-28) - Database connection management and concurrent access
 │   ├── communication_style_filter.md        # ✓ Updated (2025-10-30) - Communication style filter system (Phase 2 Complete)
+│   ├── communication_generator.md           # ✓ Created (2025-11-05) - GPT-powered fallback communication generation
+│   ├── inbox_manager.md                     # ✓ Created (2025-11-05) - Inbox tracking and message classification
+│   ├── participation_balancer.md            # ✓ Created (2025-11-05) - Message distribution balancing
 │   ├── email-server.md                      # (To be created)
 │   ├── chat-server.md                       # (To be created)
 │   ├── sim-manager.md                       # (To be created)
@@ -91,7 +94,9 @@ docs/
 ├── guides/                                    # User guides
 │   ├── template_authoring.md                # ✓ Created - Template authoring guide (referenced in README)
 │   ├── migration_guide.md                   # ✓ Created - Engine refactoring migration guide
-│   └── troubleshooting.md                   # ✓ Created (2025-10-28) - Comprehensive troubleshooting guide with diagnostic tools
+│   ├── troubleshooting.md                   # ✓ Created (2025-10-28) - Comprehensive troubleshooting guide with diagnostic tools
+│   ├── communication_diversity_examples.md  # ✓ Created (2025-11-05) - Usage examples for communication diversity features
+│   └── communication_diversity_troubleshooting.md  # ✓ Created (2025-11-05) - Troubleshooting guide for communication diversity
 ├── GETTING_STARTED.md                        # ✓ Updated (2025-10-28) - Added Prompt Management System section
 ├── api/                                       # API documentation (directory created)
 │   ├── style_filter_endpoints.md            # ✓ Created (2025-10-30) - Style filter API endpoints
@@ -235,6 +240,9 @@ Each module needs detailed documentation including:
 - ✅ **localization.md**: Comprehensive documentation for the localization system including LocalizationManager class, supported locales, integration examples, Korean persona integration testing, and extension guidelines
 - ✅ **planner.md**: Complete documentation for the planner system including GPTPlanner, StubPlanner, persona integration, localization support, and planning workflows
 - ✅ **communication_style_filter.md**: Complete documentation for the communication style filter system including StyleExampleGenerator, CommunicationStyleFilter, FilterMetrics, database schema, integration points, and implementation roadmap (Phase 2 Complete - Core Implementation)
+- ✅ **communication_generator.md**: Complete documentation for GPT-powered fallback communication generation including context building, Korean/English prompts, role-specific terminology, integration with planner and style filter (Nov 5, 2025) - **Integrated into engine**
+- ✅ **inbox_manager.md**: Complete documentation for inbox tracking system including message classification, reply prioritization, multilingual support, and integration with communication generator (Nov 5, 2025) - **Integrated into engine**
+- ✅ **participation_balancer.md**: Complete documentation for participation balancing system including throttling/boosting logic, deterministic behavior, and integration with fallback generation (Nov 5, 2025) - **Integrated into engine**
 
 **New Module Documentation to review (refactor additions):**
 - ➕ **people_repository.md**: People CRUD + schedules, row↔model mapping
@@ -252,6 +260,8 @@ Each module needs detailed documentation including:
 **Completed Guide Documentation:**
 - ✅ **template_authoring.md**: Complete guide for creating and managing YAML prompt templates including format specification, examples, validation, and best practices
 - ✅ **migration_guide.md**: Comprehensive migration guide for the engine refactoring including breaking changes, migration steps, and troubleshooting
+- ✅ **communication_diversity_examples.md**: Comprehensive usage examples for communication diversity features including GPT fallback generation, participation balancing, quality metrics monitoring, and cost/performance examples (Nov 5, 2025)
+- ✅ **communication_diversity_troubleshooting.md**: Complete troubleshooting guide for communication diversity features including common issues, rollback procedures, debugging tips, FAQ, and support resources (Nov 5, 2025)
 
 ### API Documentation (`docs/api/`)
 Complete REST API reference for each service:

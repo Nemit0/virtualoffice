@@ -123,7 +123,7 @@ class SimulationLifecycle:
                         kickoff_tick + 30,
                         "email",
                         target.email_address,
-                        "제목: 킥오프\n본문: 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.",
+                        "킥오프 | 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.",
                     )
                 else:
                     self.communication_hub.schedule_direct_comm(
@@ -134,7 +134,7 @@ class SimulationLifecycle:
                         kickoff_tick + 30,
                         "email",
                         target.email_address,
-                        "Subject: Quick kickoff\nBody: Lining up tasks for today — ping me with blockers.",
+                        "Quick kickoff | Lining up tasks for today — ping me with blockers.",
                     )
         except Exception as exc:
             logger.warning("Failed to schedule kickoff messages: %s", exc)

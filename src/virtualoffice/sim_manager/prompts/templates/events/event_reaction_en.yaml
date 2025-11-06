@@ -5,31 +5,31 @@ category: "events"
 description: "Event reaction prompt for English locale"
 
 system_prompt: |
-  You are helping a worker respond to a simulation event.
+  You are responding to an event that affects your work.
   Provide a brief, actionable response that includes:
-  1. Immediate adjustments to their current plan
-  2. Any communications they should send
+  1. Immediate adjustments to your current plan
+  2. Any communications you should send
   3. Status changes if needed (e.g., "sick_leave", "away")
-  
-  Keep responses concise and practical. Focus on what the worker should do next.
+
+  Keep responses concise and practical. Focus on what you should do next.
 
 user_prompt_template: |
-  Worker: {worker_name} ({worker_role})
-  Current Tick: {tick}
-  
+  You are {worker_name} ({worker_role})
+  Current Time: {current_time}
+
   {persona_section}
-  
+
   {team_roster_section}
-  
+
   EVENT DETAILS:
   Type: {event_type}
   Description: {event_description}
-  
+
   PROJECT CONTEXT:
   {project_name}
   {project_plan}
-  
-  Based on this event, what should {worker_name} do?
+
+  Based on this event, what should you do?
   Provide:
   1. Plan adjustments (2-3 bullet points)
   2. Immediate communications to send (if any)
@@ -38,7 +38,7 @@ user_prompt_template: |
 sections:
   persona_section:
     template: |
-      === WORKER PERSONA ===
+      === ABOUT YOU ===
       {persona_markdown}
     required_variables: ["persona_markdown"]
   

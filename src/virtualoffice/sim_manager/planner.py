@@ -151,6 +151,7 @@ class GPTPlanner:
         daily_report_model: str | None = DEFAULT_DAILY_REPORT_MODEL,
         simulation_report_model: str | None = DEFAULT_SIM_REPORT_MODEL,
         use_template_prompts: bool = False,
+        hours_per_day: int = 8,
     ) -> None:
         if generator is None:
             def _default(messages: list[dict[str, str]], model: str) -> tuple[str, int]:
@@ -166,6 +167,7 @@ class GPTPlanner:
         self.simulation_report_model = simulation_report_model or project_model
         self._locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
         self.use_template_prompts = use_template_prompts or os.getenv("VDOS_USE_TEMPLATE_PROMPTS", "").lower() in ("true", "1", "yes")
+        self.hours_per_day = hours_per_day
         
         # Initialize prompt manager if using templates
         self._prompt_manager = None
@@ -177,7 +179,7 @@ class GPTPlanner:
                 import pathlib
                 template_dir = pathlib.Path(__file__).parent / "prompts" / "templates"
                 self._prompt_manager = PromptManager(str(template_dir), locale=self._locale)
-                self._context_builder = ContextBuilder(locale=self._locale)
+                self._context_builder = ContextBuilder(locale=self._locale, hours_per_day=self.hours_per_day)
                 self._metrics_collector = PromptMetricsCollector()
             except Exception as e:
                 print(f"Warning: Failed to initialize prompt management system: {e}")

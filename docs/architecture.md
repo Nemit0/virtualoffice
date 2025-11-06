@@ -177,15 +177,22 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
 
 **Random Event Types**:
 - **Sick Leave**: 5% daily chance, triggers status override and team notifications
-- **Client Feature Requests**: ~10% chance every 2 hours, generates coordination tasks
+- **Client Feature Requests**: ~10% chance every 2 hours, generates coordination tasks with project-specific collaborators
 - **Blockers**: Dependency issues requiring team coordination (extensible)
 - **Meetings**: Scheduled gatherings affecting availability (extensible)
+
+**Project-Specific Event Handling**:
+- Client feature requests use `_get_project_collaborators()` to select coordination partners
+- Ensures department head only coordinates with team members from the same project(s)
+- Prevents cross-project event coordination in multi-project simulations
+- Maintains realistic event response patterns within project boundaries
 
 **Integration**:
 - Used by `SimulationEngine` during tick advancement via `process_events_for_tick()`
 - Used by `SimulationEngine` for event retrieval via `list_events()`
 - Used by `SimulationEngine` for report generation (event summaries)
 - Callbacks to engine for message queuing and status overrides
+- Uses `_get_project_collaborators()` for project-aware event coordination
 - Localization support via `get_current_locale_manager()`
 - Deterministic random generation via optional seed
 - Complete separation from direct database access in engine methods
@@ -242,6 +249,298 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
 - Integrates with localization system for message templates
 - Configurable via `VDOS_CONTACT_COOLDOWN_TICKS` environment variable
 - Supports external stakeholders via `VDOS_EXTERNAL_STAKEHOLDERS` environment variable
+- Works with `CommunicationGenerator` for fallback communication generation when JSON absent
+
+---
+
+## Email Volume Reduction System (Implemented Nov 5, 2025)
+
+**VDOS v2.0** significantly reduces email volume from ~2,700 emails/day to ~300-500 emails/day for a 12-person team (80-85% reduction). This makes simulations more realistic and improves performance.
+
+### Core Design Principle
+
+**Silence is valid.** Personas should only communicate when they have something specific to say.
+
+### System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SimulationEngine                          │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  Communication Components (Refactored v2.0)            │ │
+│  │                                                          │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  JSON Communications (Primary)                   │  │ │
+│  │  │  - Explicitly planned in hourly plans            │  │ │
+│  │  │  - Purposeful, context-aware                     │  │ │
+│  │  │  - Never throttled                               │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
+│  │                                                          │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  InboxManager (Optional)                         │  │ │
+│  │  │  - Message tracking per persona                  │  │ │
+│  │  │  - Reply prioritization                          │  │ │
+│  │  │  - Message classification                        │  │ │
+│  │  │  - Initialized in __init__()                     │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
+│  │                                                          │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  Daily Limits (Safety Net)                       │  │ │
+│  │  │  - Hard limits: 50 emails/day, 100 chats/day    │  │ │
+│  │  │  - Prevents runaway generation                   │  │ │
+│  │  │  - Configurable per team size                    │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  Communication Flow:                                         │
+│  1. Parse JSON communications from hourly plans              │
+│  2. Dispatch scheduled communications                        │
+│  3. Check daily limits before sending                        │
+│  4. NO automatic fallback generation                         │
+│  5. Event-driven notifications preserved                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Status
+
+**Status:** ✅ Phase 1-3 Complete, ✅ Phase 4 In Progress (Tasks 1-11 Complete)
+
+**Completed (Nov 5, 2025):**
+
+**Phase 1: Remove Automatic Fallback (Complete)**
+- ✅ **Task 1**: Removed all automatic template fallback code (lines 2988-3150 in engine.py)
+  - Removed sim-manager status emails
+  - Removed persona-to-collaborators email loops
+  - Removed automatic "Update:" emails
+  - Removed automatic "Quick update" chats
+  - Removed GPT fallback batch processing
+- ✅ **Task 2**: Implemented daily message limits (safety net)
+  - Hard limits: 50 emails/day, 100 chats/day per persona
+  - Configurable via `VDOS_MAX_EMAILS_PER_DAY` and `VDOS_MAX_CHATS_PER_DAY`
+  - WARNING logs when limits reached
+  - Limits reset at start of new simulation day
+- ✅ **Task 3**: Updated configuration defaults
+  - `VDOS_ENABLE_AUTO_FALLBACK` defaults to `false`
+  - New environment variables documented
+  - Migration guide added to README
+
+**Phase 2: Enable Purposeful Communication (✅ Complete)**
+- ✅ **Task 4**: Inbox-driven reply generation
+  - Added `_try_generate_inbox_reply()` method to engine
+  - Added `_get_recent_hourly_plan()` and `_get_recent_daily_plan()` helper methods
+  - Added `_get_project_collaborators()` for project-specific collaborator filtering
+  - Integrated into hourly cycle after `_dispatch_scheduled()`
+  - Uses `InboxManager` to get unreplied messages
+  - Generates replies using `CommunicationGenerator` with inbox context
+  - Filters collaborators to only include personas on same project(s)
+  - Prevents cross-project communications in multi-project simulations
+  - Limits to 1 reply per hour per persona
+  - Configurable via `VDOS_INBOX_REPLY_PROBABILITY` (default: 0.3)
+  - Deterministic with random seed
+  - Comprehensive logging with `[INBOX_REPLY]` tag
+- ✅ **Task 5**: Improved hourly planning prompts
+  - Added "Communication Guidelines" section to both English and Korean prompts
+  - Emphasizes purposeful communication over routine status updates
+  - Explicitly states that silence is valid for focused work
+  - Lists 5 specific scenarios when communication is appropriate
+  - Target: 40-50% JSON communication rate (down from ~70%)
+- ✅ **Task 6**: Status-based communication blocking
+  - Block all communications when status is Away/SickLeave/Vacation/Offline
+  - Status check happens early in hourly cycle
+  - DEBUG logging when status blocks communication
+  - Supports both English and Korean status values
+
+**Phase 3: Fine-Tuning (Complete)**
+- ✅ **Task 7**: Adjusted participation balancer thresholds
+  - Changed throttle threshold from 2.0x to 1.3x (configurable)
+  - Changed throttle probability from 0.3 to 0.1 (90% reduction)
+  - Environment variables: `VDOS_PARTICIPATION_THROTTLE_RATIO`, `VDOS_PARTICIPATION_THROTTLE_PROBABILITY`
+  - More aggressive throttling prevents volume spikes
+- ✅ **Task 8**: Updated InboxManager with locale support
+  - Added `locale` parameter to `classify_message_type()`
+  - Engine passes `self._locale` to classification
+  - Supports both Korean and English keywords
+- ✅ **Task 9**: Added volume metrics endpoint
+  - Volume tracking in engine: `_volume_metrics` dict
+  - REST endpoint: `GET /api/v1/simulation/volume-metrics`
+  - Metrics: total emails/chats, per-person averages, rates, limits hit
+  - Real-time updates and day boundary resets
+
+**Phase 4: Testing & Documentation (In Progress)**
+- ✅ **Task 10**: Added unit tests
+  - Created `tests/test_engine_volume_reduction.py`
+  - Tests for daily limits, inbox replies, status blocking, configuration
+  - Mocked external dependencies (GPT, database)
+  - Code coverage ≥80% for new code
+- ✅ **Task 11**: Added integration tests
+  - Created `tests/test_volume_reduction_integration.py`
+  - Full 5-day simulation with 12 personas
+  - Verified email volume ≤500/day, per-person ≤40/day
+  - Verified threading rate ≥30%, JSON rate 40-50%
+  - Legacy mode and inbox reply tests
+- ⏳ **Task 12**: Update documentation (IN PROGRESS)
+  - README.md updates with new environment variables
+  - API documentation for volume metrics endpoint
+  - Migration guide and troubleshooting section
+  - Examples of purposeful vs. automatic communication
+
+### Configuration
+
+**New Environment Variables (v2.0):**
+- `VDOS_ENABLE_AUTO_FALLBACK` (boolean, default: **false**) - Enable/disable automatic fallback
+  - **Default changed from `true` to `false`** to reduce email volume
+  - Set to `true` to restore legacy behavior
+- `VDOS_ENABLE_INBOX_REPLIES` (boolean, default: **true**) - Enable inbox-driven replies ✅ **IMPLEMENTED**
+  - When enabled, personas reply to unreplied messages in their inbox
+  - Maintains threading and realistic communication patterns
+  - Replaces automatic fallback with purposeful responses
+- `VDOS_INBOX_REPLY_PROBABILITY` (float 0.0-1.0, default: **0.3**) - Reply probability ✅ **IMPLEMENTED**
+  - Controls how often personas reply to received messages
+  - 0.3 = 30% of unreplied messages get replies
+  - Higher values create more conversational threads
+  - Deterministic with random seed
+- `VDOS_MAX_EMAILS_PER_DAY` (integer, default: 50) - Hard email limit per persona
+- `VDOS_MAX_CHATS_PER_DAY` (integer, default: 100) - Hard chat limit per persona
+
+**Legacy Variables (Deprecated):**
+- `VDOS_GPT_FALLBACK_ENABLED` - Use `VDOS_ENABLE_AUTO_FALLBACK` instead
+- `VDOS_FALLBACK_PROBABILITY` - Only applies when auto fallback enabled
+- `VDOS_THREADING_RATE` - Only applies when auto fallback enabled
+- `VDOS_PARTICIPATION_BALANCE_ENABLED` - Only applies when auto fallback enabled
+
+### Expected Behavior
+
+**Before (v1.x):**
+- ~2,700 emails/day for 12 people (~225 emails/person/day)
+- Automatic "Update:" emails every hour
+- Automatic "Quick update" chats
+- High GPT API costs
+
+**After (v2.0):**
+- ~300-500 emails/day for 12 people (~25-40 emails/person/day)
+- Only purposeful communications (questions, deliverables, coordination)
+- Inbox-driven replies maintain threading (~30% reply rate)
+- No automatic status updates
+- 80% reduction in GPT API costs
+- 50% faster tick advancement
+
+### Migration Guide
+
+See [README.md Migration Guide](#migration-guide-email-volume-reduction-v20) for detailed migration instructions.
+
+### Documentation
+
+Complete documentation available:
+- Requirements: `.kiro/specs/reduce-email-volume/requirements.md`
+- Design: `.kiro/specs/reduce-email-volume/design.md`
+- Tasks: `.kiro/specs/reduce-email-volume/tasks.md`
+- Module docs: `docs/modules/inbox_manager.md` (optional component)
+- Module docs: `docs/modules/participation_balancer.md` (legacy, deprecated)
+
+---
+
+#### CommunicationGenerator Module (Legacy - Deprecated in v2.0)
+**Location**: `src/virtualoffice/sim_manager/communication_generator.py`  
+**Status**: ⚠️ **Deprecated** (Disabled by default in v2.0)
+
+**Note**: This module is part of the legacy automatic fallback system that has been **disabled by default** in VDOS v2.0 to reduce excessive email volume. It remains available for backward compatibility but is not recommended for new simulations.
+
+**To enable legacy behavior**: Set `VDOS_ENABLE_AUTO_FALLBACK=true` in your environment.
+
+**Responsibilities** (when enabled):
+- Generate diverse, context-aware fallback communications using GPT when JSON communications are not present in hourly plans
+- Replace hardcoded templates with AI-generated messages that reflect persona roles, personalities, and work context
+- Support both Korean and English locales with culturally appropriate communication styles
+- Parse and validate GPT responses into structured communication formats
+
+**Why Deprecated**:
+- Generated excessive email volume (~2,700 emails/day for 12 people)
+- Created unrealistic communication patterns (automatic status updates every hour)
+- High GPT API costs (~$0.24 per 1000 calls)
+- Violated the principle that "silence is valid" (focused work doesn't require communication)
+
+**Replacement Strategy**:
+- **Primary**: JSON communications explicitly included in hourly plans (purposeful communication)
+- **Secondary**: Inbox-driven replies (responding to received messages) - pending implementation
+- **Tertiary**: Event-driven notifications (sick leave, etc.) - preserved in event system
+
+**Documentation**: See `docs/modules/communication_generator.md` for detailed documentation (legacy reference)
+
+#### InboxManager Module
+**Location**: `src/virtualoffice/sim_manager/inbox_manager.py`  
+**Status**: Implemented (Nov 5, 2025)
+
+**Responsibilities**:
+- Track received messages per persona for reply context
+- Classify message types (question, request, blocker, update, report)
+- Prioritize messages needing replies
+- Support threading and conversational flow
+- Enable metrics tracking for response times
+
+**Key Classes**:
+- `InboxMessage` - Dataclass representing a received message
+- `InboxManager` - Manages inbox tracking for all personas
+
+**Key Methods**:
+- `add_message(person_id, message)` - Add received message to persona's inbox
+- `get_inbox(person_id, max_messages=5)` - Retrieve recent messages, prioritized by reply needs
+- `classify_message_type(subject, body)` - Classify message type and determine if reply needed
+- `mark_replied(person_id, message_id, replied_tick)` - Mark message as replied
+
+**Features**:
+- **20-Message Limit**: Maintains manageable inbox size per persona
+- **Reply Prioritization**: Messages needing replies returned first
+- **Multilingual Classification**: Supports both Korean and English keywords
+- **Message Types**: question, request, blocker (need replies), update, report (informational)
+- **Threading Support**: Tracks thread_id for email conversations
+- **In-Memory Storage**: Fast access with optional database persistence (Phase 2)
+
+**Classification Rules**:
+- **Question** (needs_reply=True): Contains `?` or question keywords
+- **Request** (needs_reply=True): Contains request/action keywords
+- **Blocker** (needs_reply=True): Contains issue/problem keywords
+- **Update** (needs_reply=False): Contains status update keywords
+- **Report** (needs_reply=False): Default for informational messages
+
+**Integration**:
+- Used by `CommunicationGenerator` to provide inbox context for reply generation
+- Integrated with engine message delivery to track received messages
+- Supports threading by tracking original message IDs
+- Enables participation balancing by tracking message flow
+
+**Performance**:
+- Memory: ~10 KB per persona (20 messages × 500 bytes)
+- Classification: <1ms per message
+- Scalable to 100+ personas in-memory
+
+**Documentation**: See `docs/modules/inbox_manager.md` for detailed documentation
+
+#### ParticipationBalancer Module (Legacy - Deprecated in v2.0)
+**Location**: `src/virtualoffice/sim_manager/participation_balancer.py`  
+**Status**: ⚠️ **Deprecated** (Only applies when auto fallback enabled)
+
+**Note**: This module is part of the legacy automatic fallback system that has been **disabled by default** in VDOS v2.0. It only functions when `VDOS_ENABLE_AUTO_FALLBACK=true`.
+
+**Responsibilities** (when enabled):
+- Track message counts per persona per day
+- Prevent message dominance by high-volume senders
+- Boost low-volume senders to ensure participation
+- Maintain realistic message distribution across team
+- Support deterministic behavior with random seed
+
+**Why Deprecated**:
+- Only relevant for automatic fallback communications (now disabled by default)
+- Not needed for JSON communications (which are always purposeful)
+- Not needed for inbox-driven replies (which are naturally balanced)
+- Adds complexity without benefit in the new communication model
+
+**Replacement Strategy**:
+- **Daily Limits**: Hard limits (50 emails/day, 100 chats/day) prevent runaway generation
+- **Purposeful Communication**: JSON communications are naturally balanced by work needs
+- **Inbox-Driven Replies**: Reply probability controls response frequency
+
+**Documentation**: See `docs/modules/participation_balancer.md` for detailed documentation (legacy reference)
 
 #### WorkerRuntime Module
 **Location**: `src/virtualoffice/sim_manager/core/worker_runtime.py`
@@ -452,6 +751,52 @@ if self.style_filter and persona_id:
 - Replaces inline prompt construction with template-based approach
 - Provides metrics for optimization and cost tracking
 - Supports future prompt optimization and refinement
+
+#### SimulationEngine Helper Methods
+
+**Project Collaborator Filtering**
+
+**Method:** `_get_project_collaborators(person_id, current_week, all_people)`  
+**Location:** `src/virtualoffice/sim_manager/engine.py` (lines 2462-2535)
+
+**Purpose:** Get collaborators for a person based on shared project assignments
+
+**Behavior:**
+- Returns personas assigned to at least one of the same projects as the given person
+- If person has no project assignments (works on unassigned projects), returns all other personas
+- Includes people with no assignments (they work on unassigned projects)
+- Respects project timelines (start_week and duration_weeks)
+
+**Algorithm:**
+1. Query database for projects assigned to the person (active in current week)
+2. If no assignments found, return all other personas (unassigned project behavior)
+3. Query for all people assigned to the same projects
+4. Include people with no assignments (they collaborate on unassigned projects)
+5. Return PersonRead objects for all collaborators
+
+**Usage:**
+- Called by `_try_generate_inbox_reply()` to filter collaborators for inbox-driven replies
+- Called by fallback communication generation to filter collaborators
+- Called by event system for client feature request coordination partner selection
+- Ensures communication context is properly scoped to relevant team members
+
+**Multi-Project Support:**
+- Handles personas assigned to multiple projects
+- Returns union of all collaborators across all assigned projects
+- Prevents cross-project communications in multi-project simulations
+- Ensures event-driven coordination respects project boundaries
+
+**Unassigned Project Behavior:**
+- If a person has no specific project assignments, they work on "unassigned" projects
+- In this case, returns all other personas (everyone collaborates)
+- Maintains backward compatibility with single-project simulations
+
+**Integration:**
+- Used by inbox-driven reply generation (Task 4)
+- Used by fallback communication generation (when enabled)
+- Used by event system for client feature request partner selection
+- Improves GPT-generated message quality by providing better context
+- Prevents unrealistic cross-project communications and event coordination
 
 #### CommunicationHub Module
 **Location**: `src/virtualoffice/sim_manager/core/communication_hub.py`

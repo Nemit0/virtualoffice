@@ -19,14 +19,16 @@ class ContextBuilder:
     and other contextual data needed for realistic LLM-generated plans.
     """
 
-    def __init__(self, locale: str = "en"):
+    def __init__(self, locale: str = "en", hours_per_day: int = 8):
         """
         Initialize the context builder.
 
         Args:
             locale: Language/locale code (e.g., "en", "ko")
+            hours_per_day: Simulation hours per day (default 8)
         """
         self.locale = locale.strip().lower() or "en"
+        self.hours_per_day = hours_per_day
 
     def build_planning_context(
         self,
@@ -62,6 +64,7 @@ class ContextBuilder:
             "worker_chat_handle": worker.chat_handle,
             "worker_timezone": getattr(worker, "timezone", "Asia/Seoul"),
             "tick": tick,
+            "current_time": self._format_tick_to_time(tick),
             "context_reason": reason,
             "project_plan": project_plan,
             "daily_plan": daily_plan,
@@ -128,6 +131,7 @@ class ContextBuilder:
             "worker_role": worker.role or "팀원",
             "worker_email": worker.email_address,
             "tick": tick,
+            "current_time": self._format_tick_to_time(tick),
             "event_type": event.get("event_type", "알 수 없음"),
             "event_description": event.get("description", ""),
             "event_payload": event.get("payload", {}),
@@ -323,3 +327,31 @@ class ContextBuilder:
             lines.append("\nYou should naturally switch between these projects throughout your day.")
 
         return "\n".join(lines)
+
+    def _format_tick_to_time(self, tick: int) -> str:
+        """
+        Convert a simulation tick to HH:MM time format.
+
+        Scales workday ticks across 24 hours, matching the engine's
+        _format_sim_time() behavior. This aligns with persona work_hours
+        like '09:00-18:00'.
+
+        Args:
+            tick: Current simulation tick
+
+        Returns:
+            Time in HH:MM format (e.g., "09:30", "14:15")
+        """
+        if tick <= 0:
+            return "00:00"
+
+        # Calculate tick within the current day
+        day_ticks = max(1, self.hours_per_day * 60)
+        tick_of_day = (tick - 1) % day_ticks
+
+        # Scale to 24h clock (matches engine's _format_sim_time)
+        minutes_24h = int((tick_of_day / day_ticks) * 1440)
+        hour = minutes_24h // 60
+        minute = minutes_24h % 60
+
+        return f"{hour:02d}:{minute:02d}"

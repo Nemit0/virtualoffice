@@ -14,6 +14,7 @@ import time
 from .engine import SimulationEngine
 from virtualoffice.common.db import DB_PATH, get_connection
 from .gateways import HttpChatGateway, HttpEmailGateway
+from .style_filter.filter import CommunicationStyleFilter
 from .schemas import (
     AutoPauseStatusResponse,
     AutoPauseToggleRequest,
@@ -263,8 +264,29 @@ def _build_default_engine() -> SimulationEngine:
     sim_email = os.getenv("VDOS_SIM_EMAIL", "simulator@vdos.local")
     sim_handle = os.getenv("VDOS_SIM_HANDLE", "sim-manager")
 
-    email_gateway = HttpEmailGateway(base_url=email_base)
-    chat_gateway = HttpChatGateway(base_url=chat_base)
+    # Initialize communication style filter
+    # Create a persistent database connection for the style filter
+    locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
+    import sqlite3
+    db_conn = sqlite3.connect(
+        DB_PATH,
+        detect_types=sqlite3.PARSE_DECLTYPES,
+        check_same_thread=False,
+        timeout=30.0
+    )
+    db_conn.row_factory = sqlite3.Row
+    db_conn.execute("PRAGMA journal_mode=WAL")
+    db_conn.execute("PRAGMA foreign_keys = ON")
+    db_conn.execute("PRAGMA busy_timeout = 30000")
+
+    style_filter = CommunicationStyleFilter(
+        db_connection=db_conn,
+        locale=locale,
+        enabled=True  # Actual enabled state is checked from database
+    )
+
+    email_gateway = HttpEmailGateway(base_url=email_base, style_filter=style_filter)
+    chat_gateway = HttpChatGateway(base_url=chat_base, style_filter=style_filter)
     # Allow tick interval override for faster auto-ticking if used
     try:
         tick_interval_seconds = float(os.getenv("VDOS_TICK_INTERVAL_SECONDS", "1.0"))
@@ -570,6 +592,41 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         usage = engine.get_token_usage()
         total = sum(usage.values())
         return TokenUsageSummary(per_model=usage, total_tokens=total)
+
+    @app.get(f"{API_PREFIX}/simulation/quality-metrics", tags=["Reports & Analytics"])
+    def get_quality_metrics(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """
+        Get communication quality metrics for the current simulation.
+        
+        Returns metrics including:
+        - template_diversity_score: Unique subjects / total emails (target: 70%+)
+        - threading_rate: Emails with thread_id / total emails (target: 30%+)
+        - participation_gini: Gini coefficient of message distribution (target: <0.3, lower is better)
+        - project_context_rate: Messages with project references / total messages (target: 60%+)
+        - json_vs_fallback_ratio: JSON communications / total communications (target: 70%+)
+        
+        Each metric includes current value, target value, and description.
+        """
+        return engine.quality_metrics.get_all_metrics()
+
+    @app.get(f"{API_PREFIX}/simulation/volume-metrics", tags=["Reports & Analytics"])
+    def get_volume_metrics(engine: SimulationEngine = Depends(get_engine)) -> dict[str, Any]:
+        """
+        Get volume metrics for monitoring and debugging email volume reduction.
+        
+        Returns metrics including:
+        - total_emails_today: Total emails sent today
+        - total_chats_today: Total chats sent today
+        - avg_emails_per_person: Average emails per person today
+        - avg_chats_per_person: Average chats per person today
+        - json_communication_rate: Ratio of JSON communications to total
+        - inbox_reply_rate: Ratio of inbox replies to total
+        - threading_rate: Email threading rate (from quality metrics)
+        - daily_limits_hit: List of personas that hit daily limits
+        - emails_by_person: Email count per person ID
+        - chats_by_person: Chat count per person ID
+        """
+        return engine.get_volume_metrics()
 
     @app.get(f"{API_PREFIX}/simulation", response_model=SimulationState, tags=["Simulation Control"])
     def get_simulation(engine: SimulationEngine = Depends(get_engine)) -> SimulationState:

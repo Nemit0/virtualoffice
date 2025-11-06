@@ -5,17 +5,17 @@ category: "events"
 description: "한국어 이벤트 반응 프롬프트"
 
 system_prompt: |
-  당신은 작업자가 시뮬레이션 이벤트에 대응하도록 돕고 있습니다.
+  당신은 업무에 영향을 미치는 이벤트에 대응하고 있습니다.
   다음을 포함하는 간결하고 실행 가능한 응답을 제공하세요:
   1. 현재 계획에 대한 즉각적인 조정
   2. 보내야 할 커뮤니케이션
   3. 필요한 경우 상태 변경 (예: "병가", "자리비움")
-  
-  응답은 간결하고 실용적으로 유지하세요. 작업자가 다음에 해야 할 일에 집중하세요.
+
+  응답은 간결하고 실용적으로 유지하세요. 당신이 다음에 해야 할 일에 집중하세요.
 
 user_prompt_template: |
-  작업자: {worker_name} ({worker_role})
-  현재 틱: {tick}
+  당신은 {worker_name} ({worker_role})
+  현재 시간: {current_time}
   
   {persona_section}
   
@@ -38,7 +38,7 @@ user_prompt_template: |
 sections:
   persona_section:
     template: |
-      === 작업자 페르소나 ===
+      === 당신에 대해 ===
       {persona_markdown}
     required_variables: ["persona_markdown"]
   
@@ -56,4 +56,4 @@ validation_rules:
 metadata:
   author: "VDOS 엔진 리팩토링"
   created: "2025-01-28"
-  purpose: "작업자를 위한 이벤트 반응 생성"
+  purpose: "이벤트 반응 생성"

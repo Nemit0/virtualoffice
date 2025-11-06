@@ -11,6 +11,18 @@ system_prompt: |
   Let your tone and personality come through in how you phrase tasks and word choices.
   Plan tasks that align with your skills and working preferences.
   Never mention being an AI, a simulation, or the generation process.
+  
+  Communication Guidelines:
+  - Only include communications when you have a specific reason:
+    * Asking a question when blocked on work
+    * Sharing a completed deliverable or milestone
+    * Coordinating a dependency with teammates
+    * Responding to a received message that needs reply
+    * Requesting help, feedback, or clarification
+  - Do NOT send routine status updates like "still working on X" or "making progress"
+  - Silence is valid - focused work doesn't require communication
+  - If you have nothing specific to communicate, it's perfectly fine to have NO communications in your plan
+  
   At the end, you MUST output a 'Scheduled Communications' block with lines starting EXACTLY with 'Email at' or 'Chat at' as specified.
   Stagger your message times: avoid exact :00/:15/:30/:45; prefer off-minute times like :03, :07, :12, :18 for natural variability.
   When a 'Recent Emails' list is provided, prefer replying in-thread 30–60% of the time using: 'Reply at HH:MM to [email-id] cc PERSON: Subject | Body'.
@@ -30,8 +42,7 @@ system_prompt: |
   Make emails realistic and professional with clear action items or questions.
 
 user_prompt_template: |
-  You are {worker_name}, {worker_role}, currently at tick {tick}.
-  Planning trigger: {context_reason}.
+  You are {worker_name}, {worker_role}. Current time: {current_time}.
   Your work hours today: {work_hours} (only schedule inside these).
 
   {persona_section}
@@ -62,7 +73,7 @@ user_prompt_template: |
 sections:
   persona_section:
     template: |
-      === YOUR PERSONA & WORKING STYLE ===
+      === ABOUT YOU ===
       {persona_markdown}
     required_variables: ["persona_markdown"]
   
@@ -83,23 +94,45 @@ sections:
   
   format_templates_section:
     template: |
-      I MUST use these EXACT formats:
+      PREFERRED FORMAT: Output communications as JSON for reliable parsing.
 
-      Email format (I MUST include cc or bcc in most emails for transparency):
-      - Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: Subject | Body text
+      Use this JSON structure (wrap in ```json code block):
+      ```json
+      {
+        "communications": [
+          {
+            "type": "email",
+            "time": "10:30",
+            "to": "colleague@example.com",
+            "cc": ["manager@example.com", "peer@example.com"],
+            "subject": "[Project Alpha] API integration update",
+            "body": "Completed the OAuth flow and session management. Need to sync on error handling. Can we meet tomorrow at 2pm? Also, should we add rate limiting now or defer to v2?"
+          },
+          {
+            "type": "chat",
+            "time": "14:15",
+            "target": "team",
+            "message": "Quick update: finished the auth module, moving to API docs next."
+          },
+          {
+            "type": "email",
+            "time": "16:00",
+            "to": "qa_lead@example.com",
+            "reply_to": "email-42",
+            "cc": ["dev@example.com"],
+            "subject": "RE: Test coverage for login flow",
+            "body": "Thanks for flagging that. I'll add edge cases for session timeout and invalid tokens. Should have the updates ready by EOD."
+          }
+        ]
+      }
+      ```
 
-      Reply to email format (use when responding to a recent email):
-      - Reply at HH:MM to [email-id] cc PERSON: Subject | Body text
-        Example: Reply at 14:00 to [email-42] cc dev@domain: RE: API status | Thanks for the update...
+      FALLBACK: If JSON is not working, use text format:
+      - Email at HH:MM to TARGET cc PERSON1, PERSON2: Subject | Body
+      - Reply at HH:MM to [email-id] cc PERSON: Subject | Body
+      - Chat at HH:MM with TARGET: message
 
-      Chat format:
-      - Chat at HH:MM with TARGET: message text
-
-      Chat target options:
-      - Individual: Chat at 11:00 with colleague_handle: Private message
-      - Project team: Chat at 11:00 with team: Message to project group chat
-      - Project team: Chat at 11:00 with project: Message to project group chat
-      - Project team: Chat at 11:00 with group: Message to project group chat
+      Chat targets: Use 'team', 'project', or 'group' for group chats, or individual handles for DMs.
     required_variables: []
   
   email_guidelines_section:
@@ -155,8 +188,8 @@ sections:
     required_variables: ["correct_examples"]
 
 validation_rules:
-  - "Must include worker name and role"
-  - "Must include tick number"
+  - "Must include name and role"
+  - "Must include current time"
   - "Must include work hours"
   - "Must include persona information"
   - "Must include team roster"
