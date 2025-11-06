@@ -237,10 +237,19 @@ class InboundMessage:
 4. Generates coordination messages
 5. Records event with feature details
 
+**Feature Examples** (English/Korean):
+- `update main page banner` / `메인 페이지 배너 업데이트`
+- `prepare analytics dashboard` / `분석 대시보드 준비`
+- `add customer review section` / `고객 리뷰 섹션 추가`
+- `improve user onboarding flow` / `사용자 온보딩 플로우 개선`
+- `optimize mobile performance` / `모바일 성능 최적화`
+- `add search functionality` / `검색 기능 추가`
+
 **Localization**:
-- Feature list from `client_feature_requests` key
+- Feature list defined inline with universally understandable requests
 - Templates: `client_request_subject`, `client_request_body`, `client_request_action`
 - Collaboration messages: `partner_with`, `support_on`
+- Locale-aware feature selection (Korean for `ko` locale, English otherwise)
 
 #### Extensible Event Types
 The system supports additional event types through the `convert_event_to_adjustments()` method:

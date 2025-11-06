@@ -355,6 +355,12 @@ def dispatch_scheduled(
    - Preserves thread_id for replies
    - Tracks email history for all recipients
 
+6. **Exchange Logging**:
+   - Logs all sent communications to `worker_exchange_log` table
+   - Records tick, sender_id, recipient_id, channel, subject, and summary
+   - Enables communication pattern analysis and debugging
+   - Supports both email and chat message tracking
+
 **Example Usage**:
 ```python
 emails_sent, chats_sent = communication_hub.dispatch_scheduled(

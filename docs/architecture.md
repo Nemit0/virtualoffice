@@ -187,13 +187,24 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
 - Prevents cross-project event coordination in multi-project simulations
 - Maintains realistic event response patterns within project boundaries
 
+**Localization Support** (Updated Nov 6, 2025):
+- **Client Feature Requests**: Fully localized for Korean (`ko`) and English (`en`) locales
+- **Feature Names**: Bilingual mapping (e.g., 'refresh hero messaging' → '히어로 메시징 새로고침')
+- **Event Messages**: Subject, body, and action items localized based on `self._locale`
+- **Chat Messages**: Use casual Korean tone for `ko` locale (e.g., "~요", "~해요")
+- **Supported Features**:
+  - Refresh hero messaging / 히어로 메시징 새로고침
+  - Prepare launch analytics dashboard / 런치 분석 대시보드 준비
+  - Add testimonial carousel / 고객 후기 캐러셀 추가
+  - Deliver onboarding walkthrough / 온보딩 워크스루 제공
+
 **Integration**:
 - Used by `SimulationEngine` during tick advancement via `process_events_for_tick()`
 - Used by `SimulationEngine` for event retrieval via `list_events()`
 - Used by `SimulationEngine` for report generation (event summaries)
 - Callbacks to engine for message queuing and status overrides
 - Uses `_get_project_collaborators()` for project-aware event coordination
-- Localization support via `get_current_locale_manager()`
+- Respects `VDOS_LOCALE` environment variable for message localization
 - Deterministic random generation via optional seed
 - Complete separation from direct database access in engine methods
 
@@ -336,7 +347,7 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
   - Filters collaborators to only include personas on same project(s)
   - Prevents cross-project communications in multi-project simulations
   - Limits to 1 reply per hour per persona
-  - Configurable via `VDOS_INBOX_REPLY_PROBABILITY` (default: 0.3)
+  - Configurable via `VDOS_INBOX_REPLY_PROBABILITY` (default: 0.65)
   - Deterministic with random seed
   - Comprehensive logging with `[INBOX_REPLY]` tag
 - ✅ **Task 5**: Improved hourly planning prompts
@@ -395,9 +406,9 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
   - When enabled, personas reply to unreplied messages in their inbox
   - Maintains threading and realistic communication patterns
   - Replaces automatic fallback with purposeful responses
-- `VDOS_INBOX_REPLY_PROBABILITY` (float 0.0-1.0, default: **0.3**) - Reply probability ✅ **IMPLEMENTED**
+- `VDOS_INBOX_REPLY_PROBABILITY` (float 0.0-1.0, default: **0.65**) - Reply probability ✅ **IMPLEMENTED**
   - Controls how often personas reply to received messages
-  - 0.3 = 30% of unreplied messages get replies
+  - 0.65 = 65% of unreplied messages get replies
   - Higher values create more conversational threads
   - Deterministic with random seed
 - `VDOS_MAX_EMAILS_PER_DAY` (integer, default: 50) - Hard email limit per persona
@@ -930,7 +941,7 @@ if self.style_filter and persona_id:
 - `events` - Injected simulation events
 - `tick_log` - Tick advancement history
 - `worker_runtime_messages` - Inbox queue
-- `worker_exchange_log` - Communication history
+- `worker_exchange_log` - Communication history (logs all sent emails and chats with sender, recipient, channel, subject, and summary for pattern analysis)
 - `worker_status_overrides` - Sick leave, etc.
 
 ### 4. Virtual Workers (Enhanced)

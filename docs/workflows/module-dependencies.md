@@ -407,8 +407,10 @@ SQLite Database (vdos.db)
    │  └─ DELETE: sim_manager/engine.py:_clear_processed_messages()
    │
    ├─ worker_exchange_log
-   │  ├─ WRITE: sim_manager/engine.py:_send_email()
-   │  ├─ WRITE: sim_manager/engine.py:_send_chat()
+   │  ├─ WRITE: sim_manager/engine.py:_log_exchange() (called from multiple locations)
+   │  │  ├─ From: _execute_scheduled_actions() (scheduled emails and chats)
+   │  │  ├─ From: _process_inbox_replies() (inbox-driven replies)
+   │  │  └─ From: event processing (event-triggered communications)
    │  └─ READ:  sim_manager/engine.py:_get_exchange_history()
    │
    └─ worker_status_overrides

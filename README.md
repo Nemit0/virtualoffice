@@ -374,9 +374,9 @@ Environment variables (see `.env.template` for full list):
   - Limits to 1 reply per hour per persona to avoid reply storms
   - Uses `InboxManager` to prioritize questions and requests
   - Deterministic with random seed
-- `VDOS_INBOX_REPLY_PROBABILITY` (default `0.3`) – Probability (0.0-1.0) of replying to inbox messages ✅ **IMPLEMENTED**
+- `VDOS_INBOX_REPLY_PROBABILITY` (default `0.65`) – Probability (0.0-1.0) of replying to inbox messages ✅ **IMPLEMENTED**
   - Controls how often personas reply to received messages
-  - 0.3 = 30% of unreplied messages get replies
+  - 0.65 = 65% of unreplied messages get replies
   - Higher values create more conversational threads
   - Deterministic with random seed for reproducible simulations
 - `VDOS_MAX_EMAILS_PER_DAY` (default `50`) – Hard limit on emails per persona per day (safety net) ✅ **IMPLEMENTED**
@@ -427,7 +427,7 @@ Environment variables (see `.env.template` for full list):
    - Silence is now treated as valid (focused work doesn't require communication)
 
 2. **Inbox-driven replies enabled** (`VDOS_ENABLE_INBOX_REPLIES=true`)
-   - Personas reply to ~30% of received messages (configurable)
+   - Personas reply to ~65% of received messages (configurable via `VDOS_INBOX_REPLY_PROBABILITY`)
    - Maintains threading and realistic communication patterns
    - Replaces automatic fallback with purposeful responses
 
@@ -531,14 +531,14 @@ curl http://127.0.0.1:8015/api/v1/simulation/volume-metrics
 If volume is still high:
 - Verify no legacy `VDOS_GPT_FALLBACK_ENABLED=true` in your `.env`
 - Check daily limits are being enforced (look for WARNING logs)
-- Ensure inbox reply probability is reasonable (default: 0.3)
+- Ensure inbox reply probability is reasonable (default: 0.65)
 
 **Issue: Not enough communication / threading broken**
 
 Increase inbox reply probability:
 ```bash
 # In .env file
-VDOS_INBOX_REPLY_PROBABILITY=0.5  # 50% reply rate (higher threading)
+VDOS_INBOX_REPLY_PROBABILITY=0.8  # 80% reply rate (higher threading)
 ```
 
 Or enable legacy mode temporarily:
@@ -826,7 +826,7 @@ See `docs/guides/template_authoring.md` for complete guide.
 **Tertiary: Inbox-Driven Replies** ✅ **IMPLEMENTED**
 - Responding to received messages that need replies
 - Maintains threading and conversational flow
-- Configurable reply probability (default: 30%)
+- Configurable reply probability (default: 65%, updated Nov 6, 2025)
 - Limits to 1 reply per hour per persona to avoid reply storms
 - Uses `InboxManager` to prioritize questions and requests
 - **Filters collaborators to only include personas on same project(s)**
@@ -843,7 +843,7 @@ See `docs/guides/template_authoring.md` for complete guide.
 
 **Added:**
 - ✅ Daily message limits (50 emails/day, 100 chats/day per persona)
-- ✅ Inbox-driven reply generation (30% reply rate by default)
+- ✅ Inbox-driven reply generation (65% reply rate by default, updated Nov 6, 2025)
 - ✅ Improved hourly planning prompts emphasizing purposeful communication
 - ✅ Configuration to restore legacy behavior if needed
 
@@ -852,7 +852,7 @@ See `docs/guides/template_authoring.md` for complete guide.
 **v2.0 (Current - Realistic):**
 - ~300-500 emails/day for 12 people (~25-40 emails/person/day)
 - Only purposeful communications (questions, deliverables, coordination)
-- Inbox-driven replies maintain threading (~30% reply rate)
+- Inbox-driven replies maintain threading (~65% reply rate, updated Nov 6, 2025)
 - No automatic status updates
 - 80% reduction in GPT API costs
 - 50% faster tick advancement
@@ -872,7 +872,7 @@ VDOS_ENABLE_AUTO_FALLBACK=false
 
 # Enable inbox-driven replies (IMPLEMENTED - default: true)
 VDOS_ENABLE_INBOX_REPLIES=true
-VDOS_INBOX_REPLY_PROBABILITY=0.3  # 30% reply rate (deterministic with seed)
+VDOS_INBOX_REPLY_PROBABILITY=0.65  # 65% reply rate (deterministic with seed)
 
 # Daily message limits (safety net)
 VDOS_MAX_EMAILS_PER_DAY=50

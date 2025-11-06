@@ -178,6 +178,45 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Example**: `VDOS_GUI_AUTOKILL_SECONDS=300`
 - **Notes**: Used for automated GUI testing; leave unset in normal use
 
+## Communication Volume Configuration
+
+### VDOS_ENABLE_AUTO_FALLBACK
+- **Default**: `false`
+- **Description**: Enable/disable automatic fallback communication generation (legacy feature)
+- **Example**: `VDOS_ENABLE_AUTO_FALLBACK=false`
+- **Values**: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`
+- **Notes**: Disabled by default in v2.0 to reduce excessive email volume. Set to `true` to restore legacy behavior.
+
+### VDOS_ENABLE_INBOX_REPLIES
+- **Default**: `true`
+- **Description**: Enable inbox-driven reply generation for realistic threading
+- **Example**: `VDOS_ENABLE_INBOX_REPLIES=true`
+- **Values**: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`
+- **Notes**: When enabled, personas reply to unreplied messages in their inbox. Maintains threading and realistic communication patterns.
+
+### VDOS_INBOX_REPLY_PROBABILITY
+- **Default**: `0.65`
+- **Description**: Probability (0.0-1.0) of replying to inbox messages
+- **Example**: `VDOS_INBOX_REPLY_PROBABILITY=0.65`
+- **Range**: 0.0 to 1.0
+- **Notes**: 
+  - 0.65 = 65% of unreplied messages get replies
+  - Higher values create more conversational threads
+  - Deterministic with random seed for reproducible simulations
+  - Updated from 0.3 to 0.65 on Nov 6, 2025 for more realistic chat frequency
+
+### VDOS_MAX_EMAILS_PER_DAY
+- **Default**: `50`
+- **Description**: Hard limit on emails per persona per day (safety net)
+- **Example**: `VDOS_MAX_EMAILS_PER_DAY=50`
+- **Notes**: Prevents runaway email generation bugs. WARNING logs when limits reached.
+
+### VDOS_MAX_CHATS_PER_DAY
+- **Default**: `100`
+- **Description**: Hard limit on chats per persona per day (safety net)
+- **Example**: `VDOS_MAX_CHATS_PER_DAY=100`
+- **Notes**: Prevents runaway chat generation bugs. WARNING logs when limits reached.
+
 ## Example .env File
 
 ```bash
@@ -195,6 +234,13 @@ VDOS_DB_PATH=src/virtualoffice/vdos.db
 # Simulation settings
 VDOS_TICKS_PER_DAY=480
 VDOS_TICK_INTERVAL_SECONDS=1.0
+
+# Communication volume control (v2.0)
+VDOS_ENABLE_AUTO_FALLBACK=false
+VDOS_ENABLE_INBOX_REPLIES=true
+VDOS_INBOX_REPLY_PROBABILITY=0.65
+VDOS_MAX_EMAILS_PER_DAY=50
+VDOS_MAX_CHATS_PER_DAY=100
 
 # OpenAI (required for GPT planning)
 OPENAI_API_KEY=sk-proj-...

@@ -366,13 +366,13 @@ class SimulationEngine:
             self._enable_inbox_replies = True
         
         try:
-            self._inbox_reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.3"))
+            self._inbox_reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.65"))
             if not 0.0 <= self._inbox_reply_probability <= 1.0:
-                logger.warning(f"VDOS_INBOX_REPLY_PROBABILITY must be between 0.0 and 1.0, got {self._inbox_reply_probability}, defaulting to 0.3")
-                self._inbox_reply_probability = 0.3
+                logger.warning(f"VDOS_INBOX_REPLY_PROBABILITY must be between 0.0 and 1.0, got {self._inbox_reply_probability}, defaulting to 0.65")
+                self._inbox_reply_probability = 0.65
         except ValueError:
-            logger.warning("Invalid VDOS_INBOX_REPLY_PROBABILITY value, defaulting to 0.3")
-            self._inbox_reply_probability = 0.3
+            logger.warning("Invalid VDOS_INBOX_REPLY_PROBABILITY value, defaulting to 0.65")
+            self._inbox_reply_probability = 0.65
         
         # Communication diversity configuration (legacy, used when auto-fallback enabled)
         try:
@@ -1406,6 +1406,9 @@ class SimulationEngine:
         )
         chat_ko_re = re.compile(r"^채팅\s+(\d{2}:\d{2})에\s+([^:]+)(?:과|와):\s*(.*)$", re.I)
 
+        # Track parsed communications to detect duplicates
+        parsed_comms = []
+        
         for ln in lines:
             channel = None
             when = None
@@ -1485,6 +1488,16 @@ class SimulationEngine:
                 entry['cc'] = [x.strip() for x in cc_raw.split(',') if x.strip()]
             if bcc_raw:
                 entry['bcc'] = [x.strip() for x in bcc_raw.split(',') if x.strip()]
+
+            # Create a signature for duplicate detection (channel + target + first 50 chars of payload)
+            signature = (channel, target.lower() if target else '', payload[:50] if payload else '')
+            
+            # Check if we've already parsed this communication (handles mixed English/Korean duplicates)
+            if signature in parsed_comms:
+                logger.debug(f"Skipping duplicate communication: {channel} to {target}")
+                continue
+            
+            parsed_comms.append(signature)
 
             # Deduplicate: check if identical entry already scheduled for this tick
             existing = sched.setdefault(t, [])
@@ -1702,6 +1715,21 @@ class SimulationEngine:
                     )
                     emails += 1
                     
+                    # Log the exchange
+                    recipient_id = None
+                    recipient_person = email_index.get(email_to.lower())
+                    if recipient_person:
+                        recipient_id = recipient_person.id
+                    
+                    self._log_exchange(
+                        tick=current_tick,
+                        sender_id=person.id,
+                        recipient_id=recipient_id,
+                        channel='email',
+                        subject=subject,
+                        summary=body[:100] if body else None
+                    )
+                    
                     # Get source for tracking
                     source = act.get('_source', 'unknown')
                     
@@ -1796,6 +1824,21 @@ class SimulationEngine:
                 if self._can_send(tick=current_tick, channel='chat', sender=person.chat_handle, recipient_key=(chat_to,), subject=None, body=payload):
                     result = self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso, persona_id=person.id)
                     chats += 1
+                    
+                    # Log the exchange
+                    recipient_id = None
+                    recipient_person = handle_index.get(chat_to)
+                    if recipient_person:
+                        recipient_id = recipient_person.id
+                    
+                    self._log_exchange(
+                        tick=current_tick,
+                        sender_id=person.id,
+                        recipient_id=recipient_id,
+                        channel='chat',
+                        subject=None,
+                        summary=payload
+                    )
                     
                     # Get source for tracking
                     source = act.get('_source', 'unknown')
@@ -3687,13 +3730,15 @@ class SimulationEngine:
                             continue
                         ack_phrase = (message.action_item or message.summary or ("요청하신 내용" if self._locale == 'ko' else "your latest update")).rstrip('.')
                         if self._locale == 'ko':
-                            # More varied and natural Korean acknowledgments
+                            # Casual and natural Korean acknowledgments for chat
                             import random
                             ack_patterns = [
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다.",
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 진행하겠습니다.",
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중입니다.",
-                                f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리하겠습니다.",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했어요!",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 진행할게요~",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중이에요",
+                                f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리할게요",
+                                f"{sender_person.name.split()[0]}님, 네~ {ack_phrase} 바로 시작할게요",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다. 진행하겠습니다",
                             ]
                             ack_body = random.choice(ack_patterns)
                         else:
@@ -4298,27 +4343,47 @@ class SimulationEngine:
         # Client feature request: at most a few times per day (every ~2 hours), low probability.
         if (tick_of_day % 120 == 0) and (rng.random() < 0.10):
             head = next((p for p in people if getattr(p, 'is_department_head', False)), people[0])
-            feature = rng.choice([
-                'refresh hero messaging',
-                'prepare launch analytics dashboard',
-                'add testimonial carousel',
-                'deliver onboarding walkthrough',
-            ])
-            subject = f'Client request: {feature}'
-            body = f"Client requested {feature}. Align on next steps within this cycle."
+            
+            # Feature names in English and Korean
+            # Using more universally understandable feature requests
+            features = {
+                'update main page banner': '메인 페이지 배너 업데이트',
+                'prepare analytics dashboard': '분석 대시보드 준비',
+                'add customer review section': '고객 리뷰 섹션 추가',
+                'improve user onboarding flow': '사용자 온보딩 플로우 개선',
+                'optimize mobile performance': '모바일 성능 최적화',
+                'add search functionality': '검색 기능 추가',
+            }
+            feature_en = rng.choice(list(features.keys()))
+            feature_ko = features[feature_en]
+            
+            # Use Korean for Korean locale, English otherwise
+            feature = feature_ko if self._locale == 'ko' else feature_en
+            
+            if self._locale == 'ko':
+                subject = f'클라이언트 요청: {feature}'
+                body = f"클라이언트가 {feature} 작업을 요청했습니다. 이번 주기 내에 다음 단계를 조율해주세요."
+            else:
+                subject = f'Client request: {feature}'
+                body = f"Client requested {feature}. Align on next steps within this cycle."
+            
             head_message = _InboundMessage(
                 sender_id=0,
                 sender_name='Simulation Manager',
                 subject=subject,
                 summary=body,
-                action_item=f'Plan response to client request: {feature}.',
+                action_item=f'Plan response to client request: {feature}.' if self._locale != 'ko' else f'클라이언트 요청에 대한 응답 계획: {feature}',
                 message_type='event',
                 channel='email',
                 tick=tick,
             )
             self._queue_runtime_message(head, head_message)
             immediate.setdefault(head.id, []).append(head_message)
-            adjustments.setdefault(head.id, []).append(f'Plan response to client request: {feature}.')
+            
+            if self._locale == 'ko':
+                adjustments.setdefault(head.id, []).append(f'클라이언트 요청에 대한 응답 계획: {feature}')
+            else:
+                adjustments.setdefault(head.id, []).append(f'Plan response to client request: {feature}.')
 
             # Get project-specific collaborators for the department head
             # This ensures the partner is from the same project(s)
@@ -4332,20 +4397,36 @@ class SimulationEngine:
             )
             if collaborators:
                 partner = rng.choice(collaborators)
+                
+                # Use casual Korean for chat messages
+                if self._locale == 'ko':
+                    # Casual Korean chat message
+                    summary_text = f'{head.name}님과 {feature} 작업 협력'
+                    action_text = f'{head.name}님과 {feature} 작업 협력'
+                    chat_body = f"{head.name}님, {feature} 건으로 클라이언트 요청 들어왔어요. 같이 진행해요~"
+                else:
+                    summary_text = f'Partner with {head.name} on {feature}.'
+                    action_text = f'Support {head.name} on {feature}.'
+                    chat_body = f"Client request: {feature}. Let's sync on next steps."
+                
                 partner_message = _InboundMessage(
                     sender_id=head.id,
                     sender_name=head.name,
                     subject=subject,
-                    summary=f'Partner with {head.name} on {feature}.',
-                    action_item=f'Support {head.name} on {feature}.',
+                    summary=summary_text,
+                    action_item=action_text,
                     message_type='event',
                     channel='chat',
                     tick=tick,
                 )
                 self._queue_runtime_message(partner, partner_message)
                 immediate.setdefault(partner.id, []).append(partner_message)
-                adjustments.setdefault(partner.id, []).append(f'Partner with {head.name} on client request: {feature}.')
-                chat_body = f"Client request: {feature}. Let's sync on next steps."
+                
+                if self._locale == 'ko':
+                    adjustments.setdefault(partner.id, []).append(f'{head.name}님과 클라이언트 요청 작업 협력: {feature}')
+                else:
+                    adjustments.setdefault(partner.id, []).append(f'Partner with {head.name} on client request: {feature}.')
+                
                 targets = [head.id, partner.id]
             else:
                 targets = [head.id]

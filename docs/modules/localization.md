@@ -46,11 +46,15 @@ The system maintains comprehensive localization strings organized by category:
 - `status_vacation`: "Vacation" / "휴가"
 
 #### Client Feature Requests
-Korean workplace-appropriate feature requests:
-- "메인 메시지 새로고침" (refresh hero messaging)
-- "런치 분석 대시보드 준비" (prepare launch analytics dashboard)
-- "고객 후기 캐러셀 추가" (add testimonial carousel)
-- "온보딩 가이드 제작" (deliver onboarding walkthrough)
+Universally understandable feature requests (defined inline in engine, not in localization strings):
+- "update main page banner" / "메인 페이지 배너 업데이트"
+- "prepare analytics dashboard" / "분석 대시보드 준비"
+- "add customer review section" / "고객 리뷰 섹션 추가"
+- "improve user onboarding flow" / "사용자 온보딩 플로우 개선"
+- "optimize mobile performance" / "모바일 성능 최적화"
+- "add search functionality" / "검색 기능 추가"
+
+**Note**: These feature requests are defined directly in the engine code (`engine.py`) rather than in the localization strings dictionary, as they are simulation-specific event content rather than UI or system messages.
 
 #### Communication Templates
 - `email_subject_update`: "Project Update" / "프로젝트 업데이트"

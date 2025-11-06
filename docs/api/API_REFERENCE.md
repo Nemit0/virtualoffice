@@ -717,6 +717,76 @@ GET /api/v1/simulation/token-usage
 }
 ```
 
+#### Get Volume Metrics (v2.0)
+```http
+GET /api/v1/simulation/volume-metrics
+```
+
+**Purpose:** Monitor email and chat volume for debugging and validating the Email Volume Reduction system (v2.0).
+
+**Response:**
+```json
+{
+  "day_index": 2,
+  "current_tick": 960,
+  "total_emails_today": 45,
+  "total_chats_today": 78,
+  "avg_emails_per_person": 3.75,
+  "avg_chats_per_person": 6.5,
+  "json_communication_rate": 0.65,
+  "inbox_reply_rate": 0.35,
+  "threading_rate": 0.32,
+  "daily_limits_hit": [
+    {
+      "person_id": 3,
+      "channel": "email",
+      "limit": 50
+    }
+  ],
+  "emails_by_person": {
+    "1": 4,
+    "2": 3,
+    "3": 50,
+    "4": 5
+  },
+  "chats_by_person": {
+    "1": 8,
+    "2": 6,
+    "3": 12,
+    "4": 7
+  }
+}
+```
+
+**Response Fields:**
+- `day_index`: Current simulation day (0-indexed)
+- `current_tick`: Current simulation tick
+- `total_emails_today`: Total emails sent today across all personas
+- `total_chats_today`: Total chats sent today across all personas
+- `avg_emails_per_person`: Average emails per active persona today
+- `avg_chats_per_person`: Average chats per active persona today
+- `json_communication_rate`: Ratio of JSON communications (from hourly plans) to total
+- `inbox_reply_rate`: Ratio of inbox-driven replies to total communications
+- `threading_rate`: Email threading rate (from quality metrics)
+- `daily_limits_hit`: List of personas that reached daily limits (safety net)
+- `emails_by_person`: Email count per person ID
+- `chats_by_person`: Chat count per person ID
+
+**Use Cases:**
+- Monitor email volume reduction effectiveness (target: 80-85% reduction)
+- Verify daily limits are working (50 emails/day, 100 chats/day per persona)
+- Track JSON communication rate (target: 40-50%)
+- Track inbox reply rate (target: ~30%)
+- Debug volume spikes or unexpected patterns
+- Validate Email Volume Reduction v2.0 implementation
+
+**Related Configuration:**
+- `VDOS_ENABLE_AUTO_FALLBACK` - Enable/disable automatic fallback (default: false)
+- `VDOS_ENABLE_INBOX_REPLIES` - Enable inbox-driven replies (default: true)
+- `VDOS_INBOX_REPLY_PROBABILITY` - Reply probability 0.0-1.0 (default: 0.65)
+- `VDOS_MAX_EMAILS_PER_DAY` - Daily email limit per persona (default: 50)
+- `VDOS_MAX_CHATS_PER_DAY` - Daily chat limit per persona (default: 100)
+
 ## Email Server API
 
 ### Send Email
