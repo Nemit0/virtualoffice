@@ -262,6 +262,134 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
 - Supports external stakeholders via `VDOS_EXTERNAL_STAKEHOLDERS` environment variable
 - Works with `CommunicationGenerator` for fallback communication generation when JSON absent
 
+#### PlanParser Module
+**Location**: `src/virtualoffice/sim_manager/plan_parser.py`
+
+**Status**: Implemented (November 2025)
+
+**Responsibilities**:
+- Convert natural language hourly plans into structured JSON
+- Extract scheduled communications (emails, chats, replies) from plan text
+- Validate communication data against JSON schema
+- Fix common parsing errors (invalid emails, handles)
+- Provide clean separation between planning (creative) and parsing (structured)
+
+**Key Classes**:
+- `PlanParser` - AI-powered plan parser using GPT-4o-mini
+- `ParsingError` - Exception raised when parsing fails
+
+**Key Methods**:
+- `parse_plan(plan_text, worker_name, work_hours, team_emails, team_handles, project_name)` - Parse natural language plan into structured JSON
+- `parse_plans_batch(parse_requests)` - Parse multiple plans in parallel using async (75-90% faster for multi-worker simulations)
+- `parse_plans_batch_async(parse_requests)` - Async version for use in async contexts
+- `_build_system_prompt()` - Build Korean system prompt for parser
+- `_build_user_prompt(...)` - Build user prompt with plan details and context
+- `_extract_json(content)` - Extract JSON from response (handles markdown code blocks)
+- `_validate_schema(parsed_json)` - Validate against JSON schema
+- `_fix_common_errors(parsed_json, team_emails, team_handles)` - Fix invalid addresses/handles
+
+**JSON Schema**:
+```json
+{
+  "tasks": [
+    {
+      "time": "09:00",
+      "duration_minutes": 60,
+      "description": "API 개발 작업",
+      "type": "work"
+    }
+  ],
+  "communications": [
+    {
+      "time": "10:30",
+      "type": "email",
+      "to": "colleague@company.kr",
+      "cc": ["manager@company.kr"],
+      "subject": "[프로젝트명] API 상태 업데이트",
+      "body": "API 개발 진행 상황을 공유드립니다..."
+    },
+    {
+      "time": "11:00",
+      "type": "chat",
+      "to": "colleague_handle",
+      "message": "API 엔드포인트 관련 질문 있습니다"
+    },
+    {
+      "time": "14:00",
+      "type": "email_reply",
+      "reply_to": "email-42",
+      "to": "sender@company.kr",
+      "subject": "RE: API 상태",
+      "body": "업데이트 감사합니다..."
+    }
+  ]
+}
+```
+
+**Communication Types**:
+- `email` - New email with to/cc/bcc/subject/body
+- `email_reply` - Reply to existing email with thread_id from reply_to field
+- `chat` - Direct message or room message
+
+**Features**:
+- **Two-Stage Architecture**: Separates planning (creative, natural language) from parsing (structured, validated)
+- **Batch Processing**: Parallel parsing of multiple plans using asyncio.gather() for 75-90% performance improvement
+- **Better Plan Quality**: LLM writes naturally without JSON syntax constraints
+- **Error Recovery**: Can retry just the parser if parsing fails; original plan preserved
+- **Schema Validation**: JSON schema validation with jsonschema library
+- **Error Fixing**: Automatically fixes invalid email addresses and chat handles
+- **Markdown Support**: Extracts JSON from markdown code blocks
+- **Low Temperature**: Uses temperature=0.1 for consistent parsing
+- **Cost Effective**: Uses gpt-4o-mini (~$0.0001 per plan)
+
+**Integration with SimulationEngine**:
+
+The engine integrates Plan Parser through the `_schedule_from_json()` method:
+
+```python
+def _schedule_from_json(
+    self,
+    person: PersonRead,
+    parsed_json: dict[str, Any],
+    current_tick: int
+) -> None:
+    """
+    Schedule communications from parsed JSON plan.
+    
+    Processes the 'communications' array from parsed JSON and schedules
+    each communication for execution at the specified time.
+    """
+```
+
+**Scheduling Logic**:
+1. Converts HH:MM time format to simulation ticks: `tick = (hour * 60) + minute`
+2. Builds action dicts based on communication type (email, email_reply, chat)
+3. Stores in `self._scheduled_comms[person_id][tick]`
+4. Tracks source as `'json_plan'` for metrics
+5. Logs scheduling success/failure for observability
+
+**Workflow**:
+1. **Planning**: LLM generates natural language hourly plan
+2. **Parsing**: `PlanParser.parse_plan()` extracts structured JSON
+3. **Scheduling**: `SimulationEngine._schedule_from_json()` schedules communications
+4. **Execution**: Communications sent at scheduled ticks during simulation
+
+**Fallback Behavior**:
+- If parsing fails, falls back to regex-based parsing in `_schedule_from_hourly_plan()`
+- Original plan text is preserved for fallback
+- Errors logged with `[PLAN_PARSER]` tag
+
+**Configuration**:
+- `VDOS_PLAN_PARSER_MODEL` - Model to use (default: gpt-4o-mini)
+- `OPENAI_API_KEY` - Required for parser operation
+
+**Benefits**:
+- More realistic, human-like planning without JSON constraints
+- Cleaner separation of concerns (planning vs parsing vs scheduling)
+- Easier validation and error handling
+- Better error messages and debugging
+- Supports both Korean and English plans
+
 ---
 
 ## Email Volume Reduction System (Implemented Nov 5, 2025)
@@ -347,7 +475,7 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
   - Filters collaborators to only include personas on same project(s)
   - Prevents cross-project communications in multi-project simulations
   - Limits to 1 reply per hour per persona
-  - Configurable via `VDOS_INBOX_REPLY_PROBABILITY` (default: 0.65)
+  - Configurable via `VDOS_INBOX_REPLY_PROBABILITY` (default: 0.80)
   - Deterministic with random seed
   - Comprehensive logging with `[INBOX_REPLY]` tag
 - ✅ **Task 5**: Improved hourly planning prompts
@@ -406,9 +534,9 @@ The simulation engine has been refactored from a monolithic 2360+ line class int
   - When enabled, personas reply to unreplied messages in their inbox
   - Maintains threading and realistic communication patterns
   - Replaces automatic fallback with purposeful responses
-- `VDOS_INBOX_REPLY_PROBABILITY` (float 0.0-1.0, default: **0.65**) - Reply probability ✅ **IMPLEMENTED**
+- `VDOS_INBOX_REPLY_PROBABILITY` (float 0.0-1.0, default: **0.80**) - Reply probability ✅ **IMPLEMENTED**
   - Controls how often personas reply to received messages
-  - 0.65 = 65% of unreplied messages get replies
+  - 0.80 = 80% of unreplied messages get replies
   - Higher values create more conversational threads
   - Deterministic with random seed
 - `VDOS_MAX_EMAILS_PER_DAY` (integer, default: 50) - Hard email limit per persona
@@ -1365,17 +1493,24 @@ Engine tracks sent messages to prevent duplicates:
 ### Scheduled Communications
 Hourly plans can include scheduled communications:
 
-**Format**:
+**Task Format** (November 2025):
+All tasks must follow strict time formatting for reliable parsing:
+```
+HH:MM - Task description
+```
+Examples: `09:00 - Start API development`, `10:30 - Code review`, `12:00 - Lunch break`
+
+**Communication Format**:
 ```
 Email at 10:30 to dev cc pm, designer: Subject | Body text
 Chat at 14:00 with designer: Message text
 ```
 
 **Processing**:
-1. Planner generates hourly plan with scheduled comms
-2. Engine parses scheduled comm lines
-3. Engine dispatches at specified ticks
-4. Fallback sends occur if no scheduled comms exist
+1. Planner generates hourly plan with formatted tasks and scheduled comms
+2. Plan Parser extracts structured JSON (or regex fallback)
+3. Engine schedules communications at specified ticks
+4. Engine dispatches communications during tick advancement
 
 ### Acknowledgements
 When a worker receives a message:
