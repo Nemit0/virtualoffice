@@ -195,15 +195,15 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Notes**: When enabled, personas reply to unreplied messages in their inbox. Maintains threading and realistic communication patterns.
 
 ### VDOS_INBOX_REPLY_PROBABILITY
-- **Default**: `0.65`
+- **Default**: `0.80`
 - **Description**: Probability (0.0-1.0) of replying to inbox messages
-- **Example**: `VDOS_INBOX_REPLY_PROBABILITY=0.65`
+- **Example**: `VDOS_INBOX_REPLY_PROBABILITY=0.80`
 - **Range**: 0.0 to 1.0
 - **Notes**: 
-  - 0.65 = 65% of unreplied messages get replies
+  - 0.80 = 80% of unreplied messages get replies
   - Higher values create more conversational threads
   - Deterministic with random seed for reproducible simulations
-  - Updated from 0.3 to 0.65 on Nov 6, 2025 for more realistic chat frequency
+  - Updated from 0.65 to 0.80 on Nov 6, 2025 for more active communication patterns
 
 ### VDOS_MAX_EMAILS_PER_DAY
 - **Default**: `50`
@@ -238,7 +238,7 @@ VDOS_TICK_INTERVAL_SECONDS=1.0
 # Communication volume control (v2.0)
 VDOS_ENABLE_AUTO_FALLBACK=false
 VDOS_ENABLE_INBOX_REPLIES=true
-VDOS_INBOX_REPLY_PROBABILITY=0.65
+VDOS_INBOX_REPLY_PROBABILITY=0.80
 VDOS_MAX_EMAILS_PER_DAY=50
 VDOS_MAX_CHATS_PER_DAY=100
 

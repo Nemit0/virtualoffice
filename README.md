@@ -374,9 +374,9 @@ Environment variables (see `.env.template` for full list):
   - Limits to 1 reply per hour per persona to avoid reply storms
   - Uses `InboxManager` to prioritize questions and requests
   - Deterministic with random seed
-- `VDOS_INBOX_REPLY_PROBABILITY` (default `0.65`) – Probability (0.0-1.0) of replying to inbox messages ✅ **IMPLEMENTED**
+- `VDOS_INBOX_REPLY_PROBABILITY` (default `0.80`) – Probability (0.0-1.0) of replying to inbox messages ✅ **IMPLEMENTED**
   - Controls how often personas reply to received messages
-  - 0.65 = 65% of unreplied messages get replies
+  - 0.80 = 80% of unreplied messages get replies
   - Higher values create more conversational threads
   - Deterministic with random seed for reproducible simulations
 - `VDOS_MAX_EMAILS_PER_DAY` (default `50`) – Hard limit on emails per persona per day (safety net) ✅ **IMPLEMENTED**
@@ -872,7 +872,7 @@ VDOS_ENABLE_AUTO_FALLBACK=false
 
 # Enable inbox-driven replies (IMPLEMENTED - default: true)
 VDOS_ENABLE_INBOX_REPLIES=true
-VDOS_INBOX_REPLY_PROBABILITY=0.65  # 65% reply rate (deterministic with seed)
+VDOS_INBOX_REPLY_PROBABILITY=0.80  # 80% reply rate (deterministic with seed)
 
 # Daily message limits (safety net)
 VDOS_MAX_EMAILS_PER_DAY=50

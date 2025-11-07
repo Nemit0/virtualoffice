@@ -147,6 +147,78 @@ This script monitors the auto-tick state directly from the database and detects 
 - Suspecting auto-tick thread is crashing silently
 - Need to verify database state matches engine state
 
+### Auto-Tick Status Diagnostic
+
+**Location**: `.tmp/check_auto_tick_status.py`
+
+Comprehensive diagnostic tool that analyzes simulation state, project timelines, and auto-tick status to identify why auto-tick may not be running.
+
+```bash
+python .tmp/check_auto_tick_status.py
+```
+
+This script provides a complete diagnostic report including:
+
+**What It Checks**:
+- Simulation state (is_running, auto_tick, current_tick, sim_time)
+- Current week and day calculations
+- All projects with their timelines (start_week, duration, end_week)
+- Project status classification (Active, Future, Completed)
+- Persona count
+- Auto-pause trigger detection
+
+**Diagnostic Output**:
+- 📊 Simulation state summary
+- 📅 Current time calculation (week/day)
+- 📋 Project list with status indicators
+- 🔍 Project status breakdown (active/future/completed)
+- 🔧 Auto-tick diagnosis with root cause analysis
+- 👥 Persona count verification
+- 💡 Suggested actions with API endpoints
+
+**Use this when**:
+- Auto-tick appears stopped but you don't know why
+- Need to understand project timeline status
+- Checking if auto-pause was triggered by project completion
+- Verifying simulation is in a valid state
+- Need actionable steps to fix auto-tick issues
+
+**Example Output**:
+```
+================================================================================
+AUTO-TICK STATUS DIAGNOSTIC
+================================================================================
+
+📊 SIMULATION STATE:
+  is_running: True
+  auto_tick: False
+  current_tick: 2401
+  sim_time: 2025-11-06 09:00:00
+
+📅 TIME CALCULATION:
+  Current day: 5
+  Current week: 2
+
+📋 PROJECTS (2 total):
+  ✅ COMPLETED Mobile App MVP
+      Week 1-1 (duration: 1 weeks)
+  🔵 FUTURE Backend API
+      Week 3-4 (duration: 2 weeks)
+
+🔍 PROJECT STATUS IN WEEK 2:
+  Active: 0
+  Future: 1
+  Completed: 1
+
+🔧 AUTO-TICK DIAGNOSIS:
+  ⚠️  Auto-tick is DISABLED
+     → Reason: All projects completed (auto-pause triggered)
+     → Solution: Add new projects or restart simulation
+
+💡 SUGGESTED ACTIONS:
+  1. Add new project or restart simulation
+```
+
 ### OpenAI API Test Script
 
 **Location**: `.tmp/test_openai_api.py`

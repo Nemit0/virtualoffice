@@ -783,7 +783,7 @@ GET /api/v1/simulation/volume-metrics
 **Related Configuration:**
 - `VDOS_ENABLE_AUTO_FALLBACK` - Enable/disable automatic fallback (default: false)
 - `VDOS_ENABLE_INBOX_REPLIES` - Enable inbox-driven replies (default: true)
-- `VDOS_INBOX_REPLY_PROBABILITY` - Reply probability 0.0-1.0 (default: 0.65)
+- `VDOS_INBOX_REPLY_PROBABILITY` - Reply probability 0.0-1.0 (default: 0.80)
 - `VDOS_MAX_EMAILS_PER_DAY` - Daily email limit per persona (default: 50)
 - `VDOS_MAX_CHATS_PER_DAY` - Daily chat limit per persona (default: 100)
 

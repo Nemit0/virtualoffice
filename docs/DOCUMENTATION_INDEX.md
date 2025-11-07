@@ -85,6 +85,8 @@ docs/
 │   ├── communication_generator.md           # ✓ Created (2025-11-05) - GPT-powered fallback communication generation
 │   ├── inbox_manager.md                     # ✓ Created (2025-11-05) - Inbox tracking and message classification
 │   ├── participation_balancer.md            # ✓ Created (2025-11-05) - Message distribution balancing
+│   ├── plan_parser.md                       # ✓ Created (2025-11-06) - AI-powered plan parsing and JSON scheduling
+│   ├── planner.md                           # ✓ Created (2025-11-06) - GPT and Stub planners with protocol interface
 │   ├── email-server.md                      # (To be created)
 │   ├── chat-server.md                       # (To be created)
 │   ├── sim-manager.md                       # (To be created)

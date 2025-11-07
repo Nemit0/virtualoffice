@@ -2,112 +2,222 @@
 
 ## Overview
 
-The planner module (`src/virtualoffice/sim_manager/planner.py`) provides AI-powered and stub planning capabilities for the VDOS simulation engine. It generates project plans, daily plans, hourly plans, and reports using GPT-4o integration with fallback to deterministic stub implementations.
+The Planner module (`src/virtualoffice/sim_manager/planner.py`) provides AI-powered planning capabilities for the VDOS simulation engine. It generates project plans, daily plans, hourly plans, and reports using GPT models, with fallback to deterministic stub planners when AI is unavailable.
+
+**Status**: Production-ready (November 2025)
 
 ## Architecture
 
-### Core Classes
+### Design Philosophy
 
-#### `PlanResult`
+The Planner implements a **protocol-based architecture** with multiple implementations:
+
+1. **GPTPlanner**: AI-powered planning using OpenAI GPT models
+2. **StubPlanner**: Deterministic fallback for testing and offline operation
+3. **Planner Protocol**: Interface defining all planning methods
+
+```
+┌─────────────────────────────────────────┐
+│         Planner Protocol                │
+│  (Interface for all planning methods)   │
+└──────────────┬──────────────────────────┘
+               │
+       ┌───────┴────────┐
+       │                │
+┌──────▼──────┐  ┌──────▼──────┐
+│ GPTPlanner  │  │ StubPlanner │
+│ (AI-powered)│  │ (Fallback)  │
+└─────────────┘  └─────────────┘
+```
+
+### Planning Hierarchy
+
+The planner supports multiple levels of planning granularity:
+
+1. **Project Planning**: Week-by-week roadmap with milestones
+2. **Daily Planning**: Day-level objectives and focus areas
+3. **Hourly Planning**: Minute-by-minute task scheduling with communications
+4. **Hourly Summary**: Concise activity summaries for aggregation
+5. **Daily Reports**: End-of-day summaries with achievements and blockers
+6. **Simulation Reports**: Executive summaries of entire simulation runs
+
+## Core Classes
+
+### `Planner` Protocol
+
+Defines the interface that all planner implementations must follow.
+
+```python
+class Planner(Protocol):
+    """Protocol defining all planning methods."""
+    
+    def generate_project_plan(...) -> PlanResult: ...
+    def generate_daily_plan(...) -> PlanResult: ...
+    def generate_hourly_plan(...) -> PlanResult: ...
+    def generate_hourly_summary(...) -> PlanResult: ...
+    def generate_daily_report(...) -> PlanResult: ...
+    def generate_simulation_report(...) -> PlanResult: ...
+    def generate_with_messages(...) -> PlanResult: ...
+```
+
+### `PlanResult`
+
+Data class containing the result of a planning operation.
+
 ```python
 @dataclass
 class PlanResult:
-    content: str
-    model_used: str
-    tokens_used: int | None = None
+    content: str                    # Generated plan text
+    model_used: str                 # Model identifier
+    tokens_used: int | None = None  # Token count (None for stub)
 ```
 
-Data class representing the result of any planning operation, including the generated content, model used, and token consumption metrics.
+### `PlanningError`
 
-#### `Planner` Protocol
+Exception raised when AI-powered planning fails.
+
 ```python
-class Planner(Protocol):
-    def generate_project_plan(...) -> PlanResult
-    def generate_daily_plan(...) -> PlanResult
-    def generate_hourly_plan(...) -> PlanResult
-    def generate_daily_report(...) -> PlanResult
-    def generate_simulation_report(...) -> PlanResult
+class PlanningError(RuntimeError):
+    """Raised when an LLM-backed planning attempt fails."""
 ```
 
-Protocol defining the interface for all planner implementations, ensuring consistent API across GPT and stub planners.
+## GPTPlanner
 
-### Implementations
+AI-powered planner using OpenAI GPT models.
 
-#### `GPTPlanner`
-AI-powered planner using OpenAI's GPT-4o models for realistic workplace simulation.
+### Initialization
 
-**Features**:
-- **Persona Integration**: Uses complete `persona_markdown` context for authentic planning
-- **Localization Support**: Enhanced Korean language enforcement when `VDOS_LOCALE=ko`
-- **Team Awareness**: Includes team roster and project context in planning
-- **Communication Scheduling**: Generates parseable scheduled communication instructions
-- **Token Tracking**: Comprehensive usage metrics for cost monitoring
-
-**Model Configuration**:
 ```python
-DEFAULT_PROJECT_MODEL = os.getenv("VDOS_PLANNER_PROJECT_MODEL", "gpt-4o-mini")
-DEFAULT_DAILY_MODEL = os.getenv("VDOS_PLANNER_DAILY_MODEL", DEFAULT_PROJECT_MODEL)
-DEFAULT_HOURLY_MODEL = os.getenv("VDOS_PLANNER_HOURLY_MODEL", DEFAULT_DAILY_MODEL)
-DEFAULT_DAILY_REPORT_MODEL = os.getenv("VDOS_PLANNER_DAILY_REPORT_MODEL")
-DEFAULT_SIM_REPORT_MODEL = os.getenv("VDOS_PLANNER_SIM_REPORT_MODEL")
+class GPTPlanner:
+    def __init__(
+        self,
+        generator: PlanGenerator | None = None,
+        project_model: str = DEFAULT_PROJECT_MODEL,
+        daily_model: str = DEFAULT_DAILY_MODEL,
+        hourly_model: str = DEFAULT_HOURLY_MODEL,
+        daily_report_model: str | None = DEFAULT_DAILY_REPORT_MODEL,
+        simulation_report_model: str | None = DEFAULT_SIMULATION_REPORT_MODEL,
+        use_template_prompts: bool = False,
+        hours_per_day: int = 8,
+    ) -> None:
+        """
+        Initialize GPT-powered planner.
+        
+        Args:
+            generator: Custom text generation function (optional)
+            project_model: Model for project planning
+            daily_model: Model for daily planning
+            hourly_model: Model for hourly planning
+            daily_report_model: Model for daily reports
+            simulation_report_model: Model for simulation reports
+            use_template_prompts: Use template-based prompts (experimental)
+            hours_per_day: Working hours per day
+        """
 ```
 
-#### `StubPlanner`
-Deterministic fallback planner for testing and scenarios without AI dependencies.
+**Configuration via Environment Variables**:
+- `VDOS_PLANNER_PROJECT_MODEL` (default: `gpt-4o-mini`)
+- `VDOS_PLANNER_DAILY_MODEL` (default: same as project)
+- `VDOS_PLANNER_HOURLY_MODEL` (default: same as daily)
+- `VDOS_PLANNER_DAILY_REPORT_MODEL` (default: same as daily)
+- `VDOS_PLANNER_SIM_REPORT_MODEL` (default: same as project)
+- `VDOS_LOCALE` (default: `en`, supports `ko` for Korean)
+- `VDOS_USE_TEMPLATE_PROMPTS` (default: `false`, experimental feature)
 
-**Features**:
-- **Deterministic Output**: Consistent, predictable plans for testing
-- **Localization Aware**: Korean-localized stub content when appropriate
-- **Zero Dependencies**: No external API requirements
-- **Fast Execution**: Immediate response for rapid testing scenarios
+### Planning Methods
 
-## Planning Functions
+#### `generate_project_plan()`
 
-### Project Planning
+Generates a week-by-week project roadmap with milestones and risk mitigations.
+
 ```python
 def generate_project_plan(
+    self,
+    *,
     department_head: PersonRead,
     project_name: str,
     project_summary: str,
     duration_weeks: int,
     team: Sequence[PersonRead],
     model_hint: str | None = None,
-) -> PlanResult
+) -> PlanResult:
+    """
+    Generate project plan with milestones and team assignments.
+    
+    Args:
+        department_head: Project lead persona
+        project_name: Name of the project
+        project_summary: Brief project description
+        duration_weeks: Project duration in weeks
+        team: List of team member personas
+        model_hint: Optional model override
+        
+    Returns:
+        PlanResult with project plan content
+    """
 ```
 
-Generates comprehensive project roadmaps with weekly phases, deliverables, and team coordination strategies.
+**Output Format**:
+- Week-by-week breakdown
+- Milestones with owners
+- Risk mitigations
+- Buffer time allocations
+- Team coordination points
 
-**Context Provided**:
-- Department head persona and leadership style
-- Complete team roster with roles and skills
-- Project scope and duration requirements
-- Localized templates and terminology
+#### `generate_daily_plan()`
 
-### Daily Planning
+Generates day-level objectives and focus areas.
+
 ```python
 def generate_daily_plan(
+    self,
+    *,
     worker: PersonRead,
-    project_plan: str,
+    project_plan: str | dict[str, Any],
     day_index: int,
+    duration_weeks: int,
+    team: Sequence[PersonRead] | None = None,
     model_hint: str | None = None,
-    all_active_projects: list[dict[str, Any]] | None = None,
-) -> PlanResult
+) -> PlanResult:
+    """
+    Generate daily plan with objectives and communication strategy.
+    
+    Args:
+        worker: Worker persona
+        project_plan: Project plan text or dict with 'plan' and 'project_name'
+        day_index: Day number (0-indexed)
+        duration_weeks: Total project duration
+        team: Team member personas
+        model_hint: Optional model override
+        
+    Returns:
+        PlanResult with daily plan content
+        
+    Features:
+        - Supports dict project_plan with project_name extraction
+        - Uses persona markdown for authentic planning
+        - Template-based prompts (if enabled)
+        - Korean localization support
+    """
 ```
 
-Creates detailed daily schedules aligned with project phases and individual worker capabilities.
+**Key Features**:
+- Extracts project name from dict or uses default
+- Incorporates persona markdown for authentic voice
+- Includes team roster with contact information
+- Template-based prompts (experimental)
+- Fallback to hard-coded prompts on error
 
-**Context Provided**:
-- **Enhanced Persona Context**: Complete `persona_markdown` for authentic planning
-- Current project phase and objectives
-- Multi-project coordination when applicable
-- Work hours and break patterns
-- Localized planning templates
+#### `generate_hourly_plan()`
 
-### Hourly Planning (Enhanced)
+Generates minute-by-minute task scheduling with scheduled communications.
+
 ```python
 def generate_hourly_plan(
+    self,
+    *,
     worker: PersonRead,
-    project_plan: str,
+    project_plan: str | dict[str, Any],
     daily_plan: str,
     tick: int,
     context_reason: str,
@@ -115,323 +225,597 @@ def generate_hourly_plan(
     model_hint: str | None = None,
     all_active_projects: list[dict[str, Any]] | None = None,
     recent_emails: list[dict[str, Any]] | None = None,
-) -> PlanResult
+) -> PlanResult:
+    """
+    Generate hourly plan with tasks and scheduled communications.
+    
+    Args:
+        worker: Worker persona
+        project_plan: Project plan text or dict
+        daily_plan: Daily plan text
+        tick: Current simulation tick
+        context_reason: Reason for planning (e.g., "start of hour")
+        team: Team member personas
+        model_hint: Optional model override
+        all_active_projects: List of concurrent projects (multi-project support)
+        recent_emails: Recent emails for threading context (NEW)
+        
+    Returns:
+        PlanResult with hourly plan content
+        
+    Features:
+        - Enforces HH:MM time format for all tasks
+        - Includes "Scheduled Communications" section
+        - Supports email threading via recent_emails
+        - Multi-project context awareness
+        - Strict email address validation
+        - Template-based prompts (if enabled)
+        - Korean localization with comprehensive guidelines
+    """
 ```
 
-**Recent Enhancement (October 2025)**: Now includes complete persona context for authentic planning.
+**Recent Enhancements** (November 2025):
 
-**Enhanced Context Building**:
+1. **Email Threading Context** (`recent_emails` parameter):
+   - Provides last 5 received emails for context
+   - Enables realistic email reply generation
+   - Format: `[{email_id, from, subject}, ...]`
+   - Used in prompt to show recent conversations
+
+2. **Multi-Project Support** (`all_active_projects` parameter):
+   - Handles concurrent project work
+   - Prompts for project tags in communications
+   - Example: `[Mobile App] API status update`
+
+3. **Strict Time Formatting**:
+   - All tasks must start with `HH:MM - Description`
+   - Eliminates ambiguous time references
+   - Improves Plan Parser reliability
+
+4. **Email Address Validation**:
+   - Explicit team roster with email mappings
+   - Prevents hallucinated email addresses
+   - Korean name to email mapping support
+
+**Output Format**:
+```
+09:00 - Review priorities and blockers
+09:30 - API development work
+10:30 - Code review session
+...
+
+Scheduled Communications:
+- Email at 10:30 to dev@company.kr cc pm@company.kr: Sprint update | Auth module complete
+- Chat at 11:00 with designer_handle: Quick question about API endpoints
+- Reply at 14:00 to [email-42] cc lead@company.kr: RE: API status | Thanks for update
+```
+
+#### `generate_hourly_summary()`
+
+Generates concise summaries of hourly activities for aggregation.
+
 ```python
-# Extract persona information for authentic planning
-persona_context = []
-if hasattr(worker, 'persona_markdown') and worker.persona_markdown:
-    persona_context.append("=== YOUR PERSONA & WORKING STYLE ===")
-    persona_context.append(worker.persona_markdown)
-    persona_context.append("")
+def generate_hourly_summary(
+    self,
+    *,
+    worker: PersonRead,
+    hour_index: int,
+    hourly_plans: str,
+    model_hint: str | None = None,
+) -> PlanResult:
+    """
+    Generate concise hourly activity summary.
+    
+    Args:
+        worker: Worker persona
+        hour_index: Hour number (0-indexed)
+        hourly_plans: Hourly plan text
+        model_hint: Optional model override
+        
+    Returns:
+        PlanResult with 2-3 bullet point summary
+        
+    Purpose:
+        - Aggregates into daily reports
+        - Tracks key tasks and communications
+        - Identifies blockers and decisions
+    """
 ```
 
-**Context Provided**:
-- **Complete Persona Context**: Full personality, skills, and working style information
-- Team roster with exact email addresses for communication
-- Recent email context for threading and responses
-- Current project status and daily objectives
-- Scheduled communication parsing and validation
-- Multi-project coordination and prioritization
+#### `generate_daily_report()`
 
-**Scheduled Communication Format**:
+Generates end-of-day summaries with achievements and blockers.
 
-**English Format**:
-```
-Email at 10:30 to dev@example.com cc pm@example.com: Subject | Body text
-Chat at 14:00 with @designer: Message text
-Reply at 11:00 to [email-123] cc team@example.com: Response subject | Response body
-```
-
-**Korean Format** (when `VDOS_LOCALE=ko`):
-```
-이메일 10:30에 dev@example.com 참조 pm@example.com: 제목 | 본문
-채팅 14:00에 @designer과: 메시지 내용
-답장 11:00에 [email-123] 참조 team@example.com: 답장 제목 | 답장 본문
-```
-
-### Report Generation
-
-#### Daily Reports
 ```python
 def generate_daily_report(
+    self,
+    *,
     worker: PersonRead,
+    project_plan: str,
     day_index: int,
-    hourly_plans: list[str],
+    daily_plan: str,
+    hourly_log: str,
+    minute_schedule: str,
     model_hint: str | None = None,
-) -> PlanResult
+) -> PlanResult:
+    """
+    Generate daily report with highlights and risks.
+    
+    Args:
+        worker: Worker persona
+        project_plan: Project plan text
+        day_index: Day number (0-indexed)
+        daily_plan: Daily plan text
+        hourly_log: Aggregated hourly activities
+        minute_schedule: Detailed minute-by-minute log
+        model_hint: Optional model override
+        
+    Returns:
+        PlanResult with daily report content
+        
+    Features:
+        - Uses persona markdown for authentic voice
+        - Template-based prompts (if enabled)
+        - Korean localization support
+    """
 ```
 
-Summarizes daily accomplishments, blockers, and next-day planning.
+#### `generate_simulation_report()`
 
-#### Simulation Reports
+Generates executive summaries of entire simulation runs.
+
 ```python
 def generate_simulation_report(
+    self,
+    *,
+    project_plan: str,
+    team: Sequence[PersonRead],
     total_ticks: int,
-    people: Sequence[PersonRead],
+    tick_log: str,
+    daily_reports: str,
+    event_summary: str,
     model_hint: str | None = None,
-) -> PlanResult
+) -> PlanResult:
+    """
+    Generate simulation retrospective report.
+    
+    Args:
+        project_plan: Project plan text
+        team: All team member personas
+        total_ticks: Total simulation ticks
+        tick_log: Tick-by-tick activity log
+        daily_reports: Aggregated daily reports
+        event_summary: Summary of injected events
+        model_hint: Optional model override
+        
+    Returns:
+        PlanResult with executive summary
+        
+    Purpose:
+        - Cross-team coordination analysis
+        - Risk and blocker identification
+        - Readiness assessment for next cycle
+    """
 ```
 
-Comprehensive end-of-simulation analysis with team performance and project outcomes.
+#### `generate_with_messages()` ✨ NEW
 
-## Localization Integration
+Generates plans using externally constructed prompts.
 
-### Korean Language Support
-When `VDOS_LOCALE=ko` is configured, the planner applies enhanced Korean language enforcement:
-
-**System Message Enhancement**:
 ```python
-korean_system_msg = get_korean_prompt("comprehensive")
-# Applies strict Korean-only instructions across all planning functions
+def generate_with_messages(
+    self,
+    *,
+    messages: list[dict[str, str]],
+    model_hint: str | None = None,
+) -> PlanResult:
+    """
+    Generate plan using pre-built message list.
+    
+    This method allows using externally constructed prompts
+    (e.g., from PromptManager) instead of the built-in prompt logic.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content' keys
+        model_hint: Optional model override
+        
+    Returns:
+        PlanResult with generated content
+        
+    Use Cases:
+        - Template-based prompt systems
+        - Custom prompt engineering
+        - A/B testing different prompts
+        - Integration with PromptManager
+    """
 ```
 
-**Features**:
-- **Natural Korean Communication**: Workplace-appropriate Korean language patterns
-- **Mixed Language Prevention**: Strict enforcement against English/Korean mixing
-- **Context-Aware Examples**: Specific examples of correct Korean terminology
-- **Cultural Authenticity**: Korean workplace norms and communication styles
-
-### Localization Manager Integration
+**Example Usage**:
 ```python
-from virtualoffice.common.localization import get_current_locale_manager
+# Build messages externally
+messages = [
+    {"role": "system", "content": "You are a project planner..."},
+    {"role": "user", "content": "Create a plan for..."}
+]
 
-locale_manager = get_current_locale_manager()
-scheduled_header = locale_manager.get_text("scheduled_communications")
-# Returns "Scheduled Communications" (en) or "예정된 커뮤니케이션" (ko)
-```
-
-### Korean Example Communications (Updated October 2025)
-
-The planner now generates **Korean-only example communications** in hourly planning prompts when `VDOS_LOCALE=ko`. This eliminates English text pollution in Korean simulations.
-
-**Implementation** (`planner.py` lines 562-614):
-
-#### Group Chat vs DM Usage Guidelines (Korean)
-```python
-"그룹 채팅 vs 개인 메시지 사용 시기:",
-"- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
-"- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
-```
-
-#### Email Content Guidelines (Korean)
-```python
-"이메일 내용 가이드라인 (중요):",
-"1. 이메일 길이: 최소 3-5문장으로 실질적인 이메일 본문 작성",
-"   - 구체적인 세부사항, 맥락, 명확한 조치 사항 포함",
-"   - 좋은 예시: '로그인 API 통합 작업 중입니다. OAuth 플로우와 사용자 세션 관리를 완료했습니다...'",
-"   - 나쁜 예시: 'API 작업 업데이트. 진행 중입니다.'",
-"",
-"2. 제목에 프로젝트 맥락: 여러 프로젝트 작업 시 제목에 프로젝트 태그 포함",
-"   - 형식: '[프로젝트명] 실제 제목'",
-"   - 예시: '[모바일 앱 MVP] API 통합 상태 업데이트'",
-"   - 예시: '[웹 대시보드] 디자인 리뷰 요청'",
-"   - 업무 관련 이메일의 약 60-70%에 사용",
-"",
-"3. 이메일 현실성: 이메일을 자연스럽고 전문적으로 작성",
-"   - 적절한 경우 맥락이나 인사말로 시작",
-"   - 구체적인 기술 세부사항 또는 비즈니스 맥락 포함",
-"   - 명확한 다음 단계 또는 질문으로 마무리",
-"   - 커뮤니케이션 스타일을 다양화 (모든 이메일이 공식적일 필요는 없음)",
-```
-
-#### Correct Examples (Korean)
-```python
-"올바른 예시 (다음 패턴을 따르세요):",
-"- 이메일 10:30에 colleague@example.dev 참조 manager@example.dev: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨",
-"- 채팅 11:00에 @colleague과: API 엔드포인트 관련 질문",
-"- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)",
-"- 답장 14:00에 [email-42] 참조 lead@example.dev: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다",
-```
-
-#### Wrong Examples (Korean)
-```python
-"잘못된 예시 (절대 하지 마세요):",
-"- 이메일 10:30에 dev 참조 pm: ... (잘못됨 - 'dev'와 'pm'은 이메일 주소가 아닙니다!)",
-"- 이메일 10:30에 team@company.dev: ... (잘못됨 - 배포 목록은 존재하지 않습니다!)",
-"- 이메일 10:30에 all: ... (잘못됨 - 정확한 이메일 주소를 지정하세요!)",
-"- 이메일 10:30에 김민수: ... (잘못됨 - 사람 이름이 아닌 이메일 주소를 사용하세요!)",
-"- 이메일 10:30에 @colleague: ... (잘못됨 - @는 채팅용이며, 이메일 주소를 사용하세요!)",
-```
-
-**Impact**:
-- GPT receives Korean-only examples and guidelines when generating hourly plans
-- Eliminates mixed Korean/English content in simulations
-- Ensures authentic Korean workplace communication patterns
-- Provides detailed email content guidelines in Korean
-- Clarifies group chat vs DM usage in Korean context
-- Maintains consistency with Korean persona markdown and templates
-
-**Related Changes**:
-- `planner_mixin.py`: Also updated with locale-aware example generation
-- See `agent_reports/20251029_PROMPT_LOCALIZATION_AUDIT.md` for comprehensive audit
-- See `agent_reports/20251029_COMPREHENSIVE_KOREAN_LOCALIZATION_FIX.md` for complete details
-
-## Error Handling and Fallback
-
-### Planner Strict Mode
-```python
-VDOS_PLANNER_STRICT = os.getenv("VDOS_PLANNER_STRICT", "0")
-```
-
-**Behavior**:
-- `VDOS_PLANNER_STRICT=0` (default): Falls back to `StubPlanner` on GPT failures
-- `VDOS_PLANNER_STRICT=1`: Raises `PlanningError` on GPT failures, no fallback
-
-### Error Recovery
-1. **API Failures**: Network timeouts, rate limits, authentication errors
-2. **Content Filtering**: OpenAI content policy violations
-3. **Token Limits**: Request exceeds model context window
-4. **Parsing Errors**: Malformed responses from AI models
-
-**Fallback Strategy**:
-```python
-try:
-    result = gpt_planner.generate_hourly_plan(...)
-except Exception as e:
-    logger.warning(f"GPT planning failed: {e}")
-    if not self._planner_strict:
-        result = stub_planner.generate_hourly_plan(...)
-    else:
-        raise PlanningError(f"Planning failed: {e}")
-```
-
-## Performance and Optimization
-
-### Token Usage Tracking
-All planning operations track token consumption for cost monitoring and optimization:
-
-```python
-@dataclass
-class PlanResult:
-    content: str
-    model_used: str
-    tokens_used: int | None = None
-```
-
-### Caching Strategy
-- **Project Plans**: Cached in simulation engine for reuse across workers
-- **Team Context**: Built once per planning cycle, reused for all workers
-- **Localization**: Locale manager cached for session duration
-
-### Rate Limiting
-```python
-VDOS_MAX_HOURLY_PLANS_PER_MINUTE = int(os.getenv("VDOS_MAX_HOURLY_PLANS_PER_MINUTE", "10"))
-```
-
-Prevents excessive API usage during high-activity simulation periods.
-
-## Integration Points
-
-### Simulation Engine Integration
-```python
-# Engine calls planner with complete context
-result = self.planner.generate_hourly_plan(
-    worker=worker,
-    project_plan=project_plan,
-    daily_plan=daily_plan,
-    tick=current_tick,
-    context_reason=reason,
-    team=team_members,
-    model_hint=self._planner_model_hint,
-    all_active_projects=active_projects,
-    recent_emails=recent_emails
+# Generate using pre-built messages
+result = planner.generate_with_messages(
+    messages=messages,
+    model_hint="gpt-4o"
 )
 ```
 
-### Communication Gateway Integration
-Planner-generated scheduled communications are parsed and executed by the simulation engine:
+### Korean Localization
 
-1. **Parsing**: Engine extracts scheduled communication instructions from plans
-2. **Validation**: Email addresses validated against team roster
-3. **Execution**: Communications sent at specified simulation ticks
-4. **Threading**: Email replies properly threaded using recent email context
+When `VDOS_LOCALE=ko`, the planner applies comprehensive Korean language instructions:
 
-### Persona System Integration
-The planner leverages the complete persona system for authentic behavior:
+**Features**:
+- Natural Korean business language
+- Korean-specific communication patterns
+- Localized terminology and examples
+- Korean validation with retry logic
 
-- **Personality Traits**: Plans reflect individual communication styles and preferences
-- **Skills and Expertise**: Task assignments align with worker capabilities
-- **Work Patterns**: Schedules respect individual work hours and break preferences
-- **Role Responsibilities**: Actions appropriate for job titles and team positions
+**Validation and Retry**:
+```python
+def _validate_and_retry_korean_content(
+    self, 
+    messages: list[dict[str, str]], 
+    model: str, 
+    content: str, 
+    tokens: int
+) -> tuple[str, int]:
+    """
+    Validate Korean content and retry if English detected.
+    
+    - Checks for English text in generated content
+    - Retries with enhanced Korean prompts
+    - Configurable retry count via VDOS_KOREAN_VALIDATION_RETRIES
+    - Default: 0 retries (accepts mixed content for speed)
+    """
+```
 
-## Testing and Validation
+**Configuration**:
+- `VDOS_KOREAN_VALIDATION_RETRIES` (default: `0`)
+  - Set to `0` to disable validation (faster, accepts mixed Korean/English)
+  - Set to `1-3` for strict Korean-only output (slower, more API calls)
 
-### Test Coverage
-- **Unit Tests**: Individual planner function validation
-- **Integration Tests**: End-to-end planning pipeline testing
-- **Localization Tests**: Korean language enforcement validation
-- **Fallback Tests**: Stub planner functionality and error handling
-- **Performance Tests**: Token usage and response time monitoring
+## StubPlanner
 
-### Quality Assurance
-- **Content Validation**: Korean content validation for mixed language detection
-- **Communication Parsing**: Scheduled communication format validation
-- **Team Coordination**: Multi-worker planning consistency checks
-- **Project Alignment**: Plan adherence to project phases and objectives
+Deterministic fallback planner for testing and offline operation.
 
-## Future Enhancements
+### Purpose
 
-### Planned Improvements
-1. **Dynamic Persona Learning**: Adapt planning based on simulation history
-2. **Advanced Team Coordination**: Cross-worker dependency modeling
-3. **Stress Response Modeling**: Workload-based planning adjustments
-4. **Communication Pattern Analysis**: Persona-specific messaging styles
-5. **Multi-Language Support**: Additional locale support beyond Korean
+- **Testing**: Reproducible output for test assertions
+- **Offline Operation**: Works without OpenAI API
+- **Development**: Fast iteration without API costs
+- **Fallback**: Graceful degradation when GPT fails
 
-### Extension Points
-1. **Custom Planner Implementations**: Plugin architecture for specialized planners
-2. **Industry-Specific Templates**: Domain-specific planning patterns
-3. **Advanced AI Models**: Integration with newer language models
-4. **Real-Time Adaptation**: Dynamic planning based on simulation feedback
+### Implementation
 
-## Configuration Reference
+```python
+class StubPlanner:
+    """Fallback planner with deterministic output."""
+    
+    def generate_project_plan(...) -> PlanResult:
+        # Returns simple, deterministic project plan
+        
+    def generate_daily_plan(...) -> PlanResult:
+        # Returns Korean-language daily plan
+        
+    def generate_hourly_plan(...) -> PlanResult:
+        # Returns realistic hourly plan with scheduled comms
+        
+    # ... other methods
+```
+
+**Key Features**:
+- Zero token usage
+- Deterministic output
+- Korean language support
+- Realistic communication examples
+- Model identifier: `vdos-stub-{type}`
+
+## Integration with Simulation Engine
+
+### Engine Integration
+
+The planner integrates with the simulation engine through the `_call_planner()` method:
+
+```python
+def _call_planner(
+    self,
+    method_name: str,
+    **kwargs
+) -> PlanResult:
+    """
+    Call planner method with fallback handling.
+    
+    Args:
+        method_name: Name of planner method to call
+        **kwargs: Arguments to pass to planner method
+        
+    Returns:
+        PlanResult from planner
+        
+    Features:
+        - Automatic fallback to StubPlanner on error
+        - Metrics tracking (success/failure/duration)
+        - Configurable strict mode (VDOS_PLANNER_STRICT=1)
+    """
+```
+
+### Workflow
+
+```
+┌──────────────┐
+│   Engine     │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│_call_planner │
+└──────┬───────┘
+       │
+       ├─────────────┐
+       │             │
+       ▼             ▼
+┌──────────┐   ┌──────────┐
+│GPTPlanner│   │StubPlanner│
+│ (try)    │   │(fallback) │
+└──────────┘   └──────────┘
+```
+
+### Parallel Planning
+
+The engine supports parallel hourly planning for multiple workers:
+
+```python
+def _generate_hourly_plans_parallel(
+    self,
+    planning_tasks: list[tuple[PersonRead, str, str]],
+    team: list[PersonRead]
+) -> dict[int, PlanResult]:
+    """
+    Generate hourly plans in parallel using ThreadPoolExecutor.
+    
+    Args:
+        planning_tasks: List of (person, project_plan, daily_plan) tuples
+        team: All team members for context
+        
+    Returns:
+        Dict mapping person_id to PlanResult
+        
+    Performance:
+        - Concurrent API calls reduce wall-clock time
+        - Configurable worker count via VDOS_MAX_PLANNING_WORKERS
+        - Default: 4 concurrent workers
+    """
+```
+
+**Configuration**:
+- `VDOS_MAX_PLANNING_WORKERS` (default: `4`)
+- Higher values = more concurrent API calls
+- Limited by OpenAI rate limits
+
+## Configuration
 
 ### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VDOS_PLANNER_PROJECT_MODEL` | `gpt-4o-mini` | Model for project planning |
+| `VDOS_PLANNER_DAILY_MODEL` | (same as project) | Model for daily planning |
+| `VDOS_PLANNER_HOURLY_MODEL` | (same as daily) | Model for hourly planning |
+| `VDOS_PLANNER_DAILY_REPORT_MODEL` | (same as daily) | Model for daily reports |
+| `VDOS_PLANNER_SIM_REPORT_MODEL` | (same as project) | Model for simulation reports |
+| `VDOS_PLANNER_STRICT` | `0` | Disable stub fallback (1=strict) |
+| `VDOS_LOCALE` | `en` | Locale (en or ko) |
+| `VDOS_USE_TEMPLATE_PROMPTS` | `false` | Use template-based prompts |
+| `VDOS_KOREAN_VALIDATION_RETRIES` | `0` | Korean validation retry count |
+| `VDOS_MAX_PLANNING_WORKERS` | `4` | Parallel planning workers |
+| `OPENAI_API_KEY` | (required) | OpenAI API key |
+
+### Model Selection
+
+**Recommended Models**:
+- **gpt-4o-mini**: Cost-effective, fast, good quality (default)
+- **gpt-4o**: Higher quality, more expensive
+- **gpt-3.5-turbo**: Fastest, lowest cost, lower quality
+
+**Cost Considerations**:
+- Hourly planning is most frequent (every hour per worker)
+- Daily planning once per day per worker
+- Project planning once per project
+- Reports at end of day/simulation
+
+**Example Configuration**:
 ```bash
-# Model Selection
+# Balanced: Fast hourly, quality reports
+VDOS_PLANNER_HOURLY_MODEL=gpt-4o-mini
+VDOS_PLANNER_DAILY_REPORT_MODEL=gpt-4o
+VDOS_PLANNER_SIM_REPORT_MODEL=gpt-4o
+
+# Cost-optimized: All mini
 VDOS_PLANNER_PROJECT_MODEL=gpt-4o-mini
 VDOS_PLANNER_DAILY_MODEL=gpt-4o-mini
 VDOS_PLANNER_HOURLY_MODEL=gpt-4o-mini
-VDOS_PLANNER_DAILY_REPORT_MODEL=gpt-4o-mini
-VDOS_PLANNER_SIM_REPORT_MODEL=gpt-4o-mini
 
-# Behavior Configuration
-VDOS_PLANNER_STRICT=0                    # Enable/disable fallback to stub planner
-VDOS_MAX_HOURLY_PLANS_PER_MINUTE=10     # Rate limiting for API usage
-VDOS_LOCALE=ko                          # Enable Korean localization
-
-# API Configuration
-OPENAI_API_KEY=sk-...                   # Required for GPT planner functionality
+# Quality-optimized: All gpt-4o
+VDOS_PLANNER_PROJECT_MODEL=gpt-4o
+VDOS_PLANNER_DAILY_MODEL=gpt-4o
+VDOS_PLANNER_HOURLY_MODEL=gpt-4o
 ```
 
-### Usage Examples
+## Error Handling
+
+### Fallback Strategy
+
+When `GPTPlanner` fails:
+
+1. **Log Error**: Record error message and duration
+2. **Check Strict Mode**: If `VDOS_PLANNER_STRICT=1`, raise `RuntimeError`
+3. **Fallback**: Use `StubPlanner` for deterministic output
+4. **Record Metrics**: Track fallback in `_planner_metrics`
+
 ```python
-# Initialize planner
-planner = GPTPlanner()
-
-# Generate project plan
-project_result = planner.generate_project_plan(
-    department_head=dept_head,
-    project_name="Mobile App Redesign",
-    project_summary="Modernize mobile application UI/UX",
-    duration_weeks=4,
-    team=team_members
-)
-
-# Generate hourly plan with persona context
-hourly_result = planner.generate_hourly_plan(
-    worker=worker,
-    project_plan=project_result.content,
-    daily_plan=daily_plan_content,
-    tick=current_tick,
-    context_reason="New messages received",
-    team=team_members
-)
+try:
+    result = self.gpt_planner.generate_hourly_plan(...)
+except Exception as e:
+    logger.error(f"GPT planning failed: {e}")
+    if strict_mode:
+        raise RuntimeError("Planning failed in strict mode")
+    result = self.stub_planner.generate_hourly_plan(...)
+    self._planner_metrics['fallbacks'] += 1
 ```
 
-The planner module serves as the intelligence core of VDOS, generating realistic workplace behavior through sophisticated AI integration while maintaining reliability through comprehensive fallback mechanisms and localization support.
+### Common Errors
+
+**API Key Missing**:
+```
+RuntimeError: OpenAI client is not installed; install optional dependencies
+```
+**Solution**: Set `OPENAI_API_KEY` environment variable
+
+**Rate Limit Exceeded**:
+```
+PlanningError: Rate limit exceeded
+```
+**Solution**: Reduce `VDOS_MAX_PLANNING_WORKERS` or add delays
+
+**Invalid Model**:
+```
+PlanningError: Model 'gpt-5' not found
+```
+**Solution**: Use valid model name (gpt-4o, gpt-4o-mini, etc.)
+
+## Performance Optimization
+
+### Parallel Planning
+
+**Sequential Planning** (legacy):
+```python
+for person in people:
+    plan = planner.generate_hourly_plan(person, ...)
+# Total: N × 1.5s
+```
+
+**Parallel Planning** (optimized):
+```python
+with ThreadPoolExecutor(max_workers=4) as executor:
+    futures = [
+        executor.submit(planner.generate_hourly_plan, person, ...)
+        for person in people
+    ]
+    results = [f.result() for f in futures]
+# Total: ~1.5-2s regardless of N
+```
+
+**Performance Metrics**:
+
+| Workers | Sequential | Parallel (4 threads) | Improvement |
+|---------|-----------|---------------------|-------------|
+| 4       | 6.0s      | 1.5s                | 75%         |
+| 8       | 12.0s     | 3.0s                | 75%         |
+| 12      | 18.0s     | 4.5s                | 75%         |
+
+### Token Optimization
+
+**Strategies**:
+1. **Use gpt-4o-mini** for frequent operations (hourly planning)
+2. **Limit context size**: Only include relevant team members
+3. **Truncate logs**: Don't pass entire simulation history
+4. **Cache project plans**: Reuse across daily/hourly planning
+
+**Token Usage Estimates**:
+- Project plan: ~1000-1500 tokens
+- Daily plan: ~500-800 tokens
+- Hourly plan: ~800-1200 tokens
+- Daily report: ~600-1000 tokens
+
+## Testing
+
+### Unit Tests
+
+```python
+def test_gpt_planner_hourly_plan():
+    """Test GPT planner generates valid hourly plan."""
+    planner = GPTPlanner()
+    
+    result = planner.generate_hourly_plan(
+        worker=test_worker,
+        project_plan="Test project...",
+        daily_plan="Test daily plan...",
+        tick=540,  # 09:00
+        context_reason="start of hour",
+        team=[test_teammate],
+    )
+    
+    assert result.content
+    assert result.model_used == "gpt-4o-mini"
+    assert result.tokens_used > 0
+    assert "Scheduled Communications" in result.content or "예정된 커뮤니케이션" in result.content
+```
+
+### Integration Tests
+
+```python
+def test_planner_fallback():
+    """Test fallback to stub planner on error."""
+    # Mock GPT planner to fail
+    mock_planner = Mock(side_effect=PlanningError("API error"))
+    
+    engine = SimulationEngine(planner=mock_planner)
+    
+    # Should fall back to stub planner
+    result = engine._call_planner("generate_hourly_plan", ...)
+    
+    assert result.model_used.startswith("vdos-stub")
+    assert engine._planner_metrics['fallbacks'] == 1
+```
+
+## Related Documentation
+
+- [Plan Parser Module](./plan_parser.md) - Converts natural language plans to JSON
+- [Architecture Documentation](../architecture.md) - Overall system architecture
+- [Prompt System](./prompts.md) - Template-based prompt management (experimental)
+- [Communication Generator](./communication_generator.md) - Fallback communication generation
+
+## Changelog
+
+### November 2025
+
+**Enhancements**:
+- ✅ Added `generate_with_messages()` for external prompt construction
+- ✅ Added `recent_emails` parameter to `generate_hourly_plan()` for threading
+- ✅ Added multi-project support via `all_active_projects` parameter
+- ✅ Enforced strict HH:MM time formatting in hourly plans
+- ✅ Enhanced email address validation with explicit team roster
+- ✅ Korean name to email mapping support
+- ✅ Template-based prompt system (experimental)
+- ✅ Korean validation with configurable retry logic
+
+**Performance**:
+- ✅ Parallel planning support via ThreadPoolExecutor
+- ✅ Configurable worker count (`VDOS_MAX_PLANNING_WORKERS`)
+- ✅ Token usage optimization
+
+**Localization**:
+- ✅ Comprehensive Korean language support
+- ✅ Korean validation and retry mechanism
+- ✅ Localized communication examples
+
+## Future Enhancements
+
+**Planned Features**:
+1. **Prompt Caching**: Cache frequently used prompts to reduce tokens
+2. **Streaming Responses**: Stream plan generation for faster perceived performance
+3. **Plan Templates**: Pre-defined plan templates for common scenarios
+4. **Multi-Model Support**: Support for Anthropic Claude, Google Gemini
+5. **Plan Validation**: Validate plans against project constraints
+6. **Learning from Feedback**: Improve plans based on simulation outcomes
+
+**Under Consideration**:
+- Fine-tuned models for specific planning tasks
+- Plan quality scoring and automatic improvement
+- Integration with external project management tools
+- Real-time plan adjustment based on simulation events
