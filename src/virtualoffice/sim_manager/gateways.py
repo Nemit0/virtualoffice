@@ -70,7 +70,14 @@ class HttpEmailGateway(EmailGateway):
         if self.style_filter and persona_id:
             try:
                 # Run async filter in sync context
-                loop = asyncio.get_event_loop()
+                # Handle case where we're in a thread without an event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    # No event loop in this thread, create one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
                 if loop.is_running():
                     # If we're already in an async context, we need to handle this differently
                     # For now, log and skip filtering to avoid blocking
@@ -200,7 +207,14 @@ class HttpChatGateway(ChatGateway):
         if self.style_filter and persona_id:
             try:
                 # Run async filter in sync context
-                loop = asyncio.get_event_loop()
+                # Handle case where we're in a thread without an event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    # No event loop in this thread, create one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
                 if loop.is_running():
                     # If we're already in an async context, we need to handle this differently
                     # For now, log and skip filtering to avoid blocking
@@ -262,7 +276,14 @@ class HttpChatGateway(ChatGateway):
         if self.style_filter and persona_id:
             try:
                 # Run async filter in sync context
-                loop = asyncio.get_event_loop()
+                # Handle case where we're in a thread without an event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    # No event loop in this thread, create one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
                 if loop.is_running():
                     # If we're already in an async context, we need to handle this differently
                     # For now, log and skip filtering to avoid blocking

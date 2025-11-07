@@ -232,12 +232,20 @@ class GPTPlanner:
         self,
         *,
         worker: PersonRead,
-        project_plan: str,
+        project_plan: str | dict[str, Any],
         day_index: int,
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
     ) -> PlanResult:
+        # Extract project plan text and name from dict or string
+        if isinstance(project_plan, dict):
+            project_plan_text = project_plan.get('plan', '')
+            project_name = project_plan.get('project_name', '현재 프로젝트')
+        else:
+            project_plan_text = project_plan
+            project_name = '현재 프로젝트'
+        
         # Use template-based prompts if enabled
         if self.use_template_prompts and self._prompt_manager and self._context_builder:
             import time
@@ -255,7 +263,8 @@ class GPTPlanner:
                     "team_roster": team_roster or "팀원 없음",
                     "duration_weeks": duration_weeks,
                     "day_number": day_index + 1,
-                    "project_plan": project_plan,
+                    "project_plan": project_plan_text,
+                    "project_name": project_name,  # Add project name to context
                 }
                 
                 # Build prompt from template
@@ -318,9 +327,10 @@ class GPTPlanner:
                 "",
                 *persona_context,
                 *team_roster_lines,
+                f"Project: {project_name}",
                 f"Project duration: {duration_weeks} weeks. Today is day {day_index + 1}.",
                 "Project plan excerpt:",
-                project_plan,
+                project_plan_text,
                 "",
                 "Outline today's key objectives, planned communications, and the time reserved as buffer.",
             ]
@@ -348,7 +358,7 @@ class GPTPlanner:
         self,
         *,
         worker: PersonRead,
-        project_plan: str,
+        project_plan: str | dict[str, Any],
         daily_plan: str,
         tick: int,
         context_reason: str,
@@ -357,6 +367,14 @@ class GPTPlanner:
         all_active_projects: list[dict[str, Any]] | None = None,
         recent_emails: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
+        # Extract project plan text and name from dict or string
+        if isinstance(project_plan, dict):
+            project_plan_text = project_plan.get('plan', '')
+            project_name = project_plan.get('project_name', '현재 프로젝트')
+        else:
+            project_plan_text = project_plan
+            project_name = '현재 프로젝트'
+        
         # Use template-based prompts if enabled
         if self.use_template_prompts and self._prompt_manager and self._context_builder:
             import time
@@ -375,7 +393,8 @@ class GPTPlanner:
                 )
                 
                 # Add additional context fields needed by template
-                context["project_reference"] = project_plan
+                context["project_reference"] = project_plan_text
+                context["project_name"] = project_name  # Add project name to context
                 context["valid_email_list"] = "\n".join(f"  - {m.email_address}" for m in (team or []) if m.id != worker.id)
                 
                 # Build example communications in Korean
@@ -489,10 +508,10 @@ class GPTPlanner:
                 project_context_lines.append(proj['plan'][:500] + "...")  # Truncate for brevity
             project_context_lines.append("\n하루 동안 이 프로젝트들 사이를 자연스럽게 전환해야 합니다.")
             project_context_lines.append("이메일/채팅 작성 시 제목/메시지에 각 커뮤니케이션이 관련된 프로젝트를 명시하세요.")
-            project_context_lines.append("예시: '이메일 10:00에 dev 참조 pm: [모바일 앱 MVP] API 통합 상태 | ...'")
+            project_context_lines.append(f"예시: '이메일 10:00에 dev 참조 pm: [{project_name}] API 통합 상태 | ...'")
             project_reference = "\n".join(project_context_lines)
         else:
-            project_reference = f"프로젝트 참조:\n{project_plan}"
+            project_reference = f"프로젝트: {project_name}\n프로젝트 참조:\n{project_plan_text}"
 
         # Build format templates based on locale
         format_templates = []
@@ -560,6 +579,14 @@ class GPTPlanner:
                 daily_plan,
                 "",
                 "Plan the next few hours with realistic tasking and 10–15m buffers.",
+                "",
+                "**REQUIRED FORMAT RULES:**",
+                "1. ALL tasks MUST start with time in HH:MM format",
+                "2. Format: 'HH:MM - Task description'",
+                "3. Examples:",
+                "   - CORRECT: '09:00 - Start API development', '10:30 - Code review', '12:00 - Lunch break'",
+                "   - WRONG: 'API development task', 'Meeting in the morning', 'Testing after lunch'",
+                "4. NEVER list tasks without start times",
                 "",
                 f"CRITICAL: At the end, add a block titled '{get_current_locale_manager().get_text('scheduled_communications')}' with 3–5 communication lines.",
                 *format_templates,

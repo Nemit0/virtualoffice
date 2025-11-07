@@ -39,6 +39,7 @@ from .communication_generator import CommunicationGenerator
 from .inbox_manager import InboxManager
 from .participation_balancer import ParticipationBalancer
 from .quality_metrics import QualityMetricsTracker
+from .plan_parser import PlanParser, ParsingError
 
 logger = logging.getLogger(__name__)
 
@@ -366,13 +367,13 @@ class SimulationEngine:
             self._enable_inbox_replies = True
         
         try:
-            self._inbox_reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.65"))
+            self._inbox_reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.80"))
             if not 0.0 <= self._inbox_reply_probability <= 1.0:
-                logger.warning(f"VDOS_INBOX_REPLY_PROBABILITY must be between 0.0 and 1.0, got {self._inbox_reply_probability}, defaulting to 0.65")
-                self._inbox_reply_probability = 0.65
+                logger.warning(f"VDOS_INBOX_REPLY_PROBABILITY must be between 0.0 and 1.0, got {self._inbox_reply_probability}, defaulting to 0.80")
+                self._inbox_reply_probability = 0.80
         except ValueError:
-            logger.warning("Invalid VDOS_INBOX_REPLY_PROBABILITY value, defaulting to 0.65")
-            self._inbox_reply_probability = 0.65
+            logger.warning("Invalid VDOS_INBOX_REPLY_PROBABILITY value, defaulting to 0.80")
+            self._inbox_reply_probability = 0.80
         
         # Communication diversity configuration (legacy, used when auto-fallback enabled)
         try:
@@ -861,8 +862,8 @@ class SimulationEngine:
             )
             return False
         
-        # Get reply probability from environment
-        reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.3"))
+        # Get reply probability from environment (use instance variable for consistency)
+        reply_probability = self._inbox_reply_probability
         if reply_probability <= 0:
             return False
         
@@ -1064,8 +1065,8 @@ class SimulationEngine:
             )
             return None
 
-        # Get reply probability from environment
-        reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.3"))
+        # Get reply probability from environment (use instance variable for consistency)
+        reply_probability = self._inbox_reply_probability
         if reply_probability <= 0:
             return None
 
@@ -1347,6 +1348,93 @@ class SimulationEngine:
                     )
 
         return (emails_sent, chats_sent)
+
+    def _schedule_from_json(
+        self,
+        person: PersonRead,
+        parsed_json: dict[str, Any],
+        current_tick: int
+    ) -> None:
+        """
+        Schedule communications from parsed JSON plan.
+        
+        Args:
+            person: Worker persona
+            parsed_json: Structured plan with tasks and communications
+            current_tick: Current simulation tick
+        """
+        if person.id not in self._scheduled_comms:
+            self._scheduled_comms[person.id] = {}
+        
+        communications = parsed_json.get('communications', [])
+        if not communications:
+            logger.debug(f"[SCHEDULE_JSON] No communications in parsed plan for {person.name}")
+            return
+        
+        scheduled_count = 0
+        for comm in communications:
+            try:
+                # Parse time
+                time_str = comm.get('time', '')
+                if not time_str or ':' not in time_str:
+                    logger.warning(f"[SCHEDULE_JSON] Invalid time format: {time_str}")
+                    continue
+                
+                hour, minute = map(int, time_str.split(':'))
+                tick = (hour * 60) + minute
+                
+                # Build action dict based on communication type
+                if comm.get('type') == 'email':
+                    action = {
+                        'type': 'email',
+                        'time': time_str,
+                        'to': comm.get('to', ''),
+                        'cc': comm.get('cc', []),
+                        'bcc': comm.get('bcc', []),
+                        'subject': comm.get('subject', ''),
+                        'body': comm.get('body', ''),
+                        '_source': 'json_plan'
+                    }
+                elif comm.get('type') == 'email_reply':
+                    action = {
+                        'type': 'email',
+                        'time': time_str,
+                        'to': comm.get('to', ''),
+                        'cc': comm.get('cc', []),
+                        'subject': comm.get('subject', ''),
+                        'body': comm.get('body', ''),
+                        'thread_id': comm.get('reply_to'),  # Use reply_to as thread_id
+                        '_source': 'json_plan'
+                    }
+                elif comm.get('type') == 'chat':
+                    action = {
+                        'type': 'chat',
+                        'time': time_str,
+                        'to': comm.get('to', ''),
+                        'message': comm.get('message', ''),
+                        '_source': 'json_plan'
+                    }
+                else:
+                    logger.warning(f"[SCHEDULE_JSON] Unknown communication type: {comm.get('type')}")
+                    continue
+                
+                # Schedule the action
+                if tick not in self._scheduled_comms[person.id]:
+                    self._scheduled_comms[person.id][tick] = []
+                self._scheduled_comms[person.id][tick].append(action)
+                scheduled_count += 1
+                
+                logger.debug(
+                    f"[SCHEDULE_JSON] {person.name} scheduled {comm.get('type')} at {time_str}"
+                )
+                
+            except Exception as e:
+                logger.error(f"[SCHEDULE_JSON] Failed to schedule communication: {comm}, error: {e}")
+        
+        logger.info(
+            f"[SCHEDULE_JSON] Scheduled {scheduled_count}/{len(communications)} communications "
+            f"for {person.name} from parsed JSON"
+        )
 
     def _schedule_from_hourly_plan(self, person: PersonRead, plan_text: str, current_tick: int) -> None:
         import re
@@ -1972,15 +2060,21 @@ class SimulationEngine:
 
     def _format_sim_time(self, tick: int) -> str:
         if tick <= 0:
-            return "Day 0 00:00"
-        # Display time on a 24h clock scaled from the workday window, so that
-        # persona work_hours like '09:00-18:00' align with the displayed HH:MM.
+            return "Day 0 09:00"
+        # Map workday ticks to actual work hours (e.g., 09:00-17:00 for 8-hour day)
+        # so that tick 1 = 09:00, tick 240 = 13:00, tick 480 = 17:00
         day_ticks = max(1, self.hours_per_day * 60)
         day_index = (tick - 1) // day_ticks + 1
         tick_of_day = (tick - 1) % day_ticks
-        minutes_24h = int((tick_of_day / day_ticks) * 1440)
-        hour = minutes_24h // 60
-        minute = minutes_24h % 60
+
+        # Map to work hours (default 09:00 start)
+        work_start_minutes = 9 * 60  # 09:00 = 540 minutes
+        work_duration_minutes = self.hours_per_day * 60
+        minutes_into_workday = int((tick_of_day / day_ticks) * work_duration_minutes)
+        total_minutes = work_start_minutes + minutes_into_workday
+
+        hour = total_minutes // 60
+        minute = total_minutes % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
     def _sim_datetime_for_tick(self, tick: int) -> datetime | None:
@@ -1990,8 +2084,14 @@ class SimulationEngine:
         day_ticks = max(1, self.hours_per_day * 60)
         day_index = (tick - 1) // day_ticks
         tick_of_day = (tick - 1) % day_ticks
-        minutes_24h = int((tick_of_day / day_ticks) * 1440)
-        return base + timedelta(days=day_index, minutes=minutes_24h)
+
+        # Map to work hours (default 09:00 start)
+        work_start_minutes = 9 * 60  # 09:00 = 540 minutes
+        work_duration_minutes = self.hours_per_day * 60
+        minutes_into_workday = int((tick_of_day / day_ticks) * work_duration_minutes)
+        total_minutes = work_start_minutes + minutes_into_workday
+
+        return base + timedelta(days=day_index, minutes=total_minutes)
 
     def _compute_comm_stagger(self, person_id: int, day_index: int) -> int:
         """Compute a deterministic minute-level stagger for scheduled communications.
@@ -2664,7 +2764,7 @@ class SimulationEngine:
             result = self._call_planner(
                 'generate_daily_plan',
                 worker=person,
-                project_plan=project_plan['plan'],
+                project_plan=project_plan,  # Pass full dict to include project_name
                 day_index=day_index,
                 duration_weeks=self.project_duration_weeks,
                 team=team,
@@ -2752,7 +2852,7 @@ class SimulationEngine:
             result = self._call_planner(
                 'generate_hourly_plan',
                 worker=person,
-                project_plan=project_plan['plan'],
+                project_plan=project_plan,  # Pass full dict to include project_name
                 daily_plan=daily_plan_text,
                 tick=tick,
                 context_reason=reason,
@@ -2771,6 +2871,54 @@ class SimulationEngine:
             content = f"{result.content}\n\nAdjustments from live collaboration:\n{bullets}"
             content_result = PlanResult(content=content, model_used=result.model_used, tokens_used=result.tokens_used)
             context += f";adjustments={len(adjustments)}"
+
+        # NEW: Parse natural language plan into structured JSON and schedule communications
+        if self.plan_parser is not None:
+            try:
+                # Extract project name for parser context
+                project_name = None
+                if isinstance(project_plan, dict):
+                    project_name = project_plan.get('project_name')
+                
+                # Build name-to-handle mapping for Korean name resolution
+                name_to_handle = {p.name: p.chat_handle for p in team if p.id != person.id}
+                
+                # Parse the plan
+                parsed_json = self.plan_parser.parse_plan(
+                    plan_text=content_result.content,
+                    worker_name=person.name,
+                    work_hours=getattr(person, 'work_hours', '09:00-18:00'),
+                    team_emails=[p.email_address for p in team if p.id != person.id],
+                    team_handles=[p.chat_handle for p in team if p.id != person.id],
+                    project_name=project_name,
+                    name_to_handle=name_to_handle
+                )
+                
+                # Schedule communications from parsed JSON
+                self._schedule_from_json(person, parsed_json, tick)
+                
+                logger.info(
+                    f"[PLAN_PARSER] Successfully parsed and scheduled plan for {person.name} "
+                    f"({len(parsed_json.get('communications', []))} communications)"
+                )
+                
+            except ParsingError as e:
+                logger.warning(
+                    f"[PLAN_PARSER] Failed to parse plan for {person.name}: {e}, "
+                    f"falling back to regex parser"
+                )
+                # Fall back to regex parsing
+                self._schedule_from_hourly_plan(person, content_result.content, tick)
+            except Exception as e:
+                logger.error(
+                    f"[PLAN_PARSER] Unexpected error parsing plan for {person.name}: {e}, "
+                    f"falling back to regex parser"
+                )
+                # Fall back to regex parsing
+                self._schedule_from_hourly_plan(person, content_result.content, tick)
+        else:
+            # Plan parser disabled, use regex parsing
+            self._schedule_from_hourly_plan(person, content_result.content, tick)
 
         self._store_worker_plan(
             person_id=person.id,
@@ -3229,6 +3377,19 @@ class SimulationEngine:
             random_seed=seed
         )
         logger.info(f"Initialized CommunicationGenerator with seed={seed}, locale={self._locale}")
+        
+        # Initialize PlanParser for converting natural language plans to JSON
+        enable_plan_parser = os.getenv("VDOS_ENABLE_PLAN_PARSER", "true").strip().lower() in {"1", "true", "yes", "on"}
+        if enable_plan_parser:
+            try:
+                self.plan_parser = PlanParser()
+                logger.info("Initialized PlanParser for structured plan extraction")
+            except Exception as e:
+                logger.warning(f"Failed to initialize PlanParser: {e}, will use regex fallback")
+                self.plan_parser = None
+        else:
+            self.plan_parser = None
+            logger.info("PlanParser disabled via VDOS_ENABLE_PLAN_PARSER")
         
         all_people = self.list_people()
         if not all_people:
@@ -4565,9 +4726,3 @@ class SimulationEngine:
         close_chat = getattr(self.chat_gateway, "close", None)
         if callable(close_chat):
             close_chat()
-
-
-
-
-
-

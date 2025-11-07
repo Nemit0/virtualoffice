@@ -332,9 +332,9 @@ class ContextBuilder:
         """
         Convert a simulation tick to HH:MM time format.
 
-        Scales workday ticks across 24 hours, matching the engine's
-        _format_sim_time() behavior. This aligns with persona work_hours
-        like '09:00-18:00'.
+        Maps workday ticks to actual work hours (e.g., 09:00-17:00 for an 8-hour day),
+        so that tick 1 = 09:00, tick 240 = 13:00, tick 480 = 17:00.
+        This ensures LLM receives realistic times within work_hours constraints.
 
         Args:
             tick: Current simulation tick
@@ -343,15 +343,23 @@ class ContextBuilder:
             Time in HH:MM format (e.g., "09:30", "14:15")
         """
         if tick <= 0:
-            return "00:00"
+            return "09:00"  # Default to work start time
 
         # Calculate tick within the current day
         day_ticks = max(1, self.hours_per_day * 60)
         tick_of_day = (tick - 1) % day_ticks
 
-        # Scale to 24h clock (matches engine's _format_sim_time)
-        minutes_24h = int((tick_of_day / day_ticks) * 1440)
-        hour = minutes_24h // 60
-        minute = minutes_24h % 60
+        # Map ticks to work hours (default 09:00 start)
+        # Assumes standard work starts at 09:00
+        work_start_minutes = 9 * 60  # 09:00 = 540 minutes
+        work_duration_minutes = self.hours_per_day * 60
+
+        # Calculate minutes into the workday
+        minutes_into_workday = int((tick_of_day / day_ticks) * work_duration_minutes)
+
+        # Add to work start time
+        total_minutes = work_start_minutes + minutes_into_workday
+        hour = total_minutes // 60
+        minute = total_minutes % 60
 
         return f"{hour:02d}:{minute:02d}"
