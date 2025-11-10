@@ -2088,18 +2088,15 @@ class SimulationEngine:
     def _format_sim_time(self, tick: int) -> str:
         if tick <= 0:
             return "Day 0 09:00"
-        # Map workday ticks to actual work hours (e.g., 09:00-17:00 for 8-hour day)
-        # so that tick 1 = 09:00, tick 240 = 13:00, tick 480 = 17:00
-        day_ticks = max(1, self.hours_per_day * 60)
-        day_index = (tick - 1) // day_ticks + 1
-        tick_of_day = (tick - 1) % day_ticks
 
-        # Map to work hours (default 09:00 start)
-        work_start_minutes = 9 * 60  # 09:00 = 540 minutes
-        work_duration_minutes = self.hours_per_day * 60
-        minutes_into_workday = int((tick_of_day / day_ticks) * work_duration_minutes)
-        total_minutes = work_start_minutes + minutes_into_workday
+        # Use calendar days (24-hour days) for consistent day numbering with project timelines
+        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
+        day_index = ((tick - 1) // TICKS_PER_CALENDAR_DAY) + 1
+        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
 
+        # Map tick-of-day to wall-clock time (00:00-23:59)
+        # Each tick = 1 minute in a 24-hour day
+        total_minutes = tick_of_day
         hour = total_minutes // 60
         minute = total_minutes % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
@@ -2108,15 +2105,14 @@ class SimulationEngine:
         base = self._sim_base_dt
         if not base:
             return None
-        day_ticks = max(1, self.hours_per_day * 60)
-        day_index = (tick - 1) // day_ticks
-        tick_of_day = (tick - 1) % day_ticks
 
-        # Map to work hours (default 09:00 start)
-        work_start_minutes = 9 * 60  # 09:00 = 540 minutes
-        work_duration_minutes = self.hours_per_day * 60
-        minutes_into_workday = int((tick_of_day / day_ticks) * work_duration_minutes)
-        total_minutes = work_start_minutes + minutes_into_workday
+        # Use calendar days (24-hour days) for consistent day numbering
+        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
+        day_index = (tick - 1) // TICKS_PER_CALENDAR_DAY
+        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+
+        # Each tick = 1 minute in a 24-hour day
+        total_minutes = tick_of_day
 
         return base + timedelta(days=day_index, minutes=total_minutes)
 
