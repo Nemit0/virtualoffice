@@ -224,9 +224,166 @@ class TickManager:
         minutes = int((tick_of_day / ticks_per_day) * 1440)
         return base + timedelta(days=day_index, minutes=minutes)
 
+    # ====================================================================
+    # Centralized Tick Conversion Utilities
+    # ====================================================================
+    # All time conversions use CALENDAR WEEKS (7 days * 24 hours * 60 minutes)
+    # to match project configuration expectations.
+    #
+    # Constants:
+    #   - TICKS_PER_CALENDAR_WEEK = 10,080 ticks (7 * 24 * 60)
+    #   - TICKS_PER_CALENDAR_DAY = 1,440 ticks (24 * 60)
+    #
+    # NOTE: This differs from work-day calculations which use hours_per_day.
+    # Work hours are for within-day scheduling; project timelines use calendar time.
+    # ====================================================================
+
+    TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+    TICKS_PER_CALENDAR_DAY = 24 * 60       # 1,440 ticks
+
+    def tick_to_week(self, tick: int) -> int:
+        """
+        Convert tick number to calendar week number (1-indexed).
+
+        Uses calendar weeks (7 * 24 * 60 = 10,080 ticks) to match
+        project configuration expectations.
+
+        Args:
+            tick: Tick number (1-indexed)
+
+        Returns:
+            Week number (1-indexed)
+
+        Examples:
+            >>> tm = TickManager()
+            >>> tm.tick_to_week(1)      # First tick
+            1
+            >>> tm.tick_to_week(10080)  # End of week 1
+            1
+            >>> tm.tick_to_week(10081)  # Start of week 2
+            2
+        """
+        if tick <= 0:
+            return 1
+        return ((tick - 1) // self.TICKS_PER_CALENDAR_WEEK) + 1
+
+    def tick_to_day(self, tick: int) -> int:
+        """
+        Convert tick number to calendar day number (1-indexed).
+
+        Uses calendar days (24 * 60 = 1,440 ticks).
+
+        Args:
+            tick: Tick number (1-indexed)
+
+        Returns:
+            Day number (1-indexed)
+
+        Examples:
+            >>> tm = TickManager()
+            >>> tm.tick_to_day(1)      # First tick
+            1
+            >>> tm.tick_to_day(1440)   # End of day 1
+            1
+            >>> tm.tick_to_day(1441)   # Start of day 2
+            2
+        """
+        if tick <= 0:
+            return 1
+        return ((tick - 1) // self.TICKS_PER_CALENDAR_DAY) + 1
+
+    def tick_to_day_and_week(self, tick: int) -> tuple[int, int]:
+        """
+        Convert tick to both day and week numbers.
+
+        Args:
+            tick: Tick number (1-indexed)
+
+        Returns:
+            Tuple of (day_number, week_number), both 1-indexed
+
+        Examples:
+            >>> tm = TickManager()
+            >>> tm.tick_to_day_and_week(1)
+            (1, 1)
+            >>> tm.tick_to_day_and_week(10081)
+            (8, 2)  # Day 8, Week 2
+        """
+        return (self.tick_to_day(tick), self.tick_to_week(tick))
+
+    def week_to_tick(self, week: int) -> int:
+        """
+        Convert week number to starting tick of that week.
+
+        Args:
+            week: Week number (1-indexed)
+
+        Returns:
+            Tick number at start of week (1-indexed)
+
+        Examples:
+            >>> tm = TickManager()
+            >>> tm.week_to_tick(1)
+            1
+            >>> tm.week_to_tick(2)
+            10081
+            >>> tm.week_to_tick(4)
+            30241
+        """
+        if week <= 1:
+            return 1
+        return ((week - 1) * self.TICKS_PER_CALENDAR_WEEK) + 1
+
+    def day_to_tick(self, day: int) -> int:
+        """
+        Convert day number to starting tick of that day.
+
+        Args:
+            day: Day number (1-indexed)
+
+        Returns:
+            Tick number at start of day (1-indexed)
+
+        Examples:
+            >>> tm = TickManager()
+            >>> tm.day_to_tick(1)
+            1
+            >>> tm.day_to_tick(2)
+            1441
+        """
+        if day <= 1:
+            return 1
+        return ((day - 1) * self.TICKS_PER_CALENDAR_DAY) + 1
+
+    def week_and_day_to_tick(self, week: int, day_of_week: int) -> int:
+        """
+        Convert week number and day-of-week to tick number.
+
+        Args:
+            week: Week number (1-indexed)
+            day_of_week: Day within week (1-7, where 1=Monday)
+
+        Returns:
+            Tick number at start of that day (1-indexed)
+
+        Examples:
+            >>> tm = TickManager()
+            >>> tm.week_and_day_to_tick(1, 1)  # Week 1, Monday
+            1
+            >>> tm.week_and_day_to_tick(2, 1)  # Week 2, Monday
+            10081
+            >>> tm.week_and_day_to_tick(2, 3)  # Week 2, Wednesday
+            12961
+        """
+        week_start = self.week_to_tick(week)
+        return week_start + ((day_of_week - 1) * self.TICKS_PER_CALENDAR_DAY)
+
     def calculate_current_week(self, current_tick: int) -> int:
         """
         Calculate current week from tick number.
+
+        DEPRECATED: Use tick_to_week() instead.
+        This method is kept for backward compatibility.
 
         Args:
             current_tick: Current tick number
@@ -234,10 +391,7 @@ class TickManager:
         Returns:
             Current week number (1-indexed)
         """
-        if current_tick <= 0:
-            return 1
-        current_day = (current_tick - 1) // max(1, self.hours_per_day)
-        return max(1, (current_day // 5) + 1)
+        return self.tick_to_week(current_tick)
 
     def start_auto_tick(
         self,
@@ -335,15 +489,9 @@ class TickManager:
             # Check if auto-pause on project completion is enabled
             if auto_pause_enabled:
                 try:
-                    # Enhanced project lifecycle calculations with edge case handling
-                    if state.current_tick <= 0:
-                        current_day = 0
-                        current_week = 1
-                    else:
-                        # Ensure hours_per_day is at least 1 to prevent division by zero
-                        hours_per_day = max(1, self.hours_per_day)
-                        current_day = (state.current_tick - 1) // hours_per_day
-                        current_week = max(1, (current_day // 5) + 1)
+                    # Calculate current week using centralized tick conversion (REQ-2.1.2)
+                    current_week = self.tick_to_week(state.current_tick)
+                    current_day = self.tick_to_day(state.current_tick)
 
                     # Get active projects for current week using enhanced calculation
                     active_projects = get_active_projects_callback(current_week)

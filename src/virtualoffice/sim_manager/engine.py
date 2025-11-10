@@ -920,7 +920,7 @@ class SimulationEngine:
             # Fix: Use calendar weeks (10080 ticks = 7*24*60) to match project configuration (REQ-2.1.2)
             # Projects are configured in calendar weeks, not work weeks
             TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
-            current_week = (current_tick // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
+            current_week = ((current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
             active_projects = self._get_all_active_projects_for_person(person.id, current_week)
             project = active_projects[0] if active_projects else None
             
@@ -3042,7 +3042,7 @@ class SimulationEngine:
         # Calculate current week for project-specific team filtering (REQ-2.2.1)
         # Use calendar weeks to match project configuration (REQ-2.1.2)
         TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
-        current_week = (tick // TICKS_PER_CALENDAR_WEEK) + 1 if tick > 0 else 1
+        current_week = ((tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if tick > 0 else 1
 
         # Get project-specific team roster (REQ-2.2.1)
         # Only include teammates who are on the PRIMARY project being planned

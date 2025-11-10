@@ -200,13 +200,9 @@ class SimulationLifecycle:
 
         try:
             status = self.state.get_current_state()
-            if status.current_tick <= 0:
-                current_day = 0
-                current_week = 1
-            else:
-                hours_per_day = max(1, getattr(self, "hours_per_day", 480))
-                current_day = (status.current_tick - 1) // hours_per_day
-                current_week = max(1, (current_day // 5) + 1)
+            # Calculate current week using calendar weeks (REQ-2.1.2)
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            current_week = ((status.current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if status.current_tick > 0 else 1
 
             # Active projects this week
             active_projects = self.project_manager.get_active_projects_with_assignments(current_week)

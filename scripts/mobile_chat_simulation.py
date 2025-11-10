@@ -369,13 +369,17 @@ class MobileChatSimulation:
         """Run the simulation for the specified number of weeks with realistic pacing."""
         self.log(f"⏰ Running {total_weeks}-week simulation with realistic pacing...")
 
-        # Calculate total ticks (4 weeks * 5 days * 8 hours * 60 minutes)
-        total_ticks = total_weeks * 5 * 8 * 60
+        # Calculate total ticks using calendar weeks (7 days * 24 hours * 60 minutes)
+        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+        total_ticks = total_weeks * TICKS_PER_CALENDAR_WEEK
         self.log(f"   Total simulation time: {total_ticks} ticks ({total_weeks} weeks)")
 
         # Auto-tick for speed: start + poll
-        ticks_per_day = 8 * 60
-        ticks_per_week = 5 * ticks_per_day
+        # Use calendar weeks to match project configuration
+        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks
+        TICKS_PER_CALENDAR_WEEK = 7 * TICKS_PER_CALENDAR_DAY  # 10,080 ticks
+        ticks_per_day = TICKS_PER_CALENDAR_DAY
+        ticks_per_week = TICKS_PER_CALENDAR_WEEK
         self.log("   → POST /simulation/advance (ticks=1) [kickoff]")
         self.api_call("POST", f"{SIM_BASE_URL}/simulation/advance", {"ticks": 1, "reason": "kickoff"}, timeout=240)
         self.log("   → POST /simulation/ticks/start (auto)")
