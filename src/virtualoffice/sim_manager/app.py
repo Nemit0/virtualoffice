@@ -14,6 +14,7 @@ import time
 from .engine import SimulationEngine
 from virtualoffice.common.db import DB_PATH, get_connection
 from .gateways import HttpChatGateway, HttpEmailGateway
+from .replay_manager import ReplayManager
 from .style_filter.filter import CommunicationStyleFilter
 from .schemas import (
     AutoPauseStatusResponse,
@@ -326,6 +327,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         description="Virtual Department Operations Simulator - Generate realistic departmental communications for testing and development"
     )
     app.state.engine = engine or _build_default_engine()
+    app.state.replay_manager = ReplayManager(app.state.engine)
 
     # Mount static files
     static_path = os.path.join(os.path.dirname(__file__), "static")
@@ -349,6 +351,9 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
 
     def get_engine(request: Request) -> SimulationEngine:
         return request.app.state.engine
+
+    def get_replay_manager(request: Request) -> ReplayManager:
+        return request.app.state.replay_manager
 
     @app.get(f"{API_PREFIX}/people", response_model=list[PersonRead], tags=["Personas"])
     def list_people(engine: SimulationEngine = Depends(get_engine)) -> list[PersonRead]:
@@ -1693,6 +1698,133 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 "estimated_cost_usd": 0.0,
                 "by_message_type": {}
             }
+
+    # ========================================================================
+    # REPLAY / TIME MACHINE API ENDPOINTS
+    # ========================================================================
+
+    @app.get(f"{API_PREFIX}/replay/metadata", tags=["Replay"])
+    def get_replay_metadata(
+        replay: ReplayManager = Depends(get_replay_manager)
+    ) -> dict[str, Any]:
+        """
+        Get replay metadata including max generated tick and current state.
+
+        Returns simulation boundaries and statistics for replay functionality.
+        """
+        return replay.get_metadata()
+
+    @app.get(f"{API_PREFIX}/replay/jump/{{tick}}", tags=["Replay"])
+    def jump_to_tick(
+        tick: int,
+        replay: ReplayManager = Depends(get_replay_manager)
+    ) -> dict[str, Any]:
+        """
+        Jump to a specific tick (with safety validation).
+
+        Args:
+            tick: Tick number to jump to
+
+        Returns:
+            Tick data including emails and chats at that tick
+
+        Raises:
+            HTTPException: If tick is out of valid range
+        """
+        try:
+            return replay.jump_to_tick(tick)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post(f"{API_PREFIX}/replay/jump", tags=["Replay"])
+    def jump_to_time(
+        payload: dict[str, int] = Body(...),
+        replay: ReplayManager = Depends(get_replay_manager)
+    ) -> dict[str, Any]:
+        """
+        Jump to a specific time (day/hour/minute).
+
+        Request body:
+            {
+                "day": 2,
+                "hour": 14,
+                "minute": 35
+            }
+
+        Returns:
+            Tick data at the specified time
+
+        Raises:
+            HTTPException: If time is invalid or beyond max generated data
+        """
+        try:
+            day = payload.get("day")
+            hour = payload.get("hour")
+            minute = payload.get("minute")
+
+            if day is None or hour is None or minute is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Missing required fields: day, hour, minute"
+                )
+
+            return replay.jump_to_time(day, hour, minute)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.get(f"{API_PREFIX}/replay/current", tags=["Replay"])
+    def get_current_replay_data(
+        replay: ReplayManager = Depends(get_replay_manager)
+    ) -> dict[str, Any]:
+        """
+        Get emails and chats at the current tick.
+
+        Returns:
+            Current tick data including time info and communications
+        """
+        return replay.get_current_tick_data()
+
+    @app.post(f"{API_PREFIX}/replay/mode", tags=["Replay"])
+    def set_replay_mode(
+        payload: dict[str, str] = Body(...),
+        replay: ReplayManager = Depends(get_replay_manager)
+    ) -> dict[str, Any]:
+        """
+        Set the replay mode (live or replay).
+
+        Request body:
+            {
+                "mode": "live" | "replay"
+            }
+
+        Returns:
+            Updated metadata
+
+        Raises:
+            HTTPException: If mode is invalid
+        """
+        try:
+            mode = payload.get("mode")
+            if not mode:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Missing required field: mode"
+                )
+            return replay.set_mode(mode)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.get(f"{API_PREFIX}/replay/reset", tags=["Replay"])
+    def reset_to_live(
+        replay: ReplayManager = Depends(get_replay_manager)
+    ) -> dict[str, Any]:
+        """
+        Reset to live mode (jump to max generated tick).
+
+        Returns:
+            Metadata after reset
+        """
+        return replay.reset_to_live()
 
     return app
 
