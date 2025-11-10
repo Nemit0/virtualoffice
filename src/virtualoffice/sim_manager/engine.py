@@ -917,8 +917,10 @@ class SimulationEngine:
         
         try:
             # Get project context and collaborators
-            ticks_per_day = max(1, self.hours_per_day * 60)
-            current_week = (current_tick - 1) // (ticks_per_day * 5)
+            # Fix: Use calendar weeks (10080 ticks = 7*24*60) to match project configuration (REQ-2.1.2)
+            # Projects are configured in calendar weeks, not work weeks
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            current_week = (current_tick // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
             active_projects = self._get_all_active_projects_for_person(person.id, current_week)
             project = active_projects[0] if active_projects else None
             
@@ -1788,7 +1790,27 @@ class SimulationEngine:
                 # Check daily limits before sending
                 if not self._check_daily_limits(person.id, day_index, 'email'):
                     continue
-                
+
+                # Validate project assignment for all recipients (REQ-2.3.1)
+                all_recipients = [email_to] + cc_emails + bcc_emails
+                invalid_recipients = []
+                for recipient_email in all_recipients:
+                    if not self._validate_project_communication(
+                        sender_email=person.email_address,
+                        recipient_email=recipient_email,
+                        subject=subject,
+                        current_week=current_week
+                    ):
+                        invalid_recipients.append(recipient_email)
+
+                if invalid_recipients:
+                    logger.info(
+                        f"[PROJECT_VALIDATION] Skipping email from {person.email_address}: "
+                        f"{len(invalid_recipients)} recipient(s) not on project: {', '.join(invalid_recipients)}. "
+                        f"Subject: {subject[:80]}"
+                    )
+                    continue
+
                 if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=body):
                     result = self.email_gateway.send_email(
                         sender=person.email_address,
@@ -2449,6 +2471,41 @@ class SimulationEngine:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [self._row_to_simulation_report(row) for row in rows]
 
+    # ------------------------------------------------------------------
+    # Projects listing (for UI hydration)
+    # ------------------------------------------------------------------
+    def list_all_projects_with_assignees(self) -> list[dict[str, Any]]:
+        """Return all projects with their assigned person ids.
+
+        Shape:
+            [
+              {
+                'project': { ...project_plan_fields },
+                'assigned_person_ids': [int, ...]
+              },
+              ...
+            ]
+        """
+        with get_connection() as conn:
+            proj_rows = conn.execute(
+                "SELECT * FROM project_plans ORDER BY start_week ASC, id ASC"
+            ).fetchall()
+            results: list[dict[str, Any]] = []
+            for row in proj_rows:
+                proj = self._row_to_project_plan(row)
+                assigned = [
+                    r["person_id"]
+                    for r in conn.execute(
+                        "SELECT person_id FROM project_assignments WHERE project_id = ? ORDER BY person_id",
+                        (proj["id"],),
+                    ).fetchall()
+                ]
+                results.append({
+                    "project": proj,
+                    "assigned_person_ids": assigned,
+                })
+            return results
+
     def _initialise_project_plan(self, request: SimulationStartRequest, team: Sequence[PersonRead]) -> None:
         if not team:
             raise RuntimeError("Cannot initialise project plan without any personas")
@@ -2606,25 +2663,63 @@ class SimulationEngine:
         self,
         person_id: int,
         current_week: int,
-        all_people: dict[int, PersonRead]
+        all_people: dict[int, PersonRead],
+        project_id: int | None = None
     ) -> list[PersonRead]:
         """
         Get collaborators for a person based on shared project assignments.
-        
+
         Returns personas who are assigned to at least one of the same projects
         as the given person. If a person has no project assignments (works on
         unassigned projects), returns all other personas.
-        
+
         Args:
             person_id: ID of the person to get collaborators for
             current_week: Current simulation week
             all_people: Dictionary of all personas by ID
-            
+            project_id: Optional specific project ID to filter by (REQ-2.2.1)
+                       If provided, only returns collaborators on THIS specific project.
+                       If None, returns collaborators on ANY shared project (old behavior).
+
         Returns:
             List of PersonRead objects representing project collaborators
         """
         with get_connection() as conn:
-            # Get projects assigned to this person
+            # If project_id is specified, only get collaborators for that specific project (REQ-2.2.1)
+            if project_id is not None:
+                # Verify the person is assigned to this project
+                person_on_project = conn.execute(
+                    """
+                    SELECT 1 FROM project_assignments pa
+                    INNER JOIN project_plans pp ON pa.project_id = pp.id
+                    WHERE pa.person_id = ? AND pa.project_id = ?
+                    AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                    """,
+                    (person_id, project_id, current_week, current_week)
+                ).fetchone()
+
+                if not person_on_project:
+                    # Person not on this project, return empty list
+                    return []
+
+                # Get all people assigned to THIS specific project
+                collaborator_rows = conn.execute(
+                    """
+                    SELECT DISTINCT pa.person_id
+                    FROM project_assignments pa
+                    INNER JOIN project_plans pp ON pa.project_id = pp.id
+                    WHERE pa.project_id = ?
+                    AND pa.person_id != ?
+                    AND pp.start_week <= ?
+                    AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                    """,
+                    (project_id, person_id, current_week, current_week)
+                ).fetchall()
+
+                collaborator_ids = {row['person_id'] for row in collaborator_rows}
+                return [all_people[pid] for pid in collaborator_ids if pid in all_people]
+
+            # Original behavior: Get projects assigned to this person
             person_projects = conn.execute(
                 """
                 SELECT DISTINCT pa.project_id
@@ -2636,14 +2731,14 @@ class SimulationEngine:
                 """,
                 (person_id, current_week, current_week)
             ).fetchall()
-            
+
             person_project_ids = {row['project_id'] for row in person_projects}
-            
+
             # If person has no specific project assignments, they work on unassigned projects
             # In this case, return all other personas (existing behavior)
             if not person_project_ids:
                 return [p for p in all_people.values() if p.id != person_id]
-            
+
             # Get all people assigned to the same projects
             collaborator_rows = conn.execute(
                 """
@@ -2657,9 +2752,9 @@ class SimulationEngine:
                 """.format(','.join('?' * len(person_project_ids))),
                 (*person_project_ids, person_id, current_week, current_week)
             ).fetchall()
-            
+
             collaborator_ids = {row['person_id'] for row in collaborator_rows}
-            
+
             # Also include people with no assignments (they work on unassigned projects)
             people_with_no_assignments = conn.execute(
                 """
@@ -2670,12 +2765,114 @@ class SimulationEngine:
                 """,
                 (person_id,)
             ).fetchall()
-            
+
             for row in people_with_no_assignments:
                 collaborator_ids.add(row['id'])
-            
+
             # Return PersonRead objects for collaborators
             return [all_people[pid] for pid in collaborator_ids if pid in all_people]
+
+    def _validate_project_communication(
+        self,
+        sender_email: str,
+        recipient_email: str,
+        subject: str | None,
+        current_week: int
+    ) -> bool:
+        """
+        Validate that sender and recipient are both assigned to the project being discussed (REQ-2.3.1).
+
+        Args:
+            sender_email: Email address of sender
+            recipient_email: Email address of recipient
+            subject: Email subject line (may contain project identifier like "[Project OMEGA]")
+            current_week: Current simulation week
+
+        Returns:
+            True if validation passes (both on same project or no project identifier found),
+            False if validation fails (project identified but recipient not assigned)
+        """
+        if not subject:
+            # No subject, allow (backward compatibility for chats without project context)
+            return True
+
+        # Extract project name from subject
+        import re
+        # Try English format: [Project NAME]
+        match = re.search(r'\[Project ([A-Z]+)\]', subject)
+        if not match:
+            # Try Korean format: [프로젝트 NAME]
+            match = re.search(r'\[프로젝트 ([A-Z]+)\]', subject)
+        if not match:
+            # Try without brackets
+            match = re.search(r'(?:Project|프로젝트)\s+([A-Z]+)', subject)
+
+        if not match:
+            # No project identifier found, allow (REQ-2.4.1 - backward compatibility)
+            return True
+
+        project_name = match.group(1)
+
+        # Look up project ID by name
+        with get_connection() as conn:
+            project_row = conn.execute(
+                """
+                SELECT id FROM project_plans
+                WHERE project_name LIKE ?
+                AND start_week <= ?
+                AND (start_week + duration_weeks - 1) >= ?
+                """,
+                (f"%{project_name}%", current_week, current_week)
+            ).fetchone()
+
+            if not project_row:
+                # Project not found or not active, allow (might be future/past project reference)
+                logger.debug(f"Project '{project_name}' not found or not active in week {current_week}")
+                return True
+
+            project_id = project_row['id']
+
+            # Get sender's persona
+            sender_row = conn.execute(
+                "SELECT id FROM people WHERE email_address = ?",
+                (sender_email,)
+            ).fetchone()
+
+            # Get recipient's persona
+            recipient_row = conn.execute(
+                "SELECT id FROM people WHERE email_address = ?",
+                (recipient_email,)
+            ).fetchone()
+
+            if not sender_row or not recipient_row:
+                # Sender or recipient not in persona database, allow (might be external)
+                return True
+
+            sender_id = sender_row['id']
+            recipient_id = recipient_row['id']
+
+            # Check if both are assigned to this project
+            sender_on_project = conn.execute(
+                "SELECT 1 FROM project_assignments WHERE person_id = ? AND project_id = ?",
+                (sender_id, project_id)
+            ).fetchone()
+
+            recipient_on_project = conn.execute(
+                "SELECT 1 FROM project_assignments WHERE person_id = ? AND project_id = ?",
+                (recipient_id, project_id)
+            ).fetchone()
+
+            # Validation fails if recipient is NOT on the project (REQ-2.3.1)
+            if not recipient_on_project:
+                logger.warning(
+                    f"[PROJECT_VALIDATION] Rejecting communication about '{project_name}': "
+                    f"recipient {recipient_email} (ID {recipient_id}) not assigned to project {project_id}. "
+                    f"Subject: {subject[:80]}"
+                )
+                return False
+
+            # Validation passes
+            return True
 
     def _resolve_department_head(
         self, people: Sequence[PersonRead], requested_name: str | None
@@ -2842,8 +3039,29 @@ class SimulationEngine:
         adjustments: list[str] | None = None,
         all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
-        # Get all active people for team roster
-        team = self._get_active_people()
+        # Calculate current week for project-specific team filtering (REQ-2.2.1)
+        # Use calendar weeks to match project configuration (REQ-2.1.2)
+        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+        current_week = (tick // TICKS_PER_CALENDAR_WEEK) + 1 if tick > 0 else 1
+
+        # Get project-specific team roster (REQ-2.2.1)
+        # Only include teammates who are on the PRIMARY project being planned
+        project_id = project_plan.get('id') if isinstance(project_plan, dict) else None
+        all_people = {p.id: p for p in self._get_active_people()}
+
+        if project_id is not None:
+            # Filter to only collaborators on this specific project
+            team = self._get_project_collaborators(
+                person_id=person.id,
+                current_week=current_week,
+                all_people=all_people,
+                project_id=project_id
+            )
+        else:
+            # Fall back to all active people if no project ID (backward compatibility)
+            team = list(all_people.values())
+            if person.id in all_people:
+                team = [p for p in team if p.id != person.id]
 
         # Get recent emails for this person (for threading context)
         recent_emails = list(self._recent_emails.get(person.id, []))
