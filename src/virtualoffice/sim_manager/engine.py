@@ -1614,6 +1614,11 @@ class SimulationEngine:
         # Calculate day index for daily limit tracking
         day_ticks = max(1, self.hours_per_day * 60)
         day_index = (current_tick - 1) // day_ticks
+
+        # Calculate current week for project validation (REQ-2.3.1)
+        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+        current_week = ((current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
+
         # Helper to avoid simultaneous mirrored DMs: if both sides scheduled the same message
         # at the same minute, only the lower-id sender will fire.
         handle_index = {p.chat_handle.lower(): p for p in people_by_id.values()}
