@@ -2066,6 +2066,35 @@ class SimulationEngine:
             cache[person.id] = (start_tick, end_tick)
         self._work_hours_ticks = cache
 
+    def _is_work_hours_tick(self, tick: int) -> bool:
+        """
+        Check if a tick falls within global work hours (09:00-17:00 on weekdays).
+
+        Uses calendar day calculation (1440 ticks per 24-hour day).
+        - Work hours: 09:00-17:00 (ticks 540-1020 of each day)
+        - Weekends: Days 5-6 of each week (Saturday-Sunday) are always off
+
+        Returns False for:
+        - Before 09:00 (ticks 0-539 of day)
+        - After 17:00 (ticks 1020-1439 of day)
+        - Weekends (days 5-6 of each week)
+
+        This allows the simulation to skip non-work ticks entirely for efficiency.
+        """
+        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1440 ticks per day
+        WORK_START_TICK = 9 * 60  # 09:00 = tick 540 of day
+        WORK_END_TICK = 17 * 60   # 17:00 = tick 1020 of day
+
+        # Check if it's a weekend (calendar week: days 5-6 are Saturday-Sunday)
+        day_index = (tick - 1) // TICKS_PER_CALENDAR_DAY
+        day_of_week = day_index % 7
+        if day_of_week >= 5:
+            return False
+
+        # Check if it's during work hours (09:00-17:00)
+        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+        return WORK_START_TICK <= tick_of_day < WORK_END_TICK
+
     def _is_within_work_hours(self, person: PersonRead, tick: int) -> bool:
         if not self.hours_per_day:
             return True
@@ -4016,6 +4045,14 @@ class SimulationEngine:
 
             for _ in range(ticks):
                 status.current_tick += 1
+
+                # WORK HOURS FILTER: Skip all processing for non-work hours ticks
+                # This dramatically improves performance by skipping 16 hours/day + weekends
+                # Work hours: Mon-Fri 09:00-17:00 (ticks 540-1020 of each calendar day)
+                if not self._is_work_hours_tick(status.current_tick):
+                    self._update_tick(status.current_tick, "off_hours_skip")
+                    continue
+
                 self._reset_tick_sends()
                 self._update_tick(status.current_tick, reason)
                 self._refresh_status_overrides(status.current_tick)
