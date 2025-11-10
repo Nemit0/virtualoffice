@@ -4904,6 +4904,40 @@ class SimulationEngine:
                 (1 if enabled else 0,),
             )
 
+    def get_current_tick(self) -> int:
+        """
+        Get the current simulation tick.
+
+        Returns:
+            int: Current tick number
+        """
+        status = self._fetch_state()
+        return status.current_tick
+
+    def set_current_tick(self, tick: int) -> None:
+        """
+        Set the current simulation tick (for replay/time-travel).
+
+        This is used by the replay manager to jump to specific ticks.
+        Updates the tick in the database without logging to tick_log.
+
+        Args:
+            tick: Tick number to jump to
+
+        Raises:
+            ValueError: If tick < 0
+        """
+        if tick < 0:
+            raise ValueError(f"Tick must be >= 0, got {tick}")
+
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE simulation_state SET current_tick = ? WHERE id = 1",
+                (tick,),
+            )
+
+        logger.info(f"[REPLAY] Current tick set to {tick}")
+
     def _update_tick(self, tick: int, reason: str) -> None:
         with get_connection() as conn:
             conn.execute(
