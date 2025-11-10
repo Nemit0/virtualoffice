@@ -391,13 +391,14 @@ function updateReplayIndicator() {
 - [x] Add `set_current_tick()` method to engine
 - [x] Unit tests for replay manager (tick conversion verified)
 
-### Phase 2: API Endpoints
-- [ ] Add `/api/v1/replay/metadata` endpoint
-- [ ] Add `/api/v1/replay/jump/{tick}` endpoint
-- [ ] Add `/api/v1/replay/current` endpoint
-- [ ] Add `/api/v1/replay/mode` endpoint
-- [ ] Add `/api/v1/replay/reset` endpoint
-- [ ] Integration tests for API
+### Phase 2: API Endpoints ✅ COMPLETE
+- [x] Add `/api/v1/replay/metadata` endpoint
+- [x] Add `/api/v1/replay/jump/{tick}` endpoint (GET)
+- [x] Add `/api/v1/replay/jump` endpoint (POST with day/hour/minute)
+- [x] Add `/api/v1/replay/current` endpoint
+- [x] Add `/api/v1/replay/mode` endpoint
+- [x] Add `/api/v1/replay/reset` endpoint
+- [x] Integration tests for API (test_replay_api.py)
 
 ### Phase 3: Frontend UI
 - [ ] Create replay tab HTML
