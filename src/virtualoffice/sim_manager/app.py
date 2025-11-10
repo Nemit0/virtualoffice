@@ -562,6 +562,14 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         """Get all active projects with their team assignments for the current simulation week."""
         return engine.get_active_projects_with_assignments()
 
+    @app.get(f"{API_PREFIX}/projects", tags=["Projects"])
+    def list_projects(engine: SimulationEngine = Depends(get_engine)) -> list[dict[str, Any]]:
+        """List all projects with assigned person ids for UI hydration.
+
+        Returns a list of objects: { project: {...}, assigned_person_ids: [...] }
+        """
+        return engine.list_all_projects_with_assignees()
+
     @app.get(f"{API_PREFIX}/people/{{person_id}}/plans", response_model=list[WorkerPlanRead], tags=["Reports & Analytics"])
     def get_worker_plans(
         person_id: int,

@@ -71,7 +71,8 @@ import {
   addProject,
   removeProject,
   exportProjects,
-  importProjects
+  importProjects,
+  hydrateProjectsFromDBIfNeeded
 } from './modules/projects.js';
 import {
   refreshEmailsTab,
@@ -356,6 +357,10 @@ function init() {
 
   // Initial refresh
   refreshAll();
+
+  // Hydrate projects from DB into JS state if missing
+  // Do this after initial people/projects refresh so start button works without manual add
+  hydrateProjectsFromDBIfNeeded();
 
   // Start with 1-minute interval (will auto-adjust based on simulation state)
   setRefreshInterval(60000);

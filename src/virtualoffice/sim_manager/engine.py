@@ -928,7 +928,8 @@ class SimulationEngine:
             collaborators = self._get_project_collaborators(
                 person_id=person.id,
                 current_week=current_week,
-                all_people=people_by_id
+                all_people=people_by_id,
+                project_id=project.id if project else None
             )
             
             # Get recent hourly and daily plans for context
@@ -1110,12 +1111,13 @@ class SimulationEngine:
         # Get project context and collaborators
         active_projects = self._get_all_active_projects_for_person(person.id, current_week)
         project = active_projects[0] if active_projects else None
-        
+
         # Get project-specific collaborators (only people on same projects)
         collaborators = self._get_project_collaborators(
             person_id=person.id,
             current_week=current_week,
-            all_people=people_by_id
+            all_people=people_by_id,
+            project_id=project.id if project else None
         )
         
         hourly_plan = self._get_recent_hourly_plan(person.id)
@@ -4767,13 +4769,20 @@ class SimulationEngine:
 
             # Get project-specific collaborators for the department head
             # This ensures the partner is from the same project(s)
-            ticks_per_day = max(1, self.hours_per_day * 60)
-            current_week = (tick - 1) // (ticks_per_day * 5) + 1
+            # Fix: Use calendar weeks (10080 ticks = 7*24*60) to match project configuration
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            current_week = ((tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if tick > 0 else 1
             people_by_id = {p.id: p for p in people}
+
+            # Get head's active projects and pick first one
+            active_projects = self._get_all_active_projects_for_person(head.id, current_week)
+            project_for_collab = active_projects[0] if active_projects else None
+
             collaborators = self._get_project_collaborators(
                 person_id=head.id,
                 current_week=current_week,
-                all_people=people_by_id
+                all_people=people_by_id,
+                project_id=project_for_collab.id if project_for_collab else None
             )
             if collaborators:
                 partner = rng.choice(collaborators)

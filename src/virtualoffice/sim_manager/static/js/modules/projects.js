@@ -5,6 +5,7 @@ import { API_PREFIX, fetchJson } from '../core/api.js';
 import { setStatus } from '../utils/ui.js';
 import {
   getProjects,
+  setProjects,
   addProject as addProjectToState,
   removeProject as removeProjectFromState,
   clearProjects,
@@ -161,6 +162,47 @@ export function renderProjects() {
 
     container.appendChild(card);
   });
+}
+
+/**
+ * Hydrate frontend projects from backend DB if empty.
+ * Uses /projects endpoint that returns all project_plans with assigned person IDs.
+ */
+export async function hydrateProjectsFromDBIfNeeded() {
+  try {
+    const existing = getProjects();
+    if (existing && existing.length > 0) {
+      return; // Already have projects in memory/localStorage
+    }
+
+    // Fetch from backend
+    const items = await fetchJson(`${API_PREFIX}/projects`);
+    if (!Array.isArray(items) || items.length === 0) {
+      return; // Nothing to hydrate
+    }
+
+    // Transform to frontend state shape
+    const projects = items.map(item => {
+      const p = item.project || {};
+      const assigned = Array.isArray(item.assigned_person_ids) ? item.assigned_person_ids : [];
+      return {
+        name: p.project_name,
+        summary: p.project_summary,
+        start_week: p.start_week,
+        duration_weeks: p.duration_weeks,
+        // If no specific assignments in DB, leave empty (meaning all team members)
+        team_ids: assigned
+      };
+    });
+
+    // Store and render
+    setProjects(projects);
+    renderProjects();
+    setStatus(`Loaded ${projects.length} project(s) from database`);
+  } catch (err) {
+    // Non-fatal: log and continue
+    console.warn('[PROJECTS] Failed to hydrate projects from DB:', err);
+  }
 }
 
 /**
