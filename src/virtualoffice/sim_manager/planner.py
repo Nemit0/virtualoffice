@@ -64,6 +64,7 @@ class Planner(Protocol):
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         ...
 
@@ -237,6 +238,7 @@ class GPTPlanner:
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         # Extract project plan text and name from dict or string
         if isinstance(project_plan, dict):
@@ -245,7 +247,10 @@ class GPTPlanner:
         else:
             project_plan_text = project_plan
             project_name = '현재 프로젝트'
-        
+
+        # Determine if multi-project planning is needed
+        has_multiple_projects = all_active_projects and len(all_active_projects) > 1
+
         # Use template-based prompts if enabled
         if self.use_template_prompts and self._prompt_manager and self._context_builder:
             import time
@@ -254,7 +259,50 @@ class GPTPlanner:
                 # Build context with Korean defaults
                 persona_markdown = getattr(worker, 'persona_markdown', '') or f"역할: {worker.role}\n기술: 일반"
                 team_roster = "\n".join(f"- {m.name} ({m.role}) - 이메일: {m.email_address}, 채팅: @{m.chat_handle}" for m in (team or []) if m.id != worker.id)
-                
+
+                # Build multi-project context if needed
+                if has_multiple_projects:
+                    multi_project_lines = ["중요: 오늘은 여러 프로젝트를 동시에 진행합니다:", ""]
+                    for i, proj in enumerate(all_active_projects, 1):
+                        proj_name = proj.get('project_name', f'프로젝트 {i}')
+                        proj_plan = proj.get('plan', '')
+                        # Calculate rough time allocation (newer projects get more focus)
+                        if i == 1:  # First project (oldest)
+                            allocation = "30-40%"
+                        elif i == len(all_active_projects):  # Last project (newest)
+                            allocation = "50-60%"
+                        else:  # Middle projects
+                            allocation = "40-50%"
+
+                        multi_project_lines.append(f"프로젝트 {i}: {proj_name} (오늘 시간 배분: {allocation})")
+                        multi_project_lines.append(f"  프로젝트 계획 요약:")
+                        multi_project_lines.append(f"  {proj_plan[:300]}...")
+                        multi_project_lines.append("")
+
+                    multi_project_lines.append("오늘의 목표를 계획할 때:")
+                    multi_project_lines.append("1. 각 프로젝트에 대한 구체적인 작업 항목 포함")
+                    multi_project_lines.append("2. 프로젝트 간 자연스러운 전환 시간 고려")
+                    multi_project_lines.append("3. 각 작업 항목에 프로젝트명 명시 (예: '[NOVA] 아키텍처 설계')")
+
+                    project_context = "\n".join(multi_project_lines)
+                    is_multi_project = True
+                    system_message = (
+                        "당신은 전문가가 여러 동시 프로젝트에 걸쳐 프로젝트 계획을 집중된 일일 목표로 전환하도록 돕습니다. "
+                        "중요: 다중 프로젝트 날짜를 계획할 때 모든 활성 프로젝트에 걸쳐 균형 잡힌 시간 할당을 보장하세요. "
+                        "각 프로젝트는 일일 계획에 전용 작업 및 커뮤니케이션이 있어야 합니다. "
+                        "중요: 당신의 페르소나 정보를 사용하여 당신의 기술, 성격 및 작업 스타일에 맞는 진정성 있는 계획을 만드세요. "
+                        "실제 사람처럼 작성하세요. 프롬프트, 모델 또는 시뮬레이션에 대한 메타 논평을 피하세요."
+                    )
+                else:
+                    # Single project context
+                    project_context = f"프로젝트 기간: {duration_weeks}주. 오늘은 {day_index + 1}일차입니다.\n프로젝트 계획 발췌:\n{project_plan_text}"
+                    is_multi_project = False
+                    system_message = (
+                        "당신은 전문가가 프로젝트 계획을 집중된 일일 목표로 전환하도록 돕고, 최소 한 시간 일찍 마무리하도록 합니다. "
+                        "중요: 당신의 페르소나 정보를 사용하여 당신의 기술, 성격 및 작업 스타일에 맞는 진정성 있는 계획을 만드세요. "
+                        "실제 사람처럼 작성하세요. 프롬프트, 모델 또는 시뮬레이션에 대한 메타 논평을 피하세요."
+                    )
+
                 context = {
                     "worker_name": worker.name,
                     "worker_role": worker.role or "팀원",
@@ -264,7 +312,10 @@ class GPTPlanner:
                     "duration_weeks": duration_weeks,
                     "day_number": day_index + 1,
                     "project_plan": project_plan_text,
-                    "project_name": project_name,  # Add project name to context
+                    "project_name": project_name,
+                    "project_context": project_context,  # Add multi-project or single-project context
+                    "is_multi_project": is_multi_project,  # Flag for template to adjust system message
+                    "system_message": system_message,  # System message based on single vs multi-project
                 }
                 
                 # Build prompt from template
@@ -321,28 +372,71 @@ class GPTPlanner:
                 )
             team_roster_lines.append("")  # Add blank line
 
+        # Build project context based on single vs multi-project
+        project_context_lines = []
+        if has_multiple_projects:
+            # Multi-project daily plan
+            project_context_lines.append("중요: 오늘은 여러 프로젝트를 동시에 진행합니다:")
+            project_context_lines.append("")
+            for i, proj in enumerate(all_active_projects, 1):
+                proj_name = proj.get('project_name', f'프로젝트 {i}')
+                proj_plan = proj.get('plan', '')
+                # Calculate rough time allocation (newer projects get more focus)
+                # Simple heuristic: more recent projects = more current focus
+                if i == 1:  # First project (oldest)
+                    allocation = "30-40%"
+                elif i == len(all_active_projects):  # Last project (newest)
+                    allocation = "50-60%"
+                else:  # Middle projects
+                    allocation = "40-50%"
+
+                project_context_lines.append(f"프로젝트 {i}: {proj_name} (오늘 시간 배분: {allocation})")
+                project_context_lines.append(f"  프로젝트 계획 요약:")
+                project_context_lines.append(f"  {proj_plan[:300]}...")
+                project_context_lines.append("")
+
+            project_context_lines.append("오늘의 목표를 계획할 때:")
+            project_context_lines.append("1. 각 프로젝트에 대한 구체적인 작업 항목 포함")
+            project_context_lines.append("2. 프로젝트 간 자연스러운 전환 시간 고려")
+            project_context_lines.append("3. 각 작업 항목에 프로젝트명 명시 (예: '[NOVA] 아키텍처 설계')")
+        else:
+            # Single project daily plan
+            project_context_lines.append(f"Project: {project_name}")
+            project_context_lines.append(f"Project duration: {duration_weeks} weeks. Today is day {day_index + 1}.")
+            project_context_lines.append("Project plan excerpt:")
+            project_context_lines.append(project_plan_text)
+
         user_content = "\n".join(
             [
                 f"Worker: {worker.name} ({worker.role}) in {worker.timezone}.",
                 "",
                 *persona_context,
                 *team_roster_lines,
-                f"Project: {project_name}",
-                f"Project duration: {duration_weeks} weeks. Today is day {day_index + 1}.",
-                "Project plan excerpt:",
-                project_plan_text,
+                *project_context_lines,
                 "",
                 "Outline today's key objectives, planned communications, and the time reserved as buffer.",
             ]
         )
+        # Build system message based on single vs multi-project
+        if has_multiple_projects:
+            system_content = (
+                "You help knowledge workers turn project plans into focused daily objectives across MULTIPLE concurrent projects. "
+                "CRITICAL: When planning multi-project days, ensure BALANCED time allocation across all active projects. "
+                "Each project must have dedicated tasks and communications in the daily plan. "
+                "IMPORTANT: Use the worker's persona information to create authentic plans that align with their skills, personality, and working style. "
+                "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
+            )
+        else:
+            system_content = (
+                "You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early. "
+                "IMPORTANT: Use the worker's persona information to create authentic plans that align with their skills, personality, and working style. "
+                "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
+            )
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early. "
-                    "IMPORTANT: Use the worker's persona information to create authentic plans that align with their skills, personality, and working style. "
-                    "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
-                ),
+                "content": system_content,
             },
             {"role": "user", "content": user_content},
         ]
@@ -507,11 +601,18 @@ class GPTPlanner:
                 project_context_lines.append(f"\n프로젝트 {i}: {proj['project_name']}")
                 project_context_lines.append(proj['plan'][:500] + "...")  # Truncate for brevity
             project_context_lines.append("\n하루 동안 이 프로젝트들 사이를 자연스럽게 전환해야 합니다.")
-            project_context_lines.append("이메일/채팅 작성 시 제목/메시지에 각 커뮤니케이션이 관련된 프로젝트를 명시하세요.")
+            project_context_lines.append("**필수**: 모든 이메일/채팅 작성 시 제목 또는 메시지에 반드시 관련 프로젝트명을 명시하세요.")
             project_context_lines.append(f"예시: '이메일 10:00에 dev 참조 pm: [{project_name}] API 통합 상태 | ...'")
+            project_context_lines.append("각 작업 항목에도 관련 프로젝트를 표시하세요 (예: '10:00 - [{project_name}] 코드 리뷰')")
             project_reference = "\n".join(project_context_lines)
         else:
-            project_reference = f"프로젝트: {project_name}\n프로젝트 참조:\n{project_plan_text}"
+            # Single project case - also emphasize project tagging
+            project_context_lines.append(f"프로젝트: {project_name}")
+            project_context_lines.append("\n**필수**: 모든 이메일/채팅의 제목에 프로젝트명을 포함하세요.")
+            project_context_lines.append(f"예시: '이메일 10:30에 팀원: [{project_name}] 진행 상황 공유 | ...'")
+            project_context_lines.append("또는 Korean 스타일: '이메일 10:30에 팀원: [프로젝트 {project_name}] 진행 상황 공유 | ...'")
+            project_context_lines.append(f"\n프로젝트 참조:\n{project_plan_text}")
+            project_reference = "\n".join(project_context_lines)
 
         # Build format templates based on locale
         format_templates = []
@@ -520,11 +621,12 @@ class GPTPlanner:
                 "다음 형식을 정확히 사용하세요:",
                 "",
                 "이메일 형식 (투명성을 위해 대부분의 이메일에 참조 또는 숨은참조 포함 필수):",
-                "- 이메일 HH:MM에 TARGET 참조 PERSON1, PERSON2 숨은참조 PERSON3: 제목 | 본문 내용",
+                f"- 이메일 HH:MM에 TARGET 참조 PERSON1, PERSON2 숨은참조 PERSON3: [{project_name}] 제목 | 본문 내용",
+                f"  예시: 이메일 10:30에 dev@company.com 참조 pm@company.com: [{project_name}] API 통합 완료 | 테스트 준비 완료되었습니다",
                 "",
                 "이메일 답장 형식 (최근 이메일에 답장할 때 사용):",
-                "- 답장 HH:MM에 [email-id] 참조 PERSON: 제목 | 본문 내용",
-                "  예시: 답장 14:00에 [email-42] 참조 dev@domain: RE: API 상태 | 업데이트 감사합니다...",
+                f"- 답장 HH:MM에 [email-id] 참조 PERSON: [{project_name}] RE: 제목 | 본문 내용",
+                f"  예시: 답장 14:00에 [email-42] 참조 dev@domain: [{project_name}] RE: API 상태 | 업데이트 감사합니다...",
                 "",
                 "채팅 형식:",
                 "- 채팅 HH:MM에 TARGET과: 메시지 내용",
@@ -544,11 +646,12 @@ class GPTPlanner:
                 "You MUST use these EXACT formats:",
                 "",
                 "Email format (you MUST include cc or bcc in most emails for transparency):",
-                "- Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: Subject | Body text",
+                f"- Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: [{project_name}] Subject | Body text",
+                f"  Example: Email at 10:30 to dev@company.com cc pm@company.com: [{project_name}] API Integration Complete | Testing ready",
                 "",
                 "Reply to email format (use when responding to a recent email):",
-                "- Reply at HH:MM to [email-id] cc PERSON: Subject | Body text",
-                "  Example: Reply at 14:00 to [email-42] cc dev@domain: RE: API status | Thanks for the update...",
+                f"- Reply at HH:MM to [email-id] cc PERSON: [{project_name}] RE: Subject | Body text",
+                f"  Example: Reply at 14:00 to [email-42] cc dev@domain: [{project_name}] RE: API status | Thanks for the update...",
                 "",
                 "Chat format:",
                 "- Chat at HH:MM with TARGET: message text",
@@ -1039,15 +1142,30 @@ class StubPlanner:
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         total_days = max(duration_weeks, 1) * 5
+
+        # Build goals based on single vs multi-project
+        goals = []
+        if all_active_projects and len(all_active_projects) > 1:
+            goals.append(f"여러 프로젝트 동시 진행 ({len(all_active_projects)}개 프로젝트):")
+            for proj in all_active_projects:
+                proj_name = proj.get('project_name', '프로젝트')
+                goals.append(f"  - {proj_name}: 마일스톤 진행")
+            goals.append("- 프로젝트 간 조율 및 커뮤니케이션")
+        else:
+            goals.extend([
+                "- 프로젝트 마일스톤 진행",
+                "- 차단 요소 커뮤니케이션",
+            ])
+        goals.append("- 일일 보고서를 위한 진행 상황 기록")
+
         body = "\n".join([
             f"작업자: {worker.name} ({worker.role})",
             f"일차: {day_index + 1} / {total_days}",
             "목표:",
-            "- 프로젝트 마일스톤 진행",
-            "- 차단 요소 커뮤니케이션",
-            "- 일일 보고서를 위한 진행 상황 기록",
+            *goals,
         ])
         model = model_hint or "vdos-stub-daily"
         return self._result("Daily Plan", body, model)

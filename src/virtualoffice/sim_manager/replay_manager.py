@@ -10,7 +10,7 @@ Primary use case: Live feed simulation data to external projects via API.
 import logging
 from typing import Optional, TYPE_CHECKING
 
-from virtualoffice.db import get_connection
+from virtualoffice.common.db import get_connection
 
 if TYPE_CHECKING:
     from virtualoffice.sim_manager.engine import SimulationEngine
@@ -245,10 +245,9 @@ class ReplayManager:
 
                 for row in email_rows:
                     # Get recipients
+                    # Align with schema: email_recipients(email_id, address, kind)
                     recipients_rows = conn.execute(
-                        """
-                        SELECT recipient FROM message_recipients WHERE message_id = ?
-                        """,
+                        "SELECT address FROM email_recipients WHERE email_id = ? ORDER BY rowid",
                         (row[0],)
                     ).fetchall()
                     recipients = [r[0] for r in recipients_rows]

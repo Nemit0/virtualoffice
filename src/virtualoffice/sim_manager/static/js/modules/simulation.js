@@ -32,8 +32,29 @@ export async function refreshSimulationState() {
   const state = await fetchJson(`${API_PREFIX}/simulation`);
   document.getElementById('state-status').textContent = state.is_running ? 'running' : 'stopped';
   document.getElementById('state-current_tick').textContent = state.current_tick;
-  document.getElementById('state-sim_time').textContent = state.sim_time || 'Day 0 00:00';
   document.getElementById('state-auto').textContent = state.auto_tick;
+
+  // Calculate and display simulation time using 8-hour workdays
+  // This matches the backend's calculation for project scheduling
+  const HOURS_PER_DAY = 8; // 8-hour workdays
+  const day_ticks = HOURS_PER_DAY * 60; // 480 ticks per day
+  const current_day = state.current_tick > 0 ? Math.floor((state.current_tick - 1) / day_ticks) : 0;
+  const current_week = Math.floor(current_day / 5) + 1; // 5-day work weeks
+
+  // Calculate time within the current day
+  const ticks_in_current_day = state.current_tick > 0 ? ((state.current_tick - 1) % day_ticks) : 0;
+  const hours = Math.floor(ticks_in_current_day / 60);
+  const minutes = ticks_in_current_day % 60;
+  const time_str = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+  // Display as "Day X HH:MM" using 8-hour workdays
+  const sim_time = `Day ${current_day} ${time_str}`;
+  document.getElementById('state-sim_time').textContent = sim_time;
+  document.getElementById('state-sim_time').title = `Calculated using ${HOURS_PER_DAY}-hour workdays`;
+
+  // Display Project Week
+  document.getElementById('state-project_week').textContent = `Week ${current_week}`;
+  document.getElementById('state-project_week').title = `Week ${current_week} (5-day work weeks, ${HOURS_PER_DAY}-hour days)`;
 
   // Load current tick interval
   try {

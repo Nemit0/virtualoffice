@@ -41,6 +41,8 @@ export function switchTab(tabName) {
 
   const emailsSection = document.getElementById('tab-emails');
   const chatSection = document.getElementById('tab-chat');
+  const replaySection = document.getElementById('tab-replay');
+
   if (emailsSection) {
     emailsSection.style.display = (tabName === 'emails') ? '' : 'none';
     emailsSection.setAttribute('aria-hidden', (tabName !== 'emails').toString());
@@ -48,6 +50,10 @@ export function switchTab(tabName) {
   if (chatSection) {
     chatSection.style.display = (tabName === 'chat') ? '' : 'none';
     chatSection.setAttribute('aria-hidden', (tabName !== 'chat').toString());
+  }
+  if (replaySection) {
+    replaySection.style.display = (tabName === 'replay') ? '' : 'none';
+    replaySection.setAttribute('aria-hidden', (tabName !== 'replay').toString());
   }
 
   // Announce tab change to screen readers

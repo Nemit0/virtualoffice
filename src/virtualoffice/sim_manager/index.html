@@ -10,7 +10,12 @@
 
 <body>
   <header>
-    <h1>VDOS Dashboard</h1>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <h1 style="margin: 0;">VDOS Dashboard</h1>
+      <span id="header-replay-indicator" style="display: none; background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 13px; font-weight: 600;">
+        REPLAY MODE
+      </span>
+    </div>
     <div id="status-message"></div>
   </header>
 
@@ -22,6 +27,8 @@
         id="tab-emails-button">Emails</button>
       <button class="tab-button" data-tab="chat" role="tab" aria-selected="false" aria-controls="tab-chat"
         id="tab-chat-button">Chat</button>
+      <button class="tab-button" data-tab="replay" role="tab" aria-selected="false" aria-controls="tab-replay"
+        id="tab-replay-button">Replay</button>
     </nav>
     <section id="control-panel">
       <h2>Controls</h2>
@@ -111,6 +118,17 @@
 
     <section id="state-panel">
       <h2>Simulation State</h2>
+
+      <!-- Replay Mode Indicator -->
+      <div id="replay-mode-indicator" class="replay-mode-indicator" style="display: none;">
+        <div class="replay-icon">🔄</div>
+        <div class="replay-text">
+          <strong>REPLAY MODE</strong><br>
+          <span id="replay-indicator-time">Viewing Day 1, 09:00</span>
+        </div>
+        <button id="replay-indicator-reset-btn" class="secondary">Return to Live Mode</button>
+      </div>
+
       <div class="simulation-state">
         <div class="state-item">
           <strong>Status</strong><br>
@@ -123,6 +141,10 @@
         <div class="state-item">
           <strong>Simulation Time</strong><br>
           <span id="state-sim_time">Day 0 00:00</span>
+        </div>
+        <div class="state-item">
+          <strong>Project Week</strong><br>
+          <span id="state-project_week" title="Week calculated using 8-hour workdays for project scheduling">—</span>
         </div>
         <div class="state-item">
           <strong>Auto Tick</strong><br>
@@ -152,7 +174,7 @@
 
     <section id="active-projects-section">
       <h2>Active Project Assignments</h2>
-      <p>Teams currently working on projects (based on simulation week and project timelines).</p>
+      <p>Teams currently working on projects. Project scheduling uses <strong>8-hour workdays</strong> (5-day weeks) - see "Project Week" above for current week.</p>
       <div id="active-projects-container"></div>
     </section>
 
@@ -604,6 +626,89 @@
                   Last updated: <span id="chat-message-last-refresh">Never</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Replay Tab (Time Machine) -->
+    <section id="tab-replay" class="tabbed-section" style="display: none;" role="tabpanel"
+      aria-labelledby="tab-replay-button">
+      <h2>Time Machine - Replay Controls</h2>
+      
+      <p style="margin-bottom: 16px; color: #64748b;">
+        Jump to any previously generated tick to view historical emails and chats.
+        Use the controls below to navigate through simulation time.
+      </p>
+
+      <div class="replay-container">
+        <!-- Replay Controls Card -->
+        <div class="card">
+          <h3>Jump Controls</h3>
+
+          <div class="replay-info">
+            <div class="info-row">
+              <span class="label">Current Tick:</span>
+              <span id="replay-current-tick" class="value">-</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Max Generated Tick:</span>
+              <span id="replay-max-tick" class="value">-</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Mode:</span>
+              <span id="replay-mode" class="value badge">Live</span>
+            </div>
+          </div>
+
+          <hr style="margin: 20px 0;">
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="replay-jump-day">Day</label>
+              <input id="replay-jump-day" type="number" min="1" value="1" />
+            </div>
+            <div class="form-group">
+              <label for="replay-jump-hour">Hour (0-23)</label>
+              <input id="replay-jump-hour" type="number" min="0" max="23" value="9" />
+            </div>
+            <div class="form-group">
+              <label for="replay-jump-minute">Minute (0-59)</label>
+              <input id="replay-jump-minute" type="number" min="0" max="59" value="0" />
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <button id="replay-jump-btn">Jump to Time</button>
+            <button id="replay-reset-btn" class="secondary">Reset to Live Mode</button>
+          </div>
+
+          <div id="replay-error" style="display: none; margin-top: 12px; padding: 12px; background: #fee; border-radius: 4px; color: #b91c1c;"></div>
+        </div>
+
+        <!-- Current State Card -->
+        <div class="card">
+          <h3>Current State <span id="replay-state-time" style="color: #64748b; font-size: 14px; font-weight: normal;"></span></h3>
+
+          <div class="tabs-secondary">
+            <button class="tab-button-secondary active" data-tab-secondary="replay-emails">Emails</button>
+            <button class="tab-button-secondary" data-tab-secondary="replay-chats">Chats</button>
+          </div>
+
+          <div id="replay-emails-content" class="replay-content">
+            <div id="replay-emails-list">
+              <p style="color: #64748b; text-align: center; padding: 20px;">
+                Click "Jump to Time" to load emails at that tick
+              </p>
+            </div>
+          </div>
+
+          <div id="replay-chats-content" class="replay-content" style="display: none;">
+            <div id="replay-chats-list">
+              <p style="color: #64748b; text-align: center; padding: 20px;">
+                Click "Jump to Time" to load chats at that tick
+              </p>
             </div>
           </div>
         </div>

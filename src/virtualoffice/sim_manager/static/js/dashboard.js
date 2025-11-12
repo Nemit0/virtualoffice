@@ -92,6 +92,12 @@ import {
   toggleStyleFilter,
   refreshFilterStatus
 } from './modules/style-filter.js';
+import {
+  initReplay,
+  getReplayMetadata,
+  updateReplayIndicator,
+  updateReplayInfo
+} from './features/replay.js';
 
 // Performance monitoring
 const PERF_START = performance.now();
@@ -128,6 +134,16 @@ export async function refreshAll() {
     await refreshFilterMetrics();
     await refreshEmailsTab();
     await refreshChatTab();
+
+    // Update replay mode indicator
+    try {
+      const metadata = await getReplayMetadata();
+      updateReplayIndicator(metadata);
+    } catch (err) {
+      // Silently fail - replay indicator is non-critical
+      console.debug('[REPLAY] Failed to update indicator:', err);
+    }
+
     setStatus('');
   } catch (err) {
     setStatus(err.message || String(err), true);
@@ -245,6 +261,15 @@ function setActiveTab(tabName) {
       }
     }, 100);
   }
+  if (tabName === 'replay') {
+    // Refresh replay metadata when switching to replay tab
+    getReplayMetadata().then(metadata => {
+      updateReplayIndicator(metadata);
+      updateReplayInfo(metadata);
+    }).catch(err => {
+      console.error('[REPLAY] Failed to refresh metadata:', err);
+    });
+  }
 }
 
 /**
@@ -361,6 +386,9 @@ function init() {
   // Hydrate projects from DB into JS state if missing
   // Do this after initial people/projects refresh so start button works without manual add
   hydrateProjectsFromDBIfNeeded();
+
+  // Initialize replay/time machine module
+  initReplay();
 
   // Start with 1-minute interval (will auto-adjust based on simulation state)
   setRefreshInterval(60000);

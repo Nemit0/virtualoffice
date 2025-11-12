@@ -23,7 +23,7 @@ PLAN_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "time": {"type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$"},
-                    "duration_minutes": {"type": "integer", "minimum": 1},
+                    "duration_minutes": {"type": "integer", "minimum": 0},
                     "description": {"type": "string"},
                     "type": {"type": "string", "enum": ["work", "break", "meeting"]}
                 },

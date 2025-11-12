@@ -12,6 +12,10 @@ import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Sequence, Tuple
@@ -301,6 +305,8 @@ class SimulationEngine:
             self._max_hourly_plans_per_minute = int(os.getenv("VDOS_MAX_HOURLY_PLANS_PER_MINUTE", "10"))
         except ValueError:
             self._max_hourly_plans_per_minute = 10
+        # Initialize plan_parser placeholder (will be properly set in start() method)
+        self.plan_parser = None
         # (person_id, day_index, tick_of_day) -> attempts
         self._hourly_plan_attempts: dict[tuple[int, int, int], int] = {}
         # Scheduled comms: person_id -> { tick -> [action dicts] }
@@ -1117,7 +1123,7 @@ class SimulationEngine:
             person_id=person.id,
             current_week=current_week,
             all_people=people_by_id,
-            project_id=project.id if project else None
+            project_id=project["id"] if isinstance(project, dict) else getattr(project, "id", None) if project else None
         )
         
         hourly_plan = self._get_recent_hourly_plan(person.id)
@@ -1468,35 +1474,35 @@ class SimulationEngine:
             return
         sched = self._scheduled_comms.setdefault(person.id, {})
 
-        # English patterns
+        # English patterns - allow optional leading whitespace and bullets (-, *, •)
         email_re = re.compile(
-            r"^Email\s+at\s+(\d{2}:\d{2})\s+to\s+([^:]+?)"
+            r"^\s*[-*•]?\s*Email\s+at\s+(\d{2}:\d{2})\s+to\s+([^:]+?)"
             r"(?:\s+cc\s+([^:]+?))?"
             r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
         reply_re = re.compile(
-            r"^Reply\s+at\s+(\d{2}:\d{2})\s+to\s+\[([^\]]+)\]"
+            r"^\s*[-*•]?\s*Reply\s+at\s+(\d{2}:\d{2})\s+to\s+\[([^\]]+)\]"
             r"(?:\s+cc\s+([^:]+?))?"
             r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
-        chat_re = re.compile(r"^Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
+        chat_re = re.compile(r"^\s*[-*•]?\s*Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
 
-        # Korean patterns (이메일, 채팅, 답장)
+        # Korean patterns (이메일, 채팅, 답장) - allow optional leading whitespace and bullets (-, *, •)
         email_ko_re = re.compile(
-            r"^이메일\s+(\d{2}:\d{2})에\s+([^:]+?)"
+            r"^\s*[-*•]?\s*이메일\s+(\d{2}:\d{2})에\s+([^:]+?)"
             r"(?:\s+참조\s+([^:]+?))?"
             r"(?:\s+숨은참조\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
         reply_ko_re = re.compile(
-            r"^답장\s+(\d{2}:\d{2})에\s+\[([^\]]+)\]"
+            r"^\s*[-*•]?\s*답장\s+(\d{2}:\d{2})에\s+\[([^\]]+)\]"
             r"(?:\s+참조\s+([^:]+?))?"
             r"(?:\s+숨은참조\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
-        chat_ko_re = re.compile(r"^채팅\s+(\d{2}:\d{2})에\s+([^:]+)(?:과|와):\s*(.*)$", re.I)
+        chat_ko_re = re.compile(r"^\s*[-*•]?\s*채팅\s+(\d{2}:\d{2})에\s+([^:]+)(?:과|와):\s*(.*)$", re.I)
 
         # Track parsed communications to detect duplicates
         parsed_comms = []
@@ -1799,24 +1805,53 @@ class SimulationEngine:
                     continue
 
                 # Validate project assignment for all recipients (REQ-2.3.1)
+                # Filter out invalid recipients instead of dropping entire email
                 all_recipients = [email_to] + cc_emails + bcc_emails
+                valid_recipients = []
                 invalid_recipients = []
+
                 for recipient_email in all_recipients:
-                    if not self._validate_project_communication(
+                    if self._validate_project_communication(
                         sender_email=person.email_address,
                         recipient_email=recipient_email,
                         subject=subject,
                         current_week=current_week
                     ):
+                        valid_recipients.append(recipient_email)
+                    else:
                         invalid_recipients.append(recipient_email)
 
-                if invalid_recipients:
+                # Skip email only if NO valid recipients remain
+                if not valid_recipients:
                     logger.info(
                         f"[PROJECT_VALIDATION] Skipping email from {person.email_address}: "
-                        f"{len(invalid_recipients)} recipient(s) not on project: {', '.join(invalid_recipients)}. "
+                        f"No valid recipients (all {len(invalid_recipients)} filtered). "
                         f"Subject: {subject[:80]}"
                     )
                     continue
+
+                # Log filtered recipients for debugging
+                if invalid_recipients:
+                    logger.debug(
+                        f"[PROJECT_VALIDATION] Filtered {len(invalid_recipients)} invalid recipient(s) "
+                        f"from {person.email_address}: {', '.join(invalid_recipients)}. "
+                        f"Sending to {len(valid_recipients)} valid recipient(s)."
+                    )
+
+                # Update recipient lists to only include valid recipients
+                # Primary recipient must be valid (it's first in all_recipients)
+                if email_to not in valid_recipients:
+                    # Primary recipient is invalid - skip this email
+                    logger.info(
+                        f"[PROJECT_VALIDATION] Skipping email from {person.email_address}: "
+                        f"Primary recipient {email_to} not on shared project. "
+                        f"Subject: {subject[:80]}"
+                    )
+                    continue
+
+                # Filter CC/BCC lists to only valid recipients
+                cc_emails = [email for email in cc_emails if email in valid_recipients]
+                bcc_emails = [email for email in bcc_emails if email in valid_recipients]
 
                 if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=body):
                     result = self.email_gateway.send_email(
@@ -1937,7 +1972,18 @@ class SimulationEngine:
                 # Check daily limits before sending
                 if not self._check_daily_limits(person.id, day_index, 'chat'):
                     continue
-                
+                # Project validation: only allow chat if sender and recipient share an ACTIVE project
+                TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+                current_week = ((current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
+                recipient_person = handle_index.get(chat_to)
+                if recipient_person is not None:
+                    if not self._validate_project_pair(person.id, recipient_person.id, current_week):
+                        logger.info(
+                            f"[PROJECT_VALIDATION] Skipping chat from {person.chat_handle} to {chat_to}: "
+                            f"no shared active project in week {current_week}"
+                        )
+                        continue
+
                 if self._can_send(tick=current_tick, channel='chat', sender=person.chat_handle, recipient_key=(chat_to,), subject=None, body=payload):
                     result = self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso, persona_id=person.id)
                     chats += 1
@@ -2068,32 +2114,38 @@ class SimulationEngine:
 
     def _is_work_hours_tick(self, tick: int) -> bool:
         """
-        Check if a tick falls within global work hours (09:00-17:00 on weekdays).
+        Check if a tick falls within work hours (09:00-17:00 on weekdays).
 
-        Uses calendar day calculation (1440 ticks per 24-hour day).
-        - Work hours: 09:00-17:00 (ticks 540-1020 of each day)
-        - Weekends: Days 5-6 of each week (Saturday-Sunday) are always off
+        Uses 480-tick workday system (8-hour days) consistent with all other simulation logic.
+        - Work hours: 09:00-17:00 mapped to 480-tick scale (ticks 180-340 of each day)
+        - Weekends: Days 5-6 of each week (Saturday-Sunday) are skipped
 
         Returns False for:
-        - Before 09:00 (ticks 0-539 of day)
-        - After 17:00 (ticks 1020-1439 of day)
+        - Before 09:00 (ticks 0-179 of day)
+        - After 17:00 (ticks 341-479 of day)
         - Weekends (days 5-6 of each week)
 
-        This allows the simulation to skip non-work ticks entirely for efficiency.
+        This allows the simulation to skip non-work ticks for efficiency while ensuring
+        daily planning triggers correctly at tick 180 (09:00) every workday.
         """
-        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1440 ticks per day
-        WORK_START_TICK = 9 * 60  # 09:00 = tick 540 of day
-        WORK_END_TICK = 17 * 60   # 17:00 = tick 1020 of day
+        # Use 480-tick workday system (consistent with rest of simulation)
+        day_ticks = max(1, self.hours_per_day * 60)  # 480 ticks per 8-hour workday
 
-        # Check if it's a weekend (calendar week: days 5-6 are Saturday-Sunday)
-        day_index = (tick - 1) // TICKS_PER_CALENDAR_DAY
+        # Check if it's a weekend (5-day work week: days 5-6 are Saturday-Sunday)
+        day_index = (tick - 1) // day_ticks if tick > 0 else 0
         day_of_week = day_index % 7
         if day_of_week >= 5:
             return False
 
-        # Check if it's during work hours (09:00-17:00)
-        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
-        return WORK_START_TICK <= tick_of_day < WORK_END_TICK
+        # Map 09:00-17:00 to 480-tick scale
+        # 09:00 = 540 minutes = (540/1440) * 480 = 180 ticks
+        # 17:00 = 1020 minutes = (1020/1440) * 480 = 340 ticks
+        WORK_START_TICK = 180  # 09:00 in 480-tick scale
+        WORK_END_TICK = 340    # 17:00 in 480-tick scale
+
+        # Check if it's during work hours
+        tick_of_day = (tick - 1) % day_ticks if tick > 0 else 0
+        return WORK_START_TICK <= tick_of_day <= WORK_END_TICK
 
     def _is_within_work_hours(self, person: PersonRead, tick: int) -> bool:
         if not self.hours_per_day:
@@ -2691,6 +2743,24 @@ class SimulationEngine:
             all_rows = list(rows) + [r for r in unassigned_rows if r["id"] not in assigned_ids]
             return [self._row_to_project_plan(row) for row in all_rows]
 
+    def _validate_project_pair(self, sender_id: int, recipient_id: int, current_week: int) -> bool:
+        """Return True if sender and recipient share at least one active project in the given week.
+
+        Considers both explicitly assigned projects and unassigned active projects (everyone).
+        """
+        try:
+            s_projects = self._get_all_active_projects_for_person(sender_id, current_week)
+            r_projects = self._get_all_active_projects_for_person(recipient_id, current_week)
+            if not s_projects or not r_projects:
+                return False
+            def _pid(p):
+                return p.get("id") if isinstance(p, dict) else getattr(p, "id", None)
+            s_ids = { _pid(p) for p in s_projects if _pid(p) is not None }
+            r_ids = { _pid(p) for p in r_projects if _pid(p) is not None }
+            return bool(s_ids & r_ids)
+        except Exception:
+            return False
+
     def _get_project_collaborators(
         self,
         person_id: int,
@@ -2984,7 +3054,7 @@ class SimulationEngine:
         }
 
     def _generate_daily_plan(
-        self, person: PersonRead, project_plan: dict[str, Any], day_index: int
+        self, person: PersonRead, project_plan: dict[str, Any], day_index: int, all_active_projects: list[dict[str, Any]] | None = None
     ) -> PlanResult:
         # Get all active people for team roster
         team = self._get_active_people()
@@ -2998,6 +3068,7 @@ class SimulationEngine:
                 duration_weeks=self.project_duration_weeks,
                 team=team,
                 model_hint=self._planner_model_hint,
+                all_active_projects=all_active_projects,  # Pass all active projects for multi-project support
             )
         except PlanningError as exc:
             raise RuntimeError(f"Unable to generate daily plan for {person.name}: {exc}") from exc
@@ -3245,14 +3316,14 @@ class SimulationEngine:
         return self._row_to_worker_plan(row) if row else None
 
     def _ensure_daily_plan(
-        self, person: PersonRead, day_index: int, project_plan: dict[str, Any]
+        self, person: PersonRead, day_index: int, project_plan: dict[str, Any], all_active_projects: list[dict[str, Any]] | None = None
     ) -> str:
         existing = self._fetch_worker_plan(
             person.id, "daily", tick=day_index, exact_tick=True
         )
         if existing:
             return existing["content"]
-        result = self._generate_daily_plan(person, project_plan, day_index)
+        result = self._generate_daily_plan(person, project_plan, day_index, all_active_projects)
         return result.content
 
     def _summarise_plan(self, plan_text: str, max_lines: int = 4) -> str:
@@ -3664,30 +3735,68 @@ class SimulationEngine:
             self._planner_model_hint = request.model_hint
             self._initialise_project_plan(request, active_people)
         self._set_running(True)
+        # Anchor the simulation base datetime to local midnight of the dominant timezone
+        # among active people, then convert to UTC. This ensures that a tick's wall-clock
+        # minute-of-day corresponds to the workers' local day boundaries.
         try:
-            self._sim_base_dt = datetime.now(timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            # Choose the most common timezone among active people; default to 'UTC'.
+            tz_counts: dict[str, int] = {}
+            for p in active_people:
+                tz = getattr(p, 'timezone', None) or 'UTC'
+                tz_counts[tz] = tz_counts.get(tz, 0) + 1
+            dominant_tz = max(tz_counts, key=tz_counts.get) if tz_counts else 'UTC'
+
+            if ZoneInfo is not None:
+                local = now_utc.astimezone(ZoneInfo(dominant_tz))
+                local_midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+                self._sim_base_dt = local_midnight.astimezone(timezone.utc)
+            else:
+                # Fallback: use UTC midnight
+                self._sim_base_dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         except Exception:
+            # Last resort: leave unset (engine will omit sent_at and servers will default)
             self._sim_base_dt = None
         self._sync_worker_runtimes(active_people)
         # Schedule a kickoff chat/email at the first working minute for each worker
         try:
             ticks_per_day = max(1, self.hours_per_day * 60)
+            # Calendar week size for project timelines
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            # Active people map for collaborator lookup
+            people_by_id = {p.id: p for p in active_people}
             for person in active_people:
                 start_end = self._work_hours_ticks.get(person.id, (0, ticks_per_day))
                 start_tick_of_day = start_end[0]
                 base_tick = 1  # day 1 start
                 kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes (minute ticks)
-                # pick a collaborator to target
-                recipients = self._select_collaborators(person, active_people)
-                target = recipients[0] if recipients else None
-                if target:
-                    if self._locale == 'ko':
-                        self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?")
-                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "킥오프 | 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
-                    else:
-                        self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, f"Morning! Quick sync on priorities?")
-                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Quick kickoff | Lining up tasks for today — ping me with blockers.")
+
+                # Only schedule kickoff if the person has at least one ACTIVE project in week 1
+                current_week = 1
+                active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+                if not active_projects:
+                    continue
+
+                # Choose collaborators strictly from the same active project
+                project_for_collab = active_projects[0]
+                collaborators = self._get_project_collaborators(
+                    person_id=person.id,
+                    current_week=current_week,
+                    all_people=people_by_id,
+                    project_id=project_for_collab["id"] if isinstance(project_for_collab, dict) else getattr(project_for_collab, "id", None),
+                )
+                target = collaborators[0] if collaborators else None
+                if not target:
+                    continue
+
+                if self._locale == 'ko':
+                    self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?")
+                    self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "킥오프 | 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
+                else:
+                    self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, f"Morning! Quick sync on priorities?")
+                    self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Quick kickoff | Lining up tasks for today — ping me with blockers.")
         except Exception:
+            # Kickoff scheduling is best-effort; if collaborator or project lookup fails, skip.
             pass
         status = self._fetch_state()
         return SimulationState(
@@ -4162,6 +4271,11 @@ class SimulationEngine:
                             ack_body = random.choice(ack_patterns)
                         else:
                             ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
+                        # Only acknowledge if on a shared active project
+                        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+                        current_week_for_validation = ((status.current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if status.current_tick > 0 else 1
+                        if sender_person is not None and not self._validate_project_pair(person.id, sender_person.id, current_week_for_validation):
+                            continue
                         if self._can_send(
                             tick=status.current_tick,
                             channel='chat',
@@ -4227,10 +4341,10 @@ class SimulationEngine:
                         )
                         continue
 
-                    # Use first (assigned-first) project for daily plan, but pass all to hourly planner
+                    # Use first (assigned-first) project for daily plan primary reference, but pass all projects for multi-project support
                     primary_project = active_projects[0]
 
-                    daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project)
+                    daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project, active_projects if len(active_projects) > 1 else None)
 
                     # Collect planning task for parallel execution
                     planning_task = (
@@ -4736,11 +4850,14 @@ class SimulationEngine:
                 if head and head.id != target.id:
                     subject = f'Coverage needed: {target.name} is out sick'
                     body = f"{target.name} reported sick leave at tick {tick}. Please redistribute their urgent work."
+                    # Use simulated timestamp for consistency with other communications
+                    dt = self._sim_datetime_for_tick(tick)
                     self.email_gateway.send_email(
                         sender=self.sim_manager_email,
                         to=[head.email_address],
                         subject=subject,
                         body=body,
+                        sent_at_iso=(dt.isoformat() if dt else None),
                     )
                     self._log_exchange(tick, None, head.id, 'email', subject, body)
                     head_message = _InboundMessage(
@@ -4819,7 +4936,7 @@ class SimulationEngine:
                 person_id=head.id,
                 current_week=current_week,
                 all_people=people_by_id,
-                project_id=project_for_collab.id if project_for_collab else None
+                project_id=project_for_collab["id"] if isinstance(project_for_collab, dict) else getattr(project_for_collab, "id", None) if project_for_collab else None
             )
             if collaborators:
                 partner = rng.choice(collaborators)
