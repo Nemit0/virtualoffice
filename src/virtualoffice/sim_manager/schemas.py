@@ -30,6 +30,7 @@ class PersonCreate(BaseModel):
     planning_guidelines: Sequence[str] | None = None
     event_playbook: dict[str, Sequence[str]] | None = None
     statuses: Sequence[str] | None = None
+    style_examples: str | None = Field(default=None, description="JSON string of style examples")
 
     @field_validator("skills", "personality")
     @classmethod
@@ -37,6 +38,31 @@ class PersonCreate(BaseModel):
         if not value:
             raise ValueError("Must include at least one entry")
         return value
+    
+    @field_validator("style_examples")
+    @classmethod
+    def _validate_style_examples(cls, value: str | None) -> str | None:
+        """Validate style_examples JSON format and content."""
+        if value is None or value == '[]':
+            return value
+        
+        try:
+            import json
+            examples = json.loads(value)
+            if not isinstance(examples, list):
+                raise ValueError("style_examples must be a JSON array")
+            
+            for example in examples:
+                if not isinstance(example, dict):
+                    raise ValueError("Each style example must be a JSON object")
+                if "type" not in example or "content" not in example:
+                    raise ValueError("Each style example must have 'type' and 'content' fields")
+                if example["type"] not in ["email", "chat"]:
+                    raise ValueError("Style example type must be 'email' or 'chat'")
+            
+            return value
+        except json.JSONDecodeError:
+            raise ValueError("style_examples must be valid JSON")
 
 
 class PersonRead(PersonCreate):

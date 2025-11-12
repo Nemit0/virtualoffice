@@ -2,7 +2,7 @@ import os
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -33,6 +33,7 @@ _AZURE_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
 _API_KEY = os.getenv("OPENAI_API_KEY")
 _API_KEY2 = os.getenv("OPENAI_API_KEY2")
 _DEFAULT_TIMEOUT = float(os.getenv("VDOS_OPENAI_TIMEOUT", "120"))
+_DEFAULT_TEMPERATURE = float(os.getenv("VDOS_OPENAI_TEMPERATURE", "1.0")) if os.getenv("VDOS_OPENAI_TEMPERATURE") else None
 
 # Model fallbacks
 _MODEL_FALLBACKS = {
@@ -66,7 +67,7 @@ def _load_token_usage() -> dict:
     """Load token usage from file, reset if new day."""
     if not _TOKEN_USAGE_FILE.exists():
         return {
-            "last_reset_date": datetime.now().strftime("%Y-%m-%d"),
+            "last_reset_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "daily_usage": {
                 "openai_key1": {"mini": 0, "regular": 0},
                 "openai_key2": {"mini": 0, "regular": 0},
@@ -83,7 +84,7 @@ def _load_token_usage() -> dict:
         data = json.load(f)
 
     # Reset daily usage if new day
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if data.get("last_reset_date") != today:
         data["last_reset_date"] = today
         data["daily_usage"] = {
@@ -214,9 +215,19 @@ def _get_azure_client() -> AzureOpenAI:
     return _azure_client
 
 
-def generate_text(prompt: list[dict], model: str = "gpt-4o-mini") -> tuple[str, int | None]:
+def generate_text(
+    prompt: list[dict],
+    model: str = "gpt-4o-mini",
+    temperature: float | None = None
+) -> tuple[str, int | None]:
     """
     Generate text using OpenAI API with automatic provider selection.
+
+    Args:
+        prompt: List of message dicts with 'role' and 'content'
+        model: Model name (default: gpt-4o-mini)
+        temperature: Sampling temperature 0.0-2.0 (default: None uses API default ~1.0)
+                     Lower = more deterministic, Higher = more random
 
     Priority: OPENAI_API_KEY (free tier) -> OPENAI_API_KEY2 (free tier) -> Azure
     """
@@ -227,6 +238,10 @@ def generate_text(prompt: list[dict], model: str = "gpt-4o-mini") -> tuple[str, 
         if fixed_model:
             model = fixed_model
             logger.info(f"[EXPERIMENTAL] Model override enabled: using {model}")
+
+    # Use default temperature from environment if none specified
+    if temperature is None and _DEFAULT_TEMPERATURE is not None:
+        temperature = _DEFAULT_TEMPERATURE
 
     # Choose provider based on free tier limits
     provider, use_azure = _choose_provider(model)
@@ -247,24 +262,25 @@ def generate_text(prompt: list[dict], model: str = "gpt-4o-mini") -> tuple[str, 
 
     start_time = time.time()
 
+    # Prepare common parameters
+    completion_params = {
+        "model": actual_model,
+        "messages": prompt,
+        "timeout": _DEFAULT_TIMEOUT,
+    }
+    if temperature is not None:
+        completion_params["temperature"] = temperature
+
     try:
         if use_azure:
             # Azure OpenAI
             client = _get_azure_client()
-            response = client.chat.completions.create(
-                model=actual_model,  # Use deployment name directly
-                messages=prompt,
-                timeout=_DEFAULT_TIMEOUT,
-            )
+            response = client.chat.completions.create(**completion_params)
         else:
             # OpenAI API (key1 or key2)
             api_key = _API_KEY if provider == "openai_key1" else _API_KEY2
             client = _get_openai_client(api_key)
-            response = client.chat.completions.create(
-                model=actual_model,
-                messages=prompt,
-                timeout=_DEFAULT_TIMEOUT,
-            )
+            response = client.chat.completions.create(**completion_params)
 
         # Log slow API calls
         duration = time.time() - start_time
@@ -276,22 +292,22 @@ def generate_text(prompt: list[dict], model: str = "gpt-4o-mini") -> tuple[str, 
         fb = _MODEL_FALLBACKS.get(model)
         if fb and fb != actual_model:
             try:
+                fallback_params = {
+                    "model": fb,
+                    "messages": prompt,
+                    "timeout": _DEFAULT_TIMEOUT,
+                }
+                if temperature is not None:
+                    fallback_params["temperature"] = temperature
+
                 if use_azure:
                     if fb in _AVAILABLE_AZURE_MODELS:
-                        response = _get_azure_client().chat.completions.create(
-                            model=fb,
-                            messages=prompt,
-                            timeout=_DEFAULT_TIMEOUT,
-                        )
+                        response = _get_azure_client().chat.completions.create(**fallback_params)
                     else:
                         raise exc
                 else:
                     api_key = _API_KEY if provider == "openai_key1" else _API_KEY2
-                    response = _get_openai_client(api_key).chat.completions.create(
-                        model=fb,
-                        messages=prompt,
-                        timeout=_DEFAULT_TIMEOUT,
-                    )
+                    response = _get_openai_client(api_key).chat.completions.create(**fallback_params)
                 actual_model = fb
             except Exception:
                 raise RuntimeError(f"OpenAI completion failed: {exc}") from exc

@@ -3,12 +3,12 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from virtualoffice.common.email_validation import validate_email_address
+
 
 def normalise_address(value: str) -> str:
-    cleaned = value.strip().lower()
-    if "@" not in cleaned or cleaned.startswith("@") or cleaned.endswith("@"):
-        raise ValueError("Invalid email address")
-    return cleaned
+    """Validate and normalize email address. Wrapper for backward compatibility."""
+    return validate_email_address(value, normalize=True)
 
 
 class Mailbox(BaseModel):

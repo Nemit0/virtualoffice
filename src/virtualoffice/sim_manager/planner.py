@@ -13,6 +13,9 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
         )
 
 from .schemas import PersonRead
+from virtualoffice.common.localization import get_current_locale_manager
+from virtualoffice.common.korean_templates import get_korean_prompt
+from virtualoffice.common.korean_validation import validate_korean_content
 
 PlanGenerator = Callable[[list[dict[str, str]], str], tuple[str, int]]
 
@@ -23,6 +26,10 @@ DEFAULT_DAILY_MODEL = os.getenv("VDOS_PLANNER_DAILY_MODEL", DEFAULT_PROJECT_MODE
 DEFAULT_HOURLY_MODEL = os.getenv("VDOS_PLANNER_HOURLY_MODEL", DEFAULT_DAILY_MODEL)
 DEFAULT_DAILY_REPORT_MODEL = os.getenv("VDOS_PLANNER_DAILY_REPORT_MODEL")
 DEFAULT_SIM_REPORT_MODEL = os.getenv("VDOS_PLANNER_SIM_REPORT_MODEL")
+
+# Korean validation retry configuration
+# Set to 0 to disable retries and speed up planning (accepts mixed Korean/English)
+MAX_KOREAN_VALIDATION_RETRIES = int(os.getenv("VDOS_KOREAN_VALIDATION_RETRIES", "0"))
 
 @dataclass
 class PlanResult:
@@ -57,6 +64,7 @@ class Planner(Protocol):
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         ...
 
@@ -109,6 +117,27 @@ class Planner(Protocol):
         model_hint: str | None = None,
     ) -> PlanResult:
         ...
+    
+    def generate_with_messages(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        """
+        Generate a plan using pre-built message list.
+        
+        This method allows using externally constructed prompts
+        (e.g., from PromptManager) instead of the built-in prompt logic.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+            model_hint: Optional model override
+            
+        Returns:
+            PlanResult with generated content
+        """
+        ...
 
 
 class GPTPlanner:
@@ -122,6 +151,8 @@ class GPTPlanner:
         hourly_model: str = DEFAULT_HOURLY_MODEL,
         daily_report_model: str | None = DEFAULT_DAILY_REPORT_MODEL,
         simulation_report_model: str | None = DEFAULT_SIM_REPORT_MODEL,
+        use_template_prompts: bool = False,
+        hours_per_day: int = 8,
     ) -> None:
         if generator is None:
             def _default(messages: list[dict[str, str]], model: str) -> tuple[str, int]:
@@ -136,6 +167,24 @@ class GPTPlanner:
         self.daily_report_model = daily_report_model or daily_model
         self.simulation_report_model = simulation_report_model or project_model
         self._locale = os.getenv("VDOS_LOCALE", "en").strip().lower() or "en"
+        self.use_template_prompts = use_template_prompts or os.getenv("VDOS_USE_TEMPLATE_PROMPTS", "").lower() in ("true", "1", "yes")
+        self.hours_per_day = hours_per_day
+        
+        # Initialize prompt manager if using templates
+        self._prompt_manager = None
+        self._context_builder = None
+        self._metrics_collector = None
+        if self.use_template_prompts:
+            try:
+                from .prompts import PromptManager, ContextBuilder, PromptMetricsCollector
+                import pathlib
+                template_dir = pathlib.Path(__file__).parent / "prompts" / "templates"
+                self._prompt_manager = PromptManager(str(template_dir), locale=self._locale)
+                self._context_builder = ContextBuilder(locale=self._locale, hours_per_day=self.hours_per_day)
+                self._metrics_collector = PromptMetricsCollector()
+            except Exception as e:
+                print(f"Warning: Failed to initialize prompt management system: {e}")
+                self.use_template_prompts = False
 
     def generate_project_plan(
         self,
@@ -175,7 +224,7 @@ class GPTPlanner:
         # Language enforcement
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요. 예: '개발 환경 설정' (O), 'development environment setup' (X)"},
+                {"role": "system", "content": get_korean_prompt("business")},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -184,12 +233,133 @@ class GPTPlanner:
         self,
         *,
         worker: PersonRead,
-        project_plan: str,
+        project_plan: str | dict[str, Any],
         day_index: int,
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
+        # Extract project plan text and name from dict or string
+        if isinstance(project_plan, dict):
+            project_plan_text = project_plan.get('plan', '')
+            project_name = project_plan.get('project_name', '현재 프로젝트')
+        else:
+            project_plan_text = project_plan
+            project_name = '현재 프로젝트'
+
+        # Determine if multi-project planning is needed
+        has_multiple_projects = all_active_projects and len(all_active_projects) > 1
+
+        # Use template-based prompts if enabled
+        if self.use_template_prompts and self._prompt_manager and self._context_builder:
+            import time
+            start_time = time.time()
+            try:
+                # Build context with Korean defaults
+                persona_markdown = getattr(worker, 'persona_markdown', '') or f"역할: {worker.role}\n기술: 일반"
+                team_roster = "\n".join(f"- {m.name} ({m.role}) - 이메일: {m.email_address}, 채팅: @{m.chat_handle}" for m in (team or []) if m.id != worker.id)
+
+                # Build multi-project context if needed
+                if has_multiple_projects:
+                    multi_project_lines = ["중요: 오늘은 여러 프로젝트를 동시에 진행합니다:", ""]
+                    for i, proj in enumerate(all_active_projects, 1):
+                        proj_name = proj.get('project_name', f'프로젝트 {i}')
+                        proj_plan = proj.get('plan', '')
+                        # Calculate rough time allocation (newer projects get more focus)
+                        if i == 1:  # First project (oldest)
+                            allocation = "30-40%"
+                        elif i == len(all_active_projects):  # Last project (newest)
+                            allocation = "50-60%"
+                        else:  # Middle projects
+                            allocation = "40-50%"
+
+                        multi_project_lines.append(f"프로젝트 {i}: {proj_name} (오늘 시간 배분: {allocation})")
+                        multi_project_lines.append(f"  프로젝트 계획 요약:")
+                        multi_project_lines.append(f"  {proj_plan[:300]}...")
+                        multi_project_lines.append("")
+
+                    multi_project_lines.append("오늘의 목표를 계획할 때:")
+                    multi_project_lines.append("1. 각 프로젝트에 대한 구체적인 작업 항목 포함")
+                    multi_project_lines.append("2. 프로젝트 간 자연스러운 전환 시간 고려")
+                    multi_project_lines.append("3. 각 작업 항목에 프로젝트명 명시 (예: '[NOVA] 아키텍처 설계')")
+
+                    project_context = "\n".join(multi_project_lines)
+                    is_multi_project = True
+                    system_message = (
+                        "당신은 전문가가 여러 동시 프로젝트에 걸쳐 프로젝트 계획을 집중된 일일 목표로 전환하도록 돕습니다. "
+                        "중요: 다중 프로젝트 날짜를 계획할 때 모든 활성 프로젝트에 걸쳐 균형 잡힌 시간 할당을 보장하세요. "
+                        "각 프로젝트는 일일 계획에 전용 작업 및 커뮤니케이션이 있어야 합니다. "
+                        "중요: 당신의 페르소나 정보를 사용하여 당신의 기술, 성격 및 작업 스타일에 맞는 진정성 있는 계획을 만드세요. "
+                        "실제 사람처럼 작성하세요. 프롬프트, 모델 또는 시뮬레이션에 대한 메타 논평을 피하세요."
+                    )
+                else:
+                    # Single project context
+                    project_context = f"프로젝트 기간: {duration_weeks}주. 오늘은 {day_index + 1}일차입니다.\n프로젝트 계획 발췌:\n{project_plan_text}"
+                    is_multi_project = False
+                    system_message = (
+                        "당신은 전문가가 프로젝트 계획을 집중된 일일 목표로 전환하도록 돕고, 최소 한 시간 일찍 마무리하도록 합니다. "
+                        "중요: 당신의 페르소나 정보를 사용하여 당신의 기술, 성격 및 작업 스타일에 맞는 진정성 있는 계획을 만드세요. "
+                        "실제 사람처럼 작성하세요. 프롬프트, 모델 또는 시뮬레이션에 대한 메타 논평을 피하세요."
+                    )
+
+                context = {
+                    "worker_name": worker.name,
+                    "worker_role": worker.role or "팀원",
+                    "worker_timezone": getattr(worker, "timezone", "Asia/Seoul"),
+                    "persona_markdown": persona_markdown,
+                    "team_roster": team_roster or "팀원 없음",
+                    "duration_weeks": duration_weeks,
+                    "day_number": day_index + 1,
+                    "project_plan": project_plan_text,
+                    "project_name": project_name,
+                    "project_context": project_context,  # Add multi-project or single-project context
+                    "is_multi_project": is_multi_project,  # Flag for template to adjust system message
+                    "system_message": system_message,  # System message based on single vs multi-project
+                }
+                
+                # Build prompt from template
+                messages = self._prompt_manager.build_prompt("daily", context)
+                
+                # Generate with metrics collection
+                model = model_hint or self.daily_model
+                result = self._invoke(messages, model)
+                
+                # Record metrics
+                if self._metrics_collector:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self._metrics_collector.record_usage(
+                        template_name="daily_planning",
+                        variant="default",
+                        model_used=result.model_used,
+                        tokens_used=result.tokens_used or 0,
+                        duration_ms=duration_ms,
+                        success=True,
+                    )
+                
+                return result
+            except Exception as e:
+                print(f"Warning: Template-based prompt failed, falling back to hard-coded: {e}")
+                if self._metrics_collector:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self._metrics_collector.record_usage(
+                        template_name="daily_planning",
+                        variant="default",
+                        model_used=model_hint or self.daily_model,
+                        tokens_used=0,
+                        duration_ms=duration_ms,
+                        success=False,
+                        error=str(e),
+                    )
+        
+        # Original hard-coded prompt logic
+        # Extract persona information for authentic planning
+        persona_context = []
+        if hasattr(worker, 'persona_markdown') and worker.persona_markdown:
+            persona_context.append("=== YOUR PERSONA & WORKING STYLE ===")
+            persona_context.append(worker.persona_markdown)
+            persona_context.append("")
+        
         # Build team roster
         team_roster_lines = []
         if team:
@@ -202,31 +372,78 @@ class GPTPlanner:
                 )
             team_roster_lines.append("")  # Add blank line
 
+        # Build project context based on single vs multi-project
+        project_context_lines = []
+        if has_multiple_projects:
+            # Multi-project daily plan
+            project_context_lines.append("중요: 오늘은 여러 프로젝트를 동시에 진행합니다:")
+            project_context_lines.append("")
+            for i, proj in enumerate(all_active_projects, 1):
+                proj_name = proj.get('project_name', f'프로젝트 {i}')
+                proj_plan = proj.get('plan', '')
+                # Calculate rough time allocation (newer projects get more focus)
+                # Simple heuristic: more recent projects = more current focus
+                if i == 1:  # First project (oldest)
+                    allocation = "30-40%"
+                elif i == len(all_active_projects):  # Last project (newest)
+                    allocation = "50-60%"
+                else:  # Middle projects
+                    allocation = "40-50%"
+
+                project_context_lines.append(f"프로젝트 {i}: {proj_name} (오늘 시간 배분: {allocation})")
+                project_context_lines.append(f"  프로젝트 계획 요약:")
+                project_context_lines.append(f"  {proj_plan[:300]}...")
+                project_context_lines.append("")
+
+            project_context_lines.append("오늘의 목표를 계획할 때:")
+            project_context_lines.append("1. 각 프로젝트에 대한 구체적인 작업 항목 포함")
+            project_context_lines.append("2. 프로젝트 간 자연스러운 전환 시간 고려")
+            project_context_lines.append("3. 각 작업 항목에 프로젝트명 명시 (예: '[NOVA] 아키텍처 설계')")
+        else:
+            # Single project daily plan
+            project_context_lines.append(f"Project: {project_name}")
+            project_context_lines.append(f"Project duration: {duration_weeks} weeks. Today is day {day_index + 1}.")
+            project_context_lines.append("Project plan excerpt:")
+            project_context_lines.append(project_plan_text)
+
         user_content = "\n".join(
             [
                 f"Worker: {worker.name} ({worker.role}) in {worker.timezone}.",
+                "",
+                *persona_context,
                 *team_roster_lines,
-                f"Project duration: {duration_weeks} weeks. Today is day {day_index + 1}.",
-                "Project plan excerpt:",
-                project_plan,
+                *project_context_lines,
                 "",
                 "Outline today's key objectives, planned communications, and the time reserved as buffer.",
             ]
         )
+        # Build system message based on single vs multi-project
+        if has_multiple_projects:
+            system_content = (
+                "You help knowledge workers turn project plans into focused daily objectives across MULTIPLE concurrent projects. "
+                "CRITICAL: When planning multi-project days, ensure BALANCED time allocation across all active projects. "
+                "Each project must have dedicated tasks and communications in the daily plan. "
+                "IMPORTANT: Use the worker's persona information to create authentic plans that align with their skills, personality, and working style. "
+                "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
+            )
+        else:
+            system_content = (
+                "You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early. "
+                "IMPORTANT: Use the worker's persona information to create authentic plans that align with their skills, personality, and working style. "
+                "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
+            )
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You help knowledge workers turn project plans into focused daily objectives, finishing at least one hour early. "
-                    "Write as a real person. Avoid any meta-commentary about prompts, models, or simulation."
-                ),
+                "content": system_content,
             },
             {"role": "user", "content": user_content},
         ]
         model = model_hint or self.daily_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
+                {"role": "system", "content": get_korean_prompt("business")},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -235,7 +452,7 @@ class GPTPlanner:
         self,
         *,
         worker: PersonRead,
-        project_plan: str,
+        project_plan: str | dict[str, Any],
         daily_plan: str,
         tick: int,
         context_reason: str,
@@ -244,8 +461,93 @@ class GPTPlanner:
         all_active_projects: list[dict[str, Any]] | None = None,
         recent_emails: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
+        # Extract project plan text and name from dict or string
+        if isinstance(project_plan, dict):
+            project_plan_text = project_plan.get('plan', '')
+            project_name = project_plan.get('project_name', '현재 프로젝트')
+        else:
+            project_plan_text = project_plan
+            project_name = '현재 프로젝트'
+        
+        # Use template-based prompts if enabled
+        if self.use_template_prompts and self._prompt_manager and self._context_builder:
+            import time
+            start_time = time.time()
+            try:
+                # Build context using ContextBuilder
+                context = self._context_builder.build_planning_context(
+                    worker=worker,
+                    tick=tick,
+                    reason=context_reason,
+                    project_plan=project_plan,
+                    daily_plan=daily_plan,
+                    team=team or [],
+                    recent_emails=recent_emails,
+                    all_active_projects=all_active_projects,
+                )
+                
+                # Add additional context fields needed by template
+                context["project_reference"] = project_plan_text
+                context["project_name"] = project_name  # Add project name to context
+                context["valid_email_list"] = "\n".join(f"  - {m.email_address}" for m in (team or []) if m.id != worker.id)
+                
+                # Build example communications in Korean
+                valid_emails = [m.email_address for m in (team or []) if m.id != worker.id]
+                examples = []
+                if valid_emails:
+                    examples.append(f"- 이메일 10:30에 {valid_emails[0]} 참조 {valid_emails[1] if len(valid_emails) > 1 else valid_emails[0]}: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨")
+                if team:
+                    examples.append(f"- 채팅 11:00에 {team[0].chat_handle if team[0].id != worker.id else (team[1].chat_handle if len(team) > 1 else 'colleague')}과: API 엔드포인트 관련 질문")
+                examples.append("- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)")
+                if valid_emails:
+                    examples.append(f"- 답장 14:00에 [email-42] 참조 {valid_emails[0]}: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다")
+                context["correct_examples"] = "\n".join(examples)
+                
+                # Build prompt from template
+                messages = self._prompt_manager.build_prompt("hourly", context)
+                
+                # Generate with metrics collection
+                model = model_hint or self.hourly_model
+                result = self._invoke(messages, model)
+                
+                # Record metrics
+                if self._metrics_collector:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self._metrics_collector.record_usage(
+                        template_name="hourly_planning",
+                        variant="default",
+                        model_used=result.model_used,
+                        tokens_used=result.tokens_used or 0,
+                        duration_ms=duration_ms,
+                        success=True,
+                    )
+                
+                return result
+            except Exception as e:
+                # Fall back to hard-coded prompts on error
+                print(f"Warning: Template-based prompt failed, falling back to hard-coded: {e}")
+                if self._metrics_collector:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self._metrics_collector.record_usage(
+                        template_name="hourly_planning",
+                        variant="default",
+                        model_used=model_hint or self.hourly_model,
+                        tokens_used=0,
+                        duration_ms=duration_ms,
+                        success=False,
+                        error=str(e),
+                    )
+        
+        # Original hard-coded prompt logic
         # Encourage explicit, machine-parseable scheduled comm lines for the engine.
         wh = getattr(worker, "work_hours", "09:00-17:00") or "09:00-17:00"
+        
+        # Extract persona information for authentic planning
+        persona_context = []
+        if hasattr(worker, 'persona_markdown') and worker.persona_markdown:
+            persona_context.append("=== YOUR PERSONA & WORKING STYLE ===")
+            persona_context.append(worker.persona_markdown)
+            persona_context.append("")
 
         # Build team roster with explicit email addresses
         team_roster_lines = []
@@ -286,24 +588,84 @@ class GPTPlanner:
             recent_emails_lines.append("Recent Emails (for threading context):")
             for i, email in enumerate(recent_emails[-5:], 1):  # Show last 5 emails
                 email_id = email.get('email_id', f'email-{i}')
-                from_addr = email.get('from', 'unknown')
-                subject = email.get('subject', 'No subject')
-                recent_emails_lines.append(f"  [{email_id}] From: {from_addr} - Subject: {subject}")
+                from_addr = email.get('from', '알 수 없음')
+                subject = email.get('subject', '제목 없음')
+                recent_emails_lines.append(f"  [{email_id}] 발신: {from_addr} - 제목: {subject}")
             recent_emails_lines.append("")
 
         # Handle multiple concurrent projects
         project_context_lines = []
         if all_active_projects and len(all_active_projects) > 1:
-            project_context_lines.append("IMPORTANT: You are currently working on MULTIPLE projects concurrently:")
+            project_context_lines.append("중요: 현재 여러 프로젝트를 동시에 진행 중입니다:")
             for i, proj in enumerate(all_active_projects, 1):
-                project_context_lines.append(f"\nProject {i}: {proj['project_name']}")
+                project_context_lines.append(f"\n프로젝트 {i}: {proj['project_name']}")
                 project_context_lines.append(proj['plan'][:500] + "...")  # Truncate for brevity
-            project_context_lines.append("\nYou should naturally switch between these projects throughout your day.")
-            project_context_lines.append("When writing emails/chats, specify which project each communication relates to in the subject/message.")
-            project_context_lines.append("Example: 'Email at 10:00 to dev cc pm: [Mobile App MVP] API integration status | ...'")
+            project_context_lines.append("\n하루 동안 이 프로젝트들 사이를 자연스럽게 전환해야 합니다.")
+            project_context_lines.append("**필수**: 모든 이메일/채팅 작성 시 제목 또는 메시지에 반드시 관련 프로젝트명을 명시하세요.")
+            project_context_lines.append(f"예시: '이메일 10:00에 dev 참조 pm: [{project_name}] API 통합 상태 | ...'")
+            project_context_lines.append("각 작업 항목에도 관련 프로젝트를 표시하세요 (예: '10:00 - [{project_name}] 코드 리뷰')")
             project_reference = "\n".join(project_context_lines)
         else:
-            project_reference = f"Project reference:\n{project_plan}"
+            # Single project case - also emphasize project tagging
+            project_context_lines.append(f"프로젝트: {project_name}")
+            project_context_lines.append("\n**필수**: 모든 이메일/채팅의 제목에 프로젝트명을 포함하세요.")
+            project_context_lines.append(f"예시: '이메일 10:30에 팀원: [{project_name}] 진행 상황 공유 | ...'")
+            project_context_lines.append("또는 Korean 스타일: '이메일 10:30에 팀원: [프로젝트 {project_name}] 진행 상황 공유 | ...'")
+            project_context_lines.append(f"\n프로젝트 참조:\n{project_plan_text}")
+            project_reference = "\n".join(project_context_lines)
+
+        # Build format templates based on locale
+        format_templates = []
+        if self._locale == "ko":
+            format_templates.extend([
+                "다음 형식을 정확히 사용하세요:",
+                "",
+                "이메일 형식 (투명성을 위해 대부분의 이메일에 참조 또는 숨은참조 포함 필수):",
+                f"- 이메일 HH:MM에 TARGET 참조 PERSON1, PERSON2 숨은참조 PERSON3: [{project_name}] 제목 | 본문 내용",
+                f"  예시: 이메일 10:30에 dev@company.com 참조 pm@company.com: [{project_name}] API 통합 완료 | 테스트 준비 완료되었습니다",
+                "",
+                "이메일 답장 형식 (최근 이메일에 답장할 때 사용):",
+                f"- 답장 HH:MM에 [email-id] 참조 PERSON: [{project_name}] RE: 제목 | 본문 내용",
+                f"  예시: 답장 14:00에 [email-42] 참조 dev@domain: [{project_name}] RE: API 상태 | 업데이트 감사합니다...",
+                "",
+                "채팅 형식:",
+                "- 채팅 HH:MM에 TARGET과: 메시지 내용",
+                "",
+                "채팅 대상 옵션:",
+                "- 개인: 채팅 11:00에 colleague_handle과: 개인 메시지",
+                "- 프로젝트 팀: 채팅 11:00에 팀과: 프로젝트 그룹 채팅 메시지",
+                "- 프로젝트 팀: 채팅 11:00에 프로젝트와: 프로젝트 그룹 채팅 메시지",
+                "- 프로젝트 팀: 채팅 11:00에 그룹과: 프로젝트 그룹 채팅 메시지",
+                "",
+                "그룹 채팅 vs 개인 메시지 사용 시기:",
+                "- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+                "- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
+            ])
+        else:
+            format_templates.extend([
+                "You MUST use these EXACT formats:",
+                "",
+                "Email format (you MUST include cc or bcc in most emails for transparency):",
+                f"- Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: [{project_name}] Subject | Body text",
+                f"  Example: Email at 10:30 to dev@company.com cc pm@company.com: [{project_name}] API Integration Complete | Testing ready",
+                "",
+                "Reply to email format (use when responding to a recent email):",
+                f"- Reply at HH:MM to [email-id] cc PERSON: [{project_name}] RE: Subject | Body text",
+                f"  Example: Reply at 14:00 to [email-42] cc dev@domain: [{project_name}] RE: API status | Thanks for the update...",
+                "",
+                "Chat format:",
+                "- Chat at HH:MM with TARGET: message text",
+                "",
+                "Chat target options:",
+                "- Individual: Chat at 11:00 with colleague_handle: Private message",
+                "- Project team: Chat at 11:00 with team: Message to project group chat",
+                "- Project team: Chat at 11:00 with project: Message to project group chat",
+                "- Project team: Chat at 11:00 with group: Message to project group chat",
+                "",
+                "그룹 채팅 vs 개인 메시지 사용 시기:",
+                "- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+                "- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
+            ])
 
         user_content = "\n".join(
             [
@@ -311,6 +673,7 @@ class GPTPlanner:
                 f"Trigger: {context_reason}.",
                 f"Work hours today: {wh} (only schedule inside these).",
                 "",
+                *persona_context,
                 *team_roster_lines,
                 *recent_emails_lines,
                 project_reference,
@@ -320,36 +683,38 @@ class GPTPlanner:
                 "",
                 "Plan the next few hours with realistic tasking and 10–15m buffers.",
                 "",
-                "CRITICAL: At the end, add a block titled 'Scheduled Communications' with 3–5 communication lines.",
-                "You MUST use these EXACT formats:",
+                "**REQUIRED FORMAT RULES:**",
+                "1. ALL tasks MUST start with time in HH:MM format",
+                "2. Format: 'HH:MM - Task description'",
+                "3. Examples:",
+                "   - CORRECT: '09:00 - Start API development', '10:30 - Code review', '12:00 - Lunch break'",
+                "   - WRONG: 'API development task', 'Meeting in the morning', 'Testing after lunch'",
+                "4. NEVER list tasks without start times",
                 "",
-                "Email format (you MUST include cc or bcc in most emails for transparency):",
-                "- Email at HH:MM to TARGET cc PERSON1, PERSON2 bcc PERSON3: Subject | Body text",
+                f"CRITICAL: At the end, add a block titled '{get_current_locale_manager().get_text('scheduled_communications')}' with 3–5 communication lines.",
+                *format_templates,
                 "",
-                "Reply to email format (use when responding to a recent email):",
-                "- Reply at HH:MM to [email-id] cc PERSON: Subject | Body text",
-                "  Example: Reply at 14:00 to [email-42] cc dev@domain: RE: API status | Thanks for the update...",
+                "그룹 채팅 vs 개인 메시지 사용 시기:",
+                "- '팀/프로젝트/그룹' 사용: 상태 업데이트, 차단 요소, 공지사항, 조정",
+                "- 개인 핸들 사용: 개인적인 질문, 민감한 피드백, 개인 확인",
                 "",
-                "Chat format:",
-                "- Chat at HH:MM with TARGET: message text",
+                "이메일 내용 가이드라인 (중요):",
+                "1. 이메일 길이: 최소 3-5문장으로 실질적인 이메일 본문 작성",
+                "   - 구체적인 세부사항, 맥락, 명확한 조치 사항 포함",
+                "   - 좋은 예시: '로그인 API 통합 작업 중입니다. OAuth 플로우와 사용자 세션 관리를 완료했습니다. 팀과 오류 처리 전략을 논의해야 합니다. 내일 오후 2시에 동기화할 수 있을까요? 또한 속도 제한을 지금 구현할지 v2에서 할지 결정해야 합니다.'",
+                "   - 나쁜 예시: 'API 작업 업데이트. 진행 중입니다.'",
                 "",
-                "EMAIL CONTENT GUIDELINES (IMPORTANT):",
-                "1. EMAIL LENGTH: Write substantive email bodies with 3-5 sentences minimum",
-                "   - Include specific details, context, and clear action items",
-                "   - Good example: 'Working on the login API integration. Completed the OAuth flow and user session management. Need to discuss error handling strategies with the team. Can we sync tomorrow at 2pm? Also, should we implement rate limiting now or in v2?'",
-                "   - Bad example: 'Update on API work. Making progress.'",
+                "2. 제목에 프로젝트 맥락: 여러 프로젝트 작업 시 제목에 프로젝트 태그 포함",
+                "   - 형식: '[프로젝트명] 실제 제목'",
+                "   - 예시: '[모바일 앱 MVP] API 통합 상태 업데이트'",
+                "   - 예시: '[웹 대시보드] 디자인 리뷰 요청'",
+                "   - 업무 관련 이메일의 약 60-70%에 사용",
                 "",
-                "2. PROJECT CONTEXT IN SUBJECTS: When working on multiple projects, include project tag in subject",
-                "   - Format: '[ProjectName] actual subject'",
-                "   - Example: '[Mobile App MVP] API integration status update'",
-                "   - Example: '[웹 대시보드] 디자인 리뷰 요청'",
-                "   - Use this for about 60-70% of work-related emails",
-                "",
-                "3. EMAIL REALISM: Make emails sound natural and professional",
-                "   - Start with context or greeting when appropriate",
-                "   - Include specific technical details or business context",
-                "   - End with clear next steps or questions",
-                "   - Vary your communication style (not all emails need to be formal)",
+                "3. 이메일 현실성: 이메일을 자연스럽고 전문적으로 작성",
+                "   - 적절한 경우 맥락이나 인사말로 시작",
+                "   - 구체적인 기술 세부사항 또는 비즈니스 맥락 포함",
+                "   - 명확한 다음 단계 또는 질문으로 마무리",
+                "   - 커뮤니케이션 스타일을 다양화 (모든 이메일이 공식적일 필요는 없음)",
                 "",
                 "EMAIL RULES (VERY IMPORTANT):",
                 "1. ONLY use email addresses EXACTLY as shown in the Team Roster above",
@@ -364,19 +729,20 @@ class GPTPlanner:
                 "VALID EMAIL ADDRESSES (use ONLY these):",
                 *(f"  - {email}" for email in valid_emails),
                 "",
-                "CORRECT EXAMPLES (follow these patterns):",
-                f"- Email at 10:30 to {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} cc {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: Sprint update | Completed auth module, ready for review",
-                f"- Chat at 11:00 with {team[0].chat_handle if team else 'colleague'}: Quick question about the API endpoint",
-                f"- Reply at 14:00 to [email-42] cc {valid_emails[0] if valid_emails else 'lead@example.dev'}: RE: API status | Thanks for the update, proceeding with integration",
+                "올바른 예시 (다음 패턴을 따르세요):",
+                f"- 이메일 10:30에 {valid_emails[0] if valid_emails else 'colleague.1@example.dev'} 참조 {valid_emails[1] if len(valid_emails) > 1 else 'manager.1@example.dev'}: 스프린트 업데이트 | 인증 모듈 완료, 리뷰 준비됨",
+                f"- 채팅 11:00에 {team[0].chat_handle if team else 'colleague'}과: API 엔드포인트 관련 질문",
+                "- 채팅 11:00에 팀과: 스프린트 진행 상황 업데이트 (프로젝트 그룹 채팅으로 전송)",
+                f"- 답장 14:00에 [email-42] 참조 {valid_emails[0] if valid_emails else 'lead@example.dev'}: RE: API 상태 | 업데이트 감사합니다, 통합 진행하겠습니다",
                 "",
-                "WRONG EXAMPLES (NEVER DO THIS):",
-                "- Email at 10:30 to dev cc pm: ... (WRONG - 'dev' and 'pm' are not email addresses!)",
-                "- Email at 10:30 to team@company.dev: ... (WRONG - no distribution lists exist!)",
-                "- Email at 10:30 to all: ... (WRONG - specify exact email addresses!)",
-                "- Email at 10:30 to 김민수: ... (WRONG - use the email address, not the person's name!)",
-                "- Email at 10:30 to @colleague: ... (WRONG - @ is for chat, use email address!)",
+                "잘못된 예시 (절대 하지 마세요):",
+                "- 이메일 10:30에 dev 참조 pm: ... (잘못됨 - 'dev'와 'pm'은 이메일 주소가 아닙니다!)",
+                "- 이메일 10:30에 team@company.dev: ... (잘못됨 - 배포 목록은 존재하지 않습니다!)",
+                "- 이메일 10:30에 all: ... (잘못됨 - 정확한 이메일 주소를 지정하세요!)",
+                "- 이메일 10:30에 김민수: ... (잘못됨 - 사람 이름이 아닌 이메일 주소를 사용하세요!)",
+                "- 이메일 10:30에 @colleague: ... (잘못됨 - @는 채팅용이며, 이메일 주소를 사용하세요!)",
                 "",
-                "Do not add bracketed headers or meta text besides 'Scheduled Communications'.",
+                f"Do not add bracketed headers or meta text besides '{get_current_locale_manager().get_text('scheduled_communications')}'.",
             ]
         )
         messages = [
@@ -385,9 +751,11 @@ class GPTPlanner:
                 "content": (
                     "You act as an operations coach who reshapes hourly schedules. Keep outputs concise, actionable, and include buffers. "
                     "Use natural phrasing; for chat moments be conversational, for email be slightly more formal. "
-                    "Adopt the worker's tone/personality for phrasing and word choice. "
+                    "IMPORTANT: You have detailed persona information about the worker - use their specific skills, personality traits, and communication style to make authentic plans. "
+                    "Adopt the worker's tone/personality for phrasing and word choice based on their persona details. "
+                    "Plan tasks that align with their skills and working preferences. "
                     "Never mention being an AI, a simulation, or the generation process. "
-                    "At the end, you MUST output a 'Scheduled Communications' block with lines starting EXACTLY with 'Email at' or 'Chat at' as specified. "
+                    f"At the end, you MUST output a '{get_current_locale_manager().get_text('scheduled_communications')}' block with lines starting EXACTLY with 'Email at' or 'Chat at' as specified. "
                     "\n"
                     "CRITICAL EMAIL ADDRESS RULES (FOLLOW EXACTLY):\n"
                     "1. You MUST use ONLY the exact email addresses shown in 'YOUR TEAM ROSTER' and 'VALID EMAIL ADDRESSES' sections\n"
@@ -409,7 +777,7 @@ class GPTPlanner:
         model = model_hint or self.hourly_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요. 'Scheduled Communications' 섹션의 형식은 그대로 유지하되 내용은 한국어로 작성하세요."},
+                {"role": "system", "content": f"{get_korean_prompt('comprehensive')} '{get_current_locale_manager().get_text('scheduled_communications')}' 섹션의 형식은 그대로 유지하되 내용은 한국어로 작성하세요."},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -425,9 +793,67 @@ class GPTPlanner:
         minute_schedule: str,
         model_hint: str | None = None,
     ) -> PlanResult:
+        # Use template-based prompts if enabled
+        if self.use_template_prompts and self._prompt_manager and self._context_builder:
+            import time
+            start_time = time.time()
+            try:
+                # Build context using ContextBuilder
+                context = self._context_builder.build_reporting_context(
+                    worker=worker,
+                    day_index=day_index,
+                    daily_plan=daily_plan,
+                    hourly_log=hourly_log,
+                    minute_schedule=minute_schedule,
+                )
+                
+                # Build prompt from template
+                messages = self._prompt_manager.build_prompt("daily_report", context)
+                
+                # Generate with metrics collection
+                model = model_hint or self.daily_report_model
+                result = self._invoke(messages, model)
+                
+                # Record metrics
+                if self._metrics_collector:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self._metrics_collector.record_usage(
+                        template_name="daily_report",
+                        variant="default",
+                        model_used=result.model_used,
+                        tokens_used=result.tokens_used or 0,
+                        duration_ms=duration_ms,
+                        success=True,
+                    )
+                
+                return result
+            except Exception as e:
+                print(f"Warning: Template-based prompt failed, falling back to hard-coded: {e}")
+                if self._metrics_collector:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self._metrics_collector.record_usage(
+                        template_name="daily_report",
+                        variant="default",
+                        model_used=model_hint or self.daily_report_model,
+                        tokens_used=0,
+                        duration_ms=duration_ms,
+                        success=False,
+                        error=str(e),
+                    )
+        
+        # Original hard-coded prompt logic
+        # Extract persona information for authentic reporting
+        persona_context = []
+        if hasattr(worker, 'persona_markdown') and worker.persona_markdown:
+            persona_context.append("=== YOUR PERSONA & WORKING STYLE ===")
+            persona_context.append(worker.persona_markdown)
+            persona_context.append("")
+        
         user_content = "\n".join(
             [
                 f"Worker: {worker.name} ({worker.role}) day {day_index + 1}.",
+                "",
+                *persona_context,
                 "Daily plan:",
                 daily_plan,
                 "",
@@ -442,6 +868,7 @@ class GPTPlanner:
                 "role": "system",
                 "content": (
                     "You are an operations chief of staff producing concise daily reports. "
+                    "IMPORTANT: Use the worker's persona information to write reports in their authentic voice and perspective. "
                     "Summarize key achievements, decisions, communications, and any blockers. "
                     "Write as a human; avoid references to AI, simulation, prompts, or models."
                 ),
@@ -451,7 +878,7 @@ class GPTPlanner:
         model = model_hint or self.daily_report_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
+                {"role": "system", "content": get_korean_prompt("business")},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -491,7 +918,7 @@ class GPTPlanner:
         model = model_hint or self.hourly_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
+                {"role": "system", "content": get_korean_prompt("business")},
                 *messages,
             ]
         return self._invoke(messages, model)
@@ -543,17 +970,114 @@ class GPTPlanner:
         model = model_hint or self.simulation_report_model
         if self._locale == "ko":
             messages = [
-                {"role": "system", "content": "모든 응답을 자연스러운 한국어로만 작성하세요. 영어 단어나 표현을 절대 사용하지 마세요. 한국 직장에서 실제로 사용하는 자연스럽고 간결한 말투로 작성하세요."},
+                {"role": "system", "content": get_korean_prompt("business")},
                 *messages,
             ]
         return self._invoke(messages, model)
 
+    def generate_with_messages(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        """
+        Generate a plan using pre-built message list.
+        
+        This method allows using externally constructed prompts
+        (e.g., from PromptManager) instead of the built-in prompt logic.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+            model_hint: Optional model override
+            
+        Returns:
+            PlanResult with generated content
+        """
+        model = model_hint or self.hourly_model
+        return self._invoke(messages, model)
+    
     def _invoke(self, messages: list[dict[str, str]], model: str) -> PlanResult:
         try:
             content, tokens = self._generator(messages, model)
+            
+            # Validate Korean content if locale is Korean
+            if self._locale == "ko":
+                content, tokens = self._validate_and_retry_korean_content(
+                    messages, model, content, tokens
+                )
+            
         except Exception as exc:  # pragma: no cover - surface as planning failure
             raise PlanningError(str(exc)) from exc
         return PlanResult(content=content, model_used=model, tokens_used=tokens)
+    
+    def _validate_and_retry_korean_content(
+        self, 
+        messages: list[dict[str, str]], 
+        model: str, 
+        content: str, 
+        tokens: int
+    ) -> tuple[str, int]:
+        """
+        Validate Korean content and retry with enhanced prompts if English text is detected.
+        
+        Args:
+            messages: Original messages for generation
+            model: Model used for generation
+            content: Generated content to validate
+            tokens: Token count from original generation
+            
+        Returns:
+            Tuple of (validated_content, total_tokens)
+        """
+        max_retries = MAX_KOREAN_VALIDATION_RETRIES
+        total_tokens = tokens
+        
+        for attempt in range(max_retries + 1):
+            is_valid, issues = validate_korean_content(content, strict_mode=True)
+            
+            if is_valid:
+                # Content is valid Korean, return as-is
+                return content, total_tokens
+            
+            if attempt < max_retries:
+                # Content has English text, retry with enhanced Korean prompt
+                print(f"Korean validation failed (attempt {attempt + 1}): {'; '.join(issues)}")
+                
+                # Create enhanced retry messages with stricter Korean enforcement
+                retry_messages = [
+                    {
+                        "role": "system", 
+                        "content": f"""CRITICAL: 이전 응답에서 영어 텍스트가 감지되었습니다. 
+                        
+다음 문제들이 발견되었습니다:
+{chr(10).join(f'- {issue}' for issue in issues)}
+
+이번에는 반드시 다음 규칙을 따르세요:
+{get_korean_prompt('comprehensive')}
+
+절대로 영어 단어나 표현을 사용하지 마세요. 모든 기술 용어와 비즈니스 용어를 한국어로 번역하여 사용하세요.
+예시: 'API 통합' (O), 'API integration' (X)
+예시: '데이터베이스 설정' (O), 'database setup' (X)
+예시: '프로젝트 관리' (O), 'project management' (X)"""
+                    }
+                ] + messages[1:]  # Skip original system message, use enhanced one
+                
+                try:
+                    retry_content, retry_tokens = self._generator(retry_messages, model)
+                    content = retry_content
+                    total_tokens += retry_tokens
+                except Exception as exc:
+                    print(f"Retry attempt {attempt + 1} failed: {exc}")
+                    # Continue with original content if retry fails
+                    break
+            else:
+                # Max retries reached, log warning and return best attempt
+                print(f"Korean validation failed after {max_retries} retries. Using best attempt.")
+                print(f"Remaining issues: {'; '.join(issues)}")
+                break
+        
+        return content, total_tokens
 
 
 class StubPlanner:
@@ -563,6 +1087,28 @@ class StubPlanner:
         # Return plain natural text to avoid placeholder headers like [Hourly Plan].
         content = body
         return PlanResult(content=content, model_used=model, tokens_used=0)
+    
+    def generate_with_messages(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model_hint: str | None = None,
+    ) -> PlanResult:
+        """
+        Generate a plan using pre-built message list.
+        
+        For StubPlanner, this just returns a simple deterministic response.
+        
+        Args:
+            messages: List of message dicts (ignored in stub)
+            model_hint: Optional model override
+            
+        Returns:
+            PlanResult with stub content
+        """
+        model = model_hint or "vdos-stub-generic"
+        body = "Stub plan generated from messages"
+        return self._result("Generic Plan", body, model)
 
     def generate_project_plan(
         self,
@@ -596,15 +1142,30 @@ class StubPlanner:
         duration_weeks: int,
         team: Sequence[PersonRead] | None = None,
         model_hint: str | None = None,
+        all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
         total_days = max(duration_weeks, 1) * 5
+
+        # Build goals based on single vs multi-project
+        goals = []
+        if all_active_projects and len(all_active_projects) > 1:
+            goals.append(f"여러 프로젝트 동시 진행 ({len(all_active_projects)}개 프로젝트):")
+            for proj in all_active_projects:
+                proj_name = proj.get('project_name', '프로젝트')
+                goals.append(f"  - {proj_name}: 마일스톤 진행")
+            goals.append("- 프로젝트 간 조율 및 커뮤니케이션")
+        else:
+            goals.extend([
+                "- 프로젝트 마일스톤 진행",
+                "- 차단 요소 커뮤니케이션",
+            ])
+        goals.append("- 일일 보고서를 위한 진행 상황 기록")
+
         body = "\n".join([
-            f"Worker: {worker.name} ({worker.role})",
-            f"Day: {day_index + 1} / {total_days}",
-            "Goals:",
-            "- Advance project milestones",
-            "- Communicate blockers",
-            "- Capture progress for end-of-day report",
+            f"작업자: {worker.name} ({worker.role})",
+            f"일차: {day_index + 1} / {total_days}",
+            "목표:",
+            *goals,
         ])
         model = model_hint or "vdos-stub-daily"
         return self._result("Daily Plan", body, model)
@@ -633,23 +1194,23 @@ class StubPlanner:
         # Pick sensible default contacts for a 2-person run: designer <-> dev
         me = (worker.chat_handle or worker.name or "worker").lower()
         other = "designer" if "dev" in me or "full" in (worker.role or "").lower() else "dev"
-        # A couple of realistic touchpoints
+        # A couple of realistic touchpoints in Korean
         sched = [
-            f"Chat at 09:10 with {other}: Morning! Quick sync on priorities?",
-            f"Email at 09:35 to {other}: Subject: Kickoff | Body: Plan for the morning and any blockers",
-            f"Chat at 14:20 with {other}: Checking in on progress, anything I can unblock?",
+            f"채팅 09:10에 {other}과: 안녕하세요! 우선순위 간단히 조율할까요?",
+            f"이메일 09:35에 {other}: 제목: 킥오프 | 본문: 오전 계획 및 차단 요소",
+            f"채팅 14:20에 {other}과: 진행 상황 확인, 제가 도울 부분 있나요?",
         ]
         hour = tick % 60 or 60
         lines = [
-            f"Worker: {worker.name}",
-            f"Tick: {tick} (minute {hour})",
-            f"Reason: {context_reason}",
-            "Focus for the next hours:",
-            "- Review priorities",
-            "- Heads-down execution",
-            "- Share update with teammate",
+            f"작업자: {worker.name}",
+            f"틱: {tick} (분 {hour})",
+            f"이유: {context_reason}",
+            "다음 시간 집중 사항:",
+            "- 우선순위 검토",
+            "- 집중 실행",
+            "- 팀원과 업데이트 공유",
             "",
-            "Scheduled Communications:",
+            f"{get_current_locale_manager().get_text('scheduled_communications')}:",
             *sched,
         ]
         body = "\n".join(lines)

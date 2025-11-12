@@ -8,6 +8,52 @@ Visual dependency graphs showing import relationships and runtime API calls.
 
 **Compile-time module imports (Python `import` statements)**
 
+```mermaid
+graph LR
+  subgraph Scripts [Simulation Scripts]
+    QS[quick_simulation.py]
+    MS[mobile_chat_simulation.py]
+    SS[short_blog_simulation.py]
+  end
+
+  subgraph SimMgr [Simulation Manager]
+    APP[app.py]
+    ENG[engine.py]
+    GW[gateway.py]
+    PLN[planner.py]
+    SCH[schemas.py]
+  end
+
+  subgraph Email [Email Server]
+    EAPP[app.py]
+    EMOD[models.py]
+  end
+
+  subgraph Chat [Chat Server]
+    CAPP[app.py]
+    CMOD[models.py]
+  end
+
+  subgraph Common [Common/Utils]
+    DB[common/db.py]
+    CU[utils/completion_util.py]
+    VW[virtualWorkers/worker.py]
+  end
+
+  QS --> APP
+  MS --> APP
+  SS --> APP
+  APP --> ENG
+  APP --> GW
+  APP --> SCH
+  ENG --> DB
+  ENG --> VW
+  ENG --> PLN
+  PLN --> CU
+  EAPP --> DB
+  CAPP --> DB
+```
+
 ```
 Root Level (Simulation Scripts)
 ├─ quick_simulation.py
@@ -186,6 +232,17 @@ Completion Util (completion_util.py)
 
 **HTTP-based communication between services**
 
+```mermaid
+graph LR
+  S[Simulation Scripts] -->|REST| SIM[Simulation Manager :8015]
+  SIM -->|HTTP (gateways)| EMAIL[Email Server :8000]
+  SIM -->|HTTP (gateways)| CHAT[Chat Server :8001]
+  SIM -->|SQLite| DB[(vdos.db)]
+  EMAIL -->|SQLite| DB
+  CHAT -->|SQLite| DB
+  SIM -->|OpenAI| OA[(api.openai.com)]
+```
+
 ```
 ┌─────────────────────────────────┐
 │   Simulation Scripts            │
@@ -350,8 +407,10 @@ SQLite Database (vdos.db)
    │  └─ DELETE: sim_manager/engine.py:_clear_processed_messages()
    │
    ├─ worker_exchange_log
-   │  ├─ WRITE: sim_manager/engine.py:_send_email()
-   │  ├─ WRITE: sim_manager/engine.py:_send_chat()
+   │  ├─ WRITE: sim_manager/engine.py:_log_exchange() (called from multiple locations)
+   │  │  ├─ From: _execute_scheduled_actions() (scheduled emails and chats)
+   │  │  ├─ From: _process_inbox_replies() (inbox-driven replies)
+   │  │  └─ From: event processing (event-triggered communications)
    │  └─ READ:  sim_manager/engine.py:_get_exchange_history()
    │
    └─ worker_status_overrides

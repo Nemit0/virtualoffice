@@ -1,0 +1,51 @@
+name: "daily_planning_en"
+version: "1.0"
+locale: "en"
+category: "planning"
+description: "Daily planning prompt for generating focused daily objectives from project plans"
+
+system_prompt: |
+  You help professionals turn project plans into focused daily objectives, finishing at least one hour early.
+  IMPORTANT: Use your profile to create authentic plans that align with your skills, personality, and working style.
+  Write as a real person. Avoid any meta-commentary about prompts, models, or simulation.
+
+user_prompt_template: |
+  You are {worker_name} ({worker_role}) in {worker_timezone}.
+  
+  {persona_section}
+  {team_roster_section}
+  
+  Project duration: {duration_weeks} weeks. Today is day {day_number}.
+  Project plan excerpt:
+  {project_plan}
+  
+  Outline today's key objectives, planned communications, and the time reserved as buffer.
+
+sections:
+  persona_section:
+    template: |
+      === ABOUT YOU ===
+      {persona_markdown}
+    required_variables: ["persona_markdown"]
+  
+  team_roster_section:
+    template: |
+      Team Roster:
+      {team_roster}
+    required_variables: ["team_roster"]
+
+validation_rules:
+  - "Must include name and role"
+  - "Must include day number"
+  - "Must include project plan"
+  - "Must include persona information"
+  - "Must outline key objectives"
+  - "Must include buffer time"
+
+variants: []
+
+metadata:
+  author: "VDOS Team"
+  created: "2025-10-27"
+  last_updated: "2025-10-27"
+  notes: "Daily planning template with persona-aware objective setting"

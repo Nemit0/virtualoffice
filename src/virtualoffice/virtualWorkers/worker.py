@@ -7,8 +7,10 @@ from typing import Iterable, Mapping, Sequence
 try:
     from ..utils.completion_util import generate_text
 except ModuleNotFoundError:  # pragma: no cover - fallback when optional deps missing
+
     def generate_text(*args, **kwargs):  # type: ignore[override]
         raise RuntimeError("OpenAI client is not installed; install optional dependencies to enable text generation.")
+
 
 def _to_minutes(value: str) -> int:
     hour, minute = value.split(":", 1)
@@ -67,6 +69,8 @@ class WorkerPersona:
     chat_handle: str
     objectives: Sequence[str] = field(default_factory=tuple)
     metrics: Sequence[str] = field(default_factory=tuple)
+    is_department_head: bool = False
+    team_name: str | None = None
 
 
 def _format_bullets(items: Iterable[str], prefix: str = "- ") -> str:
@@ -76,7 +80,7 @@ def _format_bullets(items: Iterable[str], prefix: str = "- ") -> str:
 
 def _schedule_table(blocks: Sequence[ScheduleBlock]) -> str:
     if not blocks:
-        return "| 09:00 | 18:00 | Core project work |"
+        return "| 09:00 | 18:00 | 핵심 프로젝트 작업 |"
     rows = []
     for block in blocks:
         rows.append(f"| {block.start} | {block.end} | {block.activity} |")
@@ -113,32 +117,32 @@ def build_worker_markdown(
     )
 
     template = f"""# {persona.name} ? {persona.role}\n\n"""
-    template += "## Identity & Channels\n"
+    template += "## 신원 및 채널\n"
     template += _format_bullets(
         (
-            f"Name: {persona.name}",
-            f"Role: {persona.role}",
-            f"Timezone: {persona.timezone}",
-            f"Work hours: {persona.work_hours}",
-            f"Break cadence: {persona.break_frequency}",
-            f"Email: {persona.email_address}",
-            f"Chat handle: {persona.chat_handle}",
+            f"이름: {persona.name}",
+            f"역할: {persona.role}",
+            f"시간대: {persona.timezone}",
+            f"근무 시간: {persona.work_hours}",
+            f"휴식 주기: {persona.break_frequency}",
+            f"이메일: {persona.email_address}",
+            f"채팅 핸들: {persona.chat_handle}",
         )
     )
-    template += "\n\n## Skills & Personality\n"
+    template += "\n\n## 기술 및 성격\n"
     template += _format_bullets(
         (
-            "Core skills: " + ", ".join(persona.skills),
-            "Personality anchors: " + ", ".join(persona.personality),
-            f"Communication style: {persona.communication_style}",
+            "핵심 기술: " + ", ".join(persona.skills),
+            "성격 특성: " + ", ".join(persona.personality),
+            f"커뮤니케이션 스타일: {persona.communication_style}",
         )
     )
-    template += "\n\n## Operating Objectives\n"
+    template += "\n\n## 운영 목표\n"
     template += _format_bullets(persona.objectives)
-    template += "\n\n## Success Metrics\n"
+    template += "\n\n## 성공 지표\n"
     template += _format_bullets(persona.metrics)
-    template += "\n\n## Daily Schedule Blueprint\n"
-    template += "| Start | End | Focus |\n| ----- | --- | ----- |\n"
+    template += "\n\n## 일일 일정 청사진\n"
+    template += "| 시작 | 종료 | 집중 사항 |\n| ----- | --- | ----- |\n"
     template += f"{schedule_rows}\n"
     template += "\n## 상태 어휘\n"
     template += _format_bullets(active_statuses)
@@ -156,97 +160,3 @@ def build_worker_markdown(
     )
     template += "\n"
     return template
-
-
-class Worker(ABC):
-    @abstractmethod
-    def plan_next_hour(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def react_to_event(self, event):
-        raise NotImplementedError
-
-
-class VirtualWorker(Worker):
-    def __init__(
-        self,
-        persona: WorkerPersona,
-        schedule: Sequence[ScheduleBlock] | None = None,
-        planning_guidelines: Sequence[str] | None = None,
-        event_playbook: Mapping[str, Sequence[str]] | None = None,
-        statuses: Sequence[str] | None = None,
-    ):
-        self.persona = persona
-        self.schedule = schedule or []
-        self.planning_guidelines = planning_guidelines or []
-        self.event_playbook = event_playbook or {}
-        self.statuses = statuses or DEFAULT_STATUSES
-        self.state = "Idle"
-        self.memory: list[str] = []
-        self.persona_markdown = build_worker_markdown(
-            persona=persona,
-            schedule=self.schedule,
-            planning_guidelines=self.planning_guidelines,
-            event_playbook=self.event_playbook,
-            statuses=self.statuses,
-        )
-
-    def minute_schedule(self, granularity: int = 15) -> str:
-        schedule_blocks = [ScheduleBlock(block.start, block.end, block.activity) for block in self.schedule]
-        return render_minute_schedule(schedule_blocks, granularity=granularity)
-
-    def plan_next_hour(self):
-        raise NotImplementedError("VirtualWorker planning is orchestrated by the simulation manager.")
-
-    def react_to_event(self, event):
-        raise NotImplementedError("Event handling will be implemented when the simulation manager is ready.")
-
-    def as_prompt(self) -> list[dict[str, str]]:
-        return [
-            {"role": "system", "content": self.persona_markdown},
-            {"role": "user", "content": "Provide the next hourly plan."},
-        ]
-
-    def request_plan(self, model: str = "gpt-4o-mini") -> tuple[str, int]:
-        prompt = self.as_prompt()
-        response_text, tokens = generate_text(prompt, model=model)
-        self.memory.append(response_text)
-        return response_text, tokens
-
-
-if __name__ == "__main__":
-    persona = WorkerPersona(
-        name="Hana Kim",
-        role="UI/UX Designer",
-        skills=("Figma", "Design systems", "User research"),
-        personality=("Collaborative", "Detail-oriented", "Empathetic"),
-        timezone="Asia/Seoul",
-        work_hours="09:00-18:00",
-        break_frequency="Pomodoro 50/10, lunch at 12:30",
-        communication_style="Warm tone, prefers async updates",
-        email_address="hana.kim@vdos.local",
-        chat_handle="hana",
-        objectives=("Ship Alpha hero section", "Reduce design QA turnaround"),
-        metrics=("Review response time < 2h", "Weekly stakeholder satisfaction"),
-    )
-    schedule = (
-        ScheduleBlock("09:00", "10:00", "Inbox triage & stand-up prep"),
-        ScheduleBlock("10:00", "12:00", "Design iteration"),
-        ScheduleBlock("13:00", "15:00", "Design/dev sync & QA"),
-        ScheduleBlock("15:00", "17:30", "Asset handoff & async updates"),
-    )
-    worker = VirtualWorker(persona, schedule)
-    print(worker.persona_markdown)
-
-    # test the planning request
-    plan, token_count = worker.request_plan()
-    print(f"--- Plan (tokens: {token_count}) ---\n{plan}")
-    print("Done")
-
-    # minute schedule test
-    print("--- Minute Schedule (15 min) ---")
-    print(worker.minute_schedule(granularity=15))
-    print("--- Minute Schedule (30 min) ---")
-    print(worker.minute_schedule(granularity=30))
-    print("Done")

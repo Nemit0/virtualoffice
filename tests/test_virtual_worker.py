@@ -3,7 +3,6 @@ import textwrap
 from virtualoffice.virtualWorkers.worker import (
     DEFAULT_STATUSES,
     ScheduleBlock,
-    VirtualWorker,
     WorkerPersona,
     build_worker_markdown,
 )
@@ -38,7 +37,8 @@ def test_build_worker_markdown_includes_core_sections():
     assert "근무중" in markdown and "휴가" not in markdown
 
 
-def test_virtual_worker_uses_defaults_when_optional_data_missing():
+def test_build_worker_markdown_uses_defaults_when_optional_data_missing():
+    """Test that build_worker_markdown uses sensible defaults for missing optional data."""
     persona = WorkerPersona(
         name="Hana",
         role="Designer",
@@ -51,12 +51,10 @@ def test_virtual_worker_uses_defaults_when_optional_data_missing():
         email_address="hana@vdos.local",
         chat_handle="hana",
     )
-    worker = VirtualWorker(persona, schedule=())
+    # Build markdown with empty schedule to test defaults
+    markdown = build_worker_markdown(persona, schedule=())
 
-    assert all(status in worker.persona_markdown for status in DEFAULT_STATUSES)
-    assert "| 09:00 | 18:00 | Core project work |" in worker.persona_markdown
-
-    prompt = worker.as_prompt()
-    assert prompt[0]["role"] == "system"
-    assert persona.name in prompt[0]["content"]
-    assert prompt[1]["content"].startswith("Provide the next hourly plan")
+    # Should include all default statuses
+    assert all(status in markdown for status in DEFAULT_STATUSES)
+    # Should show default schedule when empty
+    assert "| 09:00 | 18:00 | Core project work |" in markdown

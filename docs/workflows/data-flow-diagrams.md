@@ -8,6 +8,23 @@ Visual diagrams showing how data transforms as it moves through the system.
 
 **JSON → Database → Markdown → Runtime Cache**
 
+```mermaid
+sequenceDiagram
+    participant Prompt as Prompt/Input
+    participant OpenAI as OpenAI API
+    participant Sim as Simulation Manager
+    participant Builder as Markdown Builder
+    participant DB as SQLite (vdos.db)
+    participant Runtime as Worker Runtime Cache
+
+    Prompt->>OpenAI: ChatCompletion (persona prompt)
+    OpenAI-->>Sim: persona JSON
+    Sim->>Builder: build_worker_markdown(WorkerPersona)
+    Builder-->>Sim: persona_markdown
+    Sim->>DB: INSERT people, schedule_blocks, persona_markdown
+    Sim->>Runtime: _sync_worker_runtimes()
+```
+
 ```
 Input: GPT Prompt
 │  "Experienced agile project manager for mobile app development..."
@@ -142,6 +159,23 @@ Output: PersonRead
 ## 2. Project Planning Data Flow
 
 **Team Context → GPT → Structured Plan → Database**
+
+```mermaid
+sequenceDiagram
+    participant Client as StartRequest
+    participant Sim as Simulation Manager
+    participant Planner as PlannerService
+    participant OpenAI as OpenAI API
+    participant DB as SQLite (vdos.db)
+
+    Client->>Sim: SimulationStartRequest
+    Sim->>Sim: Build team context
+    Sim->>Planner: plan_project(context, duration)
+    Planner->>OpenAI: ChatCompletion
+    OpenAI-->>Planner: plan JSON
+    Planner-->>Sim: PlanResult
+    Sim->>DB: INSERT project_plans + assignments
+```
 
 ```
 Input: SimulationStartRequest

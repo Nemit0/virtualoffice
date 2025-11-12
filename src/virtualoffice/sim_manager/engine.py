@@ -12,6 +12,10 @@ import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Sequence, Tuple
@@ -35,6 +39,11 @@ from .schemas import (
     SimulationStartRequest,
     SimulationState,
 )
+from .communication_generator import CommunicationGenerator
+from .inbox_manager import InboxManager
+from .participation_balancer import ParticipationBalancer
+from .quality_metrics import QualityMetricsTracker
+from .plan_parser import PlanParser, ParsingError
 
 logger = logging.getLogger(__name__)
 
@@ -249,9 +258,9 @@ class SimulationEngine:
         self.chat_gateway = chat_gateway
         self.sim_manager_email = sim_manager_email
         self.sim_manager_handle = sim_manager_handle
-        self.planner = planner or GPTPlanner()
-        self._stub_planner = StubPlanner()
         self.hours_per_day = hours_per_day
+        self.planner = planner or GPTPlanner(hours_per_day=hours_per_day)
+        self._stub_planner = StubPlanner()
         self.project_duration_weeks = 4
         self._project_plan_cache: dict[str, Any] | None = None
         self._planner_model_hint: str | None = None
@@ -271,6 +280,13 @@ class SimulationEngine:
         # Email threading support
         self._recent_emails: dict[int, deque] = {}  # {person_id: deque of recent emails}
         self._email_threads: dict[str, str] = {}  # {thread_key: thread_id}
+        # Communication staggering to avoid synchronized blasts
+        try:
+            self._comm_stagger_max_minutes = int(os.getenv("VDOS_COMM_STAGGER_MAX_MINUTES", "7"))
+        except ValueError:
+            self._comm_stagger_max_minutes = 7
+        self._avoid_round_minutes = os.getenv("VDOS_AVOID_ROUND_MINUTES", "true").strip().lower() in {"1", "true", "yes", "on"}
+        self._current_seed: int | None = None
         # Planner strict mode: if True, do not fall back to stub on GPT failures
         if planner_strict is None:
             env = os.getenv("VDOS_PLANNER_STRICT", "0").strip().lower()
@@ -289,6 +305,8 @@ class SimulationEngine:
             self._max_hourly_plans_per_minute = int(os.getenv("VDOS_MAX_HOURLY_PLANS_PER_MINUTE", "10"))
         except ValueError:
             self._max_hourly_plans_per_minute = 10
+        # Initialize plan_parser placeholder (will be properly set in start() method)
+        self.plan_parser = None
         # (person_id, day_index, tick_of_day) -> attempts
         self._hourly_plan_attempts: dict[tuple[int, int, int], int] = {}
         # Scheduled comms: person_id -> { tick -> [action dicts] }
@@ -319,6 +337,69 @@ class SimulationEngine:
             logger.error(f"Failed to parse auto-pause configuration, defaulting to enabled: {exc}")
             self._auto_pause_enabled = True
         
+        # Initialize communication diversity components
+        # Note: These will be properly initialized in start() when seed is available
+        self.communication_generator: CommunicationGenerator | None = None
+        self.inbox_manager = InboxManager()
+        self.participation_balancer = ParticipationBalancer(
+            enabled=os.getenv("VDOS_PARTICIPATION_BALANCE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+        )
+        self.quality_metrics = QualityMetricsTracker()
+        
+        # Daily message limits tracking (safety net)
+        # Key: (person_id, day_index), Value: {"email": count, "chat": count}
+        self._daily_message_counts: dict[tuple[int, int], dict[str, int]] = {}
+        
+        # Volume metrics tracking for monitoring and debugging
+        # Key: day_index, Value: dict with metrics
+        self._volume_metrics: dict[int, dict[str, Any]] = {}
+        
+        # Email Volume Reduction Configuration (v2.0)
+        # New configuration variables for purposeful communication
+        try:
+            env_auto_fallback = os.getenv("VDOS_ENABLE_AUTO_FALLBACK", "false").strip().lower()
+            self._enable_auto_fallback = env_auto_fallback in {"1", "true", "yes", "on"}
+            logger.info(f"Auto-fallback communication: {'enabled' if self._enable_auto_fallback else 'disabled'}")
+        except Exception as exc:
+            logger.error(f"Failed to parse VDOS_ENABLE_AUTO_FALLBACK, defaulting to disabled: {exc}")
+            self._enable_auto_fallback = False
+        
+        try:
+            env_inbox_replies = os.getenv("VDOS_ENABLE_INBOX_REPLIES", "true").strip().lower()
+            self._enable_inbox_replies = env_inbox_replies in {"1", "true", "yes", "on"}
+            logger.info(f"Inbox-driven replies: {'enabled' if self._enable_inbox_replies else 'disabled'}")
+        except Exception as exc:
+            logger.error(f"Failed to parse VDOS_ENABLE_INBOX_REPLIES, defaulting to enabled: {exc}")
+            self._enable_inbox_replies = True
+        
+        try:
+            self._inbox_reply_probability = float(os.getenv("VDOS_INBOX_REPLY_PROBABILITY", "0.80"))
+            if not 0.0 <= self._inbox_reply_probability <= 1.0:
+                logger.warning(f"VDOS_INBOX_REPLY_PROBABILITY must be between 0.0 and 1.0, got {self._inbox_reply_probability}, defaulting to 0.80")
+                self._inbox_reply_probability = 0.80
+        except ValueError:
+            logger.warning("Invalid VDOS_INBOX_REPLY_PROBABILITY value, defaulting to 0.80")
+            self._inbox_reply_probability = 0.80
+        
+        # Communication diversity configuration (legacy, used when auto-fallback enabled)
+        try:
+            self._threading_rate = float(os.getenv("VDOS_THREADING_RATE", "0.3"))
+            if not 0.0 <= self._threading_rate <= 1.0:
+                logger.warning(f"VDOS_THREADING_RATE must be between 0.0 and 1.0, got {self._threading_rate}, defaulting to 0.3")
+                self._threading_rate = 0.3
+        except ValueError:
+            logger.warning("Invalid VDOS_THREADING_RATE value, defaulting to 0.3")
+            self._threading_rate = 0.3
+        
+        try:
+            self._fallback_probability = float(os.getenv("VDOS_FALLBACK_PROBABILITY", "0.6"))
+            if not 0.0 <= self._fallback_probability <= 1.0:
+                logger.warning(f"VDOS_FALLBACK_PROBABILITY must be between 0.0 and 1.0, got {self._fallback_probability}, defaulting to 0.6")
+                self._fallback_probability = 0.6
+        except ValueError:
+            logger.warning("Invalid VDOS_FALLBACK_PROBABILITY value, defaulting to 0.6")
+            self._fallback_probability = 0.6
+        
         # Initialise DB and runtime state
         execute_script(SIM_SCHEMA)
         self._apply_migrations()
@@ -343,10 +424,1048 @@ class SimulationEngine:
         self._last_contact[cooldown_key] = tick
         return True
     
+    def _check_daily_limits(
+        self,
+        person_id: int,
+        day_index: int,
+        channel: str
+    ) -> bool:
+        """
+        Check if persona has reached daily message limits.
+        
+        Returns True if message can be sent, False if limit reached.
+        """
+        try:
+            max_emails = int(os.getenv("VDOS_MAX_EMAILS_PER_DAY", "50"))
+        except ValueError:
+            logger.warning("Invalid VDOS_MAX_EMAILS_PER_DAY value, defaulting to 50")
+            max_emails = 50
+        
+        try:
+            max_chats = int(os.getenv("VDOS_MAX_CHATS_PER_DAY", "100"))
+        except ValueError:
+            logger.warning("Invalid VDOS_MAX_CHATS_PER_DAY value, defaulting to 100")
+            max_chats = 100
+        
+        key = (person_id, day_index)
+        counts = self._daily_message_counts.get(key, {"email": 0, "chat": 0})
+        
+        if channel == "email" and counts["email"] >= max_emails:
+            logger.warning(
+                f"[DAILY_LIMIT] Person {person_id} reached email limit "
+                f"({max_emails}/day) on day {day_index}"
+            )
+            # Track that limit was hit
+            if day_index not in self._volume_metrics:
+                self._volume_metrics[day_index] = {
+                    "total_emails": 0,
+                    "total_chats": 0,
+                    "emails_by_person": {},
+                    "chats_by_person": {},
+                    "json_communications": 0,
+                    "inbox_replies": 0,
+                    "daily_limits_hit": [],
+                }
+            limit_event = {"person_id": person_id, "channel": "email", "limit": max_emails}
+            if limit_event not in self._volume_metrics[day_index]["daily_limits_hit"]:
+                self._volume_metrics[day_index]["daily_limits_hit"].append(limit_event)
+            return False
+        
+        if channel == "chat" and counts["chat"] >= max_chats:
+            logger.warning(
+                f"[DAILY_LIMIT] Person {person_id} reached chat limit "
+                f"({max_chats}/day) on day {day_index}"
+            )
+            # Track that limit was hit
+            if day_index not in self._volume_metrics:
+                self._volume_metrics[day_index] = {
+                    "total_emails": 0,
+                    "total_chats": 0,
+                    "emails_by_person": {},
+                    "chats_by_person": {},
+                    "json_communications": 0,
+                    "inbox_replies": 0,
+                    "daily_limits_hit": [],
+                }
+            limit_event = {"person_id": person_id, "channel": "chat", "limit": max_chats}
+            if limit_event not in self._volume_metrics[day_index]["daily_limits_hit"]:
+                self._volume_metrics[day_index]["daily_limits_hit"].append(limit_event)
+            return False
+        
+        return True
+    
+    def _record_daily_message(
+        self,
+        person_id: int,
+        day_index: int,
+        channel: str
+    ) -> None:
+        """Record a sent message for daily limit tracking."""
+        key = (person_id, day_index)
+        if key not in self._daily_message_counts:
+            self._daily_message_counts[key] = {"email": 0, "chat": 0}
+        
+        self._daily_message_counts[key][channel] += 1
+        
+        # Also update volume metrics
+        self._update_volume_metrics(person_id, day_index, channel)
+    
+    def _update_volume_metrics(
+        self,
+        person_id: int,
+        day_index: int,
+        channel: str,
+        source: str = "unknown"
+    ) -> None:
+        """Update volume metrics for monitoring and debugging."""
+        if day_index not in self._volume_metrics:
+            self._volume_metrics[day_index] = {
+                "total_emails": 0,
+                "total_chats": 0,
+                "emails_by_person": {},
+                "chats_by_person": {},
+                "json_communications": 0,
+                "inbox_replies": 0,
+                "daily_limits_hit": [],
+            }
+        
+        metrics = self._volume_metrics[day_index]
+        
+        if channel == "email":
+            metrics["total_emails"] += 1
+            metrics["emails_by_person"][person_id] = metrics["emails_by_person"].get(person_id, 0) + 1
+        elif channel == "chat":
+            metrics["total_chats"] += 1
+            metrics["chats_by_person"][person_id] = metrics["chats_by_person"].get(person_id, 0) + 1
+        
+        # Track source if provided
+        if source == "json":
+            metrics["json_communications"] += 1
+        elif source == "inbox_reply":
+            metrics["inbox_replies"] += 1
+    
+    def get_volume_metrics(self) -> dict[str, Any]:
+        """Get volume metrics for the current simulation day."""
+        state = self.get_state()
+        current_tick = state.current_tick
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (current_tick - 1) // day_ticks if current_tick > 0 else 0
+        
+        # Get metrics for current day
+        metrics = self._volume_metrics.get(day_index, {
+            "total_emails": 0,
+            "total_chats": 0,
+            "emails_by_person": {},
+            "chats_by_person": {},
+            "json_communications": 0,
+            "inbox_replies": 0,
+            "daily_limits_hit": [],
+        })
+        
+        # Calculate averages
+        people = self.list_people()
+        active_people_count = len(people) if people else 1
+        
+        avg_emails_per_person = metrics["total_emails"] / active_people_count if active_people_count > 0 else 0
+        avg_chats_per_person = metrics["total_chats"] / active_people_count if active_people_count > 0 else 0
+        
+        # Calculate rates
+        total_communications = metrics["json_communications"] + metrics["inbox_replies"]
+        json_communication_rate = (
+            metrics["json_communications"] / total_communications 
+            if total_communications > 0 else 0
+        )
+        inbox_reply_rate = (
+            metrics["inbox_replies"] / total_communications 
+            if total_communications > 0 else 0
+        )
+        
+        # Get threading rate from quality metrics
+        quality_metrics = self.quality_metrics.get_all_metrics()
+        threading_rate = quality_metrics.get("threading_rate", {}).get("current", 0)
+        
+        return {
+            "day_index": day_index,
+            "current_tick": current_tick,
+            "total_emails_today": metrics["total_emails"],
+            "total_chats_today": metrics["total_chats"],
+            "avg_emails_per_person": round(avg_emails_per_person, 2),
+            "avg_chats_per_person": round(avg_chats_per_person, 2),
+            "json_communication_rate": round(json_communication_rate, 3),
+            "inbox_reply_rate": round(inbox_reply_rate, 3),
+            "threading_rate": round(threading_rate, 3),
+            "daily_limits_hit": metrics.get("daily_limits_hit", []),
+            "emails_by_person": metrics["emails_by_person"],
+            "chats_by_person": metrics["chats_by_person"],
+        }
+    
     # --- Scheduled comms parsing/dispatch ---
+
+    def _try_parse_json_communications(self, plan_text: str) -> list[dict[str, Any]] | None:
+        """
+        Attempt to extract and parse JSON communications block from plan text.
+        Returns list of communication dicts if successful, None if JSON not found or invalid.
+        """
+        import json
+        import re
+
+        # Try to find JSON block in the plan (between ```json and ``` or just {...})
+        json_patterns = [
+            r'```json\s*\n(.*?)\n```',  # Markdown JSON code block
+            r'```\s*\n(\{.*?\})\n```',   # Generic code block with JSON
+            r'(\{[\s\S]*"communications"[\s\S]*\})',  # Raw JSON object
+        ]
+
+        json_text = None
+        for pattern in json_patterns:
+            match = re.search(pattern, plan_text, re.DOTALL | re.IGNORECASE)
+            if match:
+                json_text = match.group(1).strip()
+                break
+
+        if not json_text:
+            return None
+
+        # Try to parse JSON
+        try:
+            data = json.loads(json_text)
+            if isinstance(data, dict) and 'communications' in data:
+                return data['communications']
+            return None
+        except json.JSONDecodeError:
+            # Attempt to repair common JSON errors
+            repaired = self._repair_json(json_text)
+            if repaired:
+                try:
+                    data = json.loads(repaired)
+                    if isinstance(data, dict) and 'communications' in data:
+                        logger.info(f"Successfully repaired malformed JSON in plan")
+                        return data['communications']
+                except json.JSONDecodeError:
+                    pass
+
+            logger.debug(f"Failed to parse JSON communications block")
+            return None
+
+    def _repair_json(self, json_text: str) -> str | None:
+        """
+        Attempt to fix common JSON formatting errors made by LLMs.
+        Returns repaired JSON string or None if repair fails.
+        """
+        try:
+            # Fix common issues
+            repaired = json_text
+
+            # Remove trailing commas before } or ]
+            repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
+
+            # Replace single quotes with double quotes (be careful with apostrophes)
+            # Only replace if they're likely JSON quotes (after : or [ or ,)
+            repaired = re.sub(r"(?<=:)\s*'([^']*)'", r' "\1"', repaired)
+            repaired = re.sub(r"(?<=\[)\s*'([^']*)'", r' "\1"', repaired)
+            repaired = re.sub(r"(?<=,)\s*'([^']*)'", r' "\1"', repaired)
+
+            # Remove JSON comments (// ... or /* ... */)
+            repaired = re.sub(r'//.*?$', '', repaired, flags=re.MULTILINE)
+            repaired = re.sub(r'/\*.*?\*/', '', repaired, flags=re.DOTALL)
+
+            # Fix unescaped newlines in strings (rough heuristic)
+            # This is tricky, so we'll skip it for now
+
+            return repaired
+        except Exception:
+            return None
+
+    def _process_json_communications(
+        self,
+        communications: list[dict[str, Any]],
+        current_tick: int,
+        person: PersonRead,
+        source: str = "json"
+    ) -> None:
+        """
+        Process parsed JSON communications and schedule them.
+        
+        Args:
+            communications: List of communication dicts
+            current_tick: Current simulation tick
+            person: Persona sending the communications
+            source: Source of communications ('json' or 'fallback')
+        """
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        day_index = (current_tick - 1) // ticks_per_day
+        tick_of_day = (current_tick - 1) % ticks_per_day
+        base_tick = day_index * ticks_per_day + 1
+        sched = self._scheduled_comms.setdefault(person.id, {})
+
+        for comm in communications:
+            try:
+                comm_type = comm.get('type', '').lower()
+                time_str = comm.get('time', '')
+
+                if not time_str or not comm_type:
+                    continue
+
+                # Parse time
+                try:
+                    hh, mm = [int(x) for x in time_str.split(':', 1)]
+                    minutes = hh * 60 + mm
+                    scheduled_tick_of_day = int(round(minutes * ticks_per_day / 1440))
+                except Exception:
+                    logger.warning(f"Invalid time format in JSON communication: {time_str}")
+                    continue
+
+                # Skip if time already passed
+                if scheduled_tick_of_day <= tick_of_day:
+                    continue
+
+                t = base_tick + scheduled_tick_of_day
+
+                # Build entry based on type
+                if comm_type == 'email':
+                    target = comm.get('to', '').strip()
+                    if not target:
+                        continue
+
+                    # Combine subject and body with | separator
+                    subject = comm.get('subject', '').strip()
+                    body = comm.get('body', '').strip()
+                    payload = f"{subject} | {body}" if subject and body else subject or body
+
+                    entry = {
+                        'channel': 'email',
+                        'target': target,
+                        'payload': payload,
+                        '_source': source  # Track source for metrics
+                    }
+
+                    # Add cc/bcc if present
+                    cc = comm.get('cc', [])
+                    bcc = comm.get('bcc', [])
+                    if cc:
+                        entry['cc'] = cc if isinstance(cc, list) else [x.strip() for x in cc.split(',')]
+                    if bcc:
+                        entry['bcc'] = bcc if isinstance(bcc, list) else [x.strip() for x in bcc.split(',')]
+
+                    # Check for reply_to
+                    reply_to = comm.get('reply_to')
+                    if reply_to:
+                        entry['reply_to_email_id'] = reply_to
+
+                elif comm_type == 'chat':
+                    target = comm.get('target', '').strip()
+                    message = comm.get('message', '').strip()
+
+                    if not target or not message:
+                        continue
+
+                    entry = {
+                        'channel': 'chat',
+                        'target': target,
+                        'payload': message,
+                        '_source': source  # Track source for metrics
+                    }
+
+                else:
+                    logger.warning(f"Unknown communication type in JSON: {comm_type}")
+                    continue
+
+                # Add to schedule (deduplicate)
+                existing = sched.setdefault(t, [])
+                if entry not in existing:
+                    existing.append(entry)
+
+            except Exception as e:
+                logger.warning(f"Error processing JSON communication: {e}")
+                continue
+
+    def _get_recent_hourly_plan(self, person_id: int) -> str | None:
+        """
+        Get the most recent hourly plan for a persona.
+        
+        Used to provide context when generating inbox-driven replies.
+        
+        Args:
+            person_id: ID of the persona
+            
+        Returns:
+            Most recent hourly plan content, or None if not found
+        """
+        try:
+            with get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT content FROM worker_plans
+                    WHERE person_id = ? AND plan_type = 'hourly'
+                    ORDER BY tick DESC LIMIT 1
+                """, (person_id,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            logger.warning(f"Failed to get recent hourly plan for person_id={person_id}: {e}")
+            return None
+
+    def _get_recent_daily_plan(self, person_id: int) -> str | None:
+        """
+        Get the most recent daily plan for a persona.
+        
+        Used to provide context when generating inbox-driven replies.
+        
+        Args:
+            person_id: ID of the persona
+            
+        Returns:
+            Most recent daily plan content, or None if not found
+        """
+        try:
+            with get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT content FROM worker_plans
+                    WHERE person_id = ? AND plan_type = 'daily'
+                    ORDER BY tick DESC LIMIT 1
+                """, (person_id,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            logger.warning(f"Failed to get recent daily plan for person_id={person_id}: {e}")
+            return None
+
+    def _try_generate_inbox_reply(
+        self,
+        person: PersonRead,
+        current_tick: int,
+        people_by_id: dict[int, PersonRead]
+    ) -> bool:
+        """
+        Generate a reply to an unreplied inbox message if appropriate.
+        
+        This method implements inbox-driven reply generation as part of the
+        email volume reduction strategy. Instead of automatic fallback communications,
+        personas now reply to received messages that need responses.
+        
+        Requirements: R-2.1, R-2.2, R-2.3, R-2.4, R-2.5
+        
+        Args:
+            person: The persona who might reply
+            current_tick: Current simulation tick
+            people_by_id: Dictionary of all personas by ID
+            
+        Returns:
+            True if a reply was generated and sent, False otherwise
+        """
+        # Check if inbox replies are enabled
+        inbox_replies_enabled = os.getenv("VDOS_ENABLE_INBOX_REPLIES", "true").strip().lower() in {"1", "true", "yes", "on"}
+        if not inbox_replies_enabled:
+            return False
+        
+        # Task 6: Block ALL communication generation for away/offline personas
+        # Check status before attempting any communication generation
+        override = self._status_overrides.get(person.id)
+        offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+        if override and (override[0] in offline_statuses):
+            logger.debug(
+                f"[STATUS_BLOCK] Blocking inbox reply for {person.name} due to status: {override[0]} "
+                f"(tick={current_tick})"
+            )
+            return False
+        
+        # Get reply probability from environment (use instance variable for consistency)
+        reply_probability = self._inbox_reply_probability
+        if reply_probability <= 0:
+            return False
+        
+        # Get unreplied messages from inbox
+        inbox_messages = self.inbox_manager.get_inbox(person.id, max_messages=5)
+        unreplied = [msg for msg in inbox_messages if msg.needs_reply and msg.replied_tick is None]
+        
+        if not unreplied:
+            logger.debug(f"[INBOX_REPLY] No unreplied messages for {person.name}")
+            return False
+        
+        # Limit to 1 reply per hour to avoid reply storms
+        # Check if already replied this hour
+        hour_start = (current_tick // 60) * 60
+        recent_replies = [
+            msg for msg in inbox_messages 
+            if msg.replied_tick and msg.replied_tick >= hour_start
+        ]
+        if recent_replies:
+            logger.debug(
+                f"[INBOX_REPLY] Already replied this hour for {person.name}, skipping "
+                f"(replied_tick={recent_replies[0].replied_tick}, hour_start={hour_start})"
+            )
+            return False
+        
+        # Probabilistic reply decision (deterministic with seed)
+        if self._random.random() > reply_probability:
+            logger.debug(
+                f"[INBOX_REPLY] Probability check failed for {person.name} "
+                f"(probability={reply_probability})"
+            )
+            return False
+        
+        # Select message to reply to (prioritize questions and requests)
+        # InboxManager already prioritizes messages needing replies
+        message_to_reply = unreplied[0]
+        
+        logger.info(
+            f"[INBOX_REPLY] Attempting to generate reply for {person.name} "
+            f"to message from {message_to_reply.sender_name} "
+            f"(type={message_to_reply.message_type}, tick={current_tick})"
+        )
+        
+        # Generate reply using CommunicationGenerator
+        if self.communication_generator is None:
+            logger.warning(
+                f"[INBOX_REPLY] CommunicationGenerator not available for {person.name}, "
+                f"skipping inbox reply"
+            )
+            return False
+        
+        try:
+            # Get project context and collaborators
+            # Fix: Use calendar weeks (10080 ticks = 7*24*60) to match project configuration (REQ-2.1.2)
+            # Projects are configured in calendar weeks, not work weeks
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            current_week = ((current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
+            active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+            project = active_projects[0] if active_projects else None
+            
+            # Get project-specific collaborators (only people on same projects)
+            collaborators = self._get_project_collaborators(
+                person_id=person.id,
+                current_week=current_week,
+                all_people=people_by_id,
+                project_id=project.id if project else None
+            )
+            
+            # Get recent hourly and daily plans for context
+            hourly_plan = self._get_recent_hourly_plan(person.id)
+            daily_plan = self._get_recent_daily_plan(person.id)
+            
+            # Format inbox message for CommunicationGenerator
+            inbox_context = [{
+                "sender_name": message_to_reply.sender_name,
+                "subject": message_to_reply.subject,
+                "body": message_to_reply.body,
+                "message_type": message_to_reply.message_type,
+                "thread_id": message_to_reply.thread_id
+            }]
+            
+            # Generate reply
+            logger.debug(
+                f"[INBOX_REPLY] Calling CommunicationGenerator for {person.name} "
+                f"with inbox_context={len(inbox_context)} messages"
+            )
+            
+            generated_comms = self.communication_generator.generate_fallback_communications(
+                person=person,
+                current_tick=current_tick,
+                hourly_plan=hourly_plan,
+                daily_plan=daily_plan,
+                project=project,
+                inbox_messages=inbox_context,
+                collaborators=collaborators
+            )
+            
+            if not generated_comms:
+                logger.debug(
+                    f"[INBOX_REPLY] No communications generated for {person.name}"
+                )
+                return False
+            
+            logger.info(
+                f"[INBOX_REPLY] Generated {len(generated_comms)} communications "
+                f"for {person.name} in response to {message_to_reply.sender_name}"
+            )
+            
+            # Process the generated reply through the standard communication pipeline
+            # Add time field to communications (schedule for immediate dispatch)
+            current_hour = (current_tick % (ticks_per_day)) // 60
+            current_minute = (current_tick % (ticks_per_day)) % 60
+            time_str = f"{current_hour:02d}:{current_minute:02d}"
+            
+            for comm in generated_comms:
+                if 'time' not in comm:
+                    comm['time'] = time_str
+                # If replying to an email, add thread_id for threading
+                if comm.get('type') == 'email' and message_to_reply.thread_id:
+                    comm['thread_id'] = message_to_reply.thread_id
+            
+            self._process_json_communications(
+                generated_comms, 
+                current_tick, 
+                person, 
+                source="inbox_reply"
+            )
+            
+            # Dispatch the reply immediately
+            se, sc = self._dispatch_scheduled(person, current_tick, people_by_id)
+            
+            if se > 0 or sc > 0:
+                # Mark message as replied
+                self.inbox_manager.mark_replied(
+                    person_id=person.id,
+                    message_id=message_to_reply.message_id,
+                    replied_tick=current_tick
+                )
+                logger.info(
+                    f"[INBOX_REPLY] {person.name} replied to message from "
+                    f"{message_to_reply.sender_name} (emails={se}, chats={sc}, tick={current_tick})"
+                )
+                return True
+            else:
+                logger.debug(
+                    f"[INBOX_REPLY] No messages dispatched for {person.name} "
+                    f"after generating reply"
+                )
+                return False
+        
+        except Exception as e:
+            logger.warning(
+                f"[INBOX_REPLY] Failed to generate inbox reply for {person.name}: {e}",
+                exc_info=True
+            )
+            return False
+
+    def _prepare_inbox_reply_request(
+        self,
+        person: PersonRead,
+        current_tick: int,
+        people_by_id: dict[int, PersonRead],
+        day_index: int,
+        person_project: dict[str, Any],
+        hourly_summary: str,
+        daily_summary: str,
+        current_week: int
+    ) -> dict[str, Any] | None:
+        """
+        Check if a persona should generate an inbox reply and prepare the request data.
+
+        This method performs all the checks (enabled, status, probability, limits)
+        and returns a request dict if the persona should reply, or None otherwise.
+
+        Used by batch processing to collect all inbox reply requests before processing.
+
+        Args:
+            person: The persona who might reply
+            current_tick: Current simulation tick
+            people_by_id: Dictionary of all personas by ID
+            day_index: Current day index
+            person_project: Project context for the persona
+            hourly_summary: Summary of hourly plan
+            daily_summary: Summary of daily plan
+            current_week: Current week number
+
+        Returns:
+            Request dict if persona should reply, None otherwise
+        """
+        # Check if inbox replies are enabled
+        inbox_replies_enabled = os.getenv("VDOS_ENABLE_INBOX_REPLIES", "true").strip().lower() in {"1", "true", "yes", "on"}
+        if not inbox_replies_enabled:
+            return None
+
+        # Task 6: Block ALL communication generation for away/offline personas
+        override = self._status_overrides.get(person.id)
+        offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+        if override and (override[0] in offline_statuses):
+            logger.debug(
+                f"[INBOX_REPLY_BATCH] Blocking inbox reply for {person.name} due to status: {override[0]} "
+                f"(tick={current_tick})"
+            )
+            return None
+
+        # Get reply probability from environment (use instance variable for consistency)
+        reply_probability = self._inbox_reply_probability
+        if reply_probability <= 0:
+            return None
+
+        # Get unreplied messages from inbox
+        inbox_messages = self.inbox_manager.get_inbox(person.id, max_messages=5)
+        unreplied = [msg for msg in inbox_messages if msg.needs_reply and msg.replied_tick is None]
+
+        if not unreplied:
+            return None
+
+        # Limit to 1 reply per hour to avoid reply storms
+        hour_start = (current_tick // 60) * 60
+        recent_replies = [
+            msg for msg in inbox_messages
+            if msg.replied_tick and msg.replied_tick >= hour_start
+        ]
+        if recent_replies:
+            logger.debug(
+                f"[INBOX_REPLY_BATCH] Already replied this hour for {person.name}, skipping "
+                f"(replied_tick={recent_replies[0].replied_tick}, hour_start={hour_start})"
+            )
+            return None
+
+        # Probabilistic reply decision (deterministic with seed)
+        if self._random.random() > reply_probability:
+            return None
+
+        # Check if CommunicationGenerator is available
+        if self.communication_generator is None:
+            logger.warning(
+                f"[INBOX_REPLY_BATCH] CommunicationGenerator not available for {person.name}, "
+                f"skipping inbox reply"
+            )
+            return None
+
+        # Select message to reply to (prioritize questions and requests)
+        message_to_reply = unreplied[0]
+
+        # Get project context and collaborators
+        active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+        project = active_projects[0] if active_projects else None
+
+        # Get project-specific collaborators (only people on same projects)
+        collaborators = self._get_project_collaborators(
+            person_id=person.id,
+            current_week=current_week,
+            all_people=people_by_id,
+            project_id=project["id"] if isinstance(project, dict) else getattr(project, "id", None) if project else None
+        )
+        
+        hourly_plan = self._get_recent_hourly_plan(person.id)
+        daily_plan = self._get_recent_daily_plan(person.id)
+
+        # Format inbox message for CommunicationGenerator
+        inbox_context = [{
+            "sender_name": message_to_reply.sender_name,
+            "subject": message_to_reply.subject,
+            "body": message_to_reply.body,
+            "message_type": message_to_reply.message_type,
+            "thread_id": message_to_reply.thread_id
+        }]
+
+        logger.info(
+            f"[INBOX_REPLY_BATCH] Collecting reply request for {person.name} "
+            f"to message from {message_to_reply.sender_name} "
+            f"(type={message_to_reply.message_type}, tick={current_tick})"
+        )
+
+        # Return request dict for batch processing
+        return {
+            "person": person,
+            "current_tick": current_tick,
+            "hourly_plan": hourly_plan,
+            "daily_plan": daily_plan,
+            "project": project,
+            "inbox_messages": inbox_context,
+            "collaborators": collaborators,
+            "message_to_reply": message_to_reply,
+            "day_index": day_index
+        }
+
+    def _process_inbox_reply_batch(
+        self,
+        inbox_reply_requests: list[dict[str, Any]],
+        current_tick: int,
+        people_by_id: dict[int, PersonRead]
+    ) -> tuple[int, int]:
+        """
+        Process multiple inbox reply requests in batch using async parallelization.
+
+        This method implements batch processing for inbox replies, providing 4-5x
+        performance improvement over sequential processing when multiple personas
+        need to reply at the same time.
+
+        Performance: O(max(n)) instead of O(sum(n)) for n GPT API calls
+
+        Args:
+            inbox_reply_requests: List of request dicts from _prepare_inbox_reply_request
+            current_tick: Current simulation tick
+            people_by_id: Dictionary of all personas by ID
+
+        Returns:
+            Tuple of (emails_sent, chats_sent)
+        """
+        if not inbox_reply_requests:
+            return (0, 0)
+
+        logger.info(
+            f"[INBOX_REPLY_BATCH] Processing {len(inbox_reply_requests)} inbox reply requests "
+            f"(tick={current_tick})"
+        )
+
+        emails_sent = 0
+        chats_sent = 0
+
+        try:
+            # Use async batch processing for performance
+            import asyncio
+
+            batch_results = asyncio.run(
+                self.communication_generator.generate_batch_async(inbox_reply_requests)
+            )
+
+            # Process each result
+            for person, generated_comms in batch_results:
+                if not generated_comms:
+                    logger.debug(
+                        f"[INBOX_REPLY_BATCH] No communications generated for {person.name}"
+                    )
+                    continue
+
+                # Find the original request to get message context
+                req = next((r for r in inbox_reply_requests if r["person"].id == person.id), None)
+                if not req:
+                    logger.warning(
+                        f"[INBOX_REPLY_BATCH] Could not find request for {person.name}, skipping"
+                    )
+                    continue
+
+                message_to_reply = req["message_to_reply"]
+                day_index = req["day_index"]
+
+                logger.info(
+                    f"[INBOX_REPLY_BATCH] Generated {len(generated_comms)} communications "
+                    f"for {person.name} in response to {message_to_reply.sender_name}"
+                )
+
+                # Add time and thread_id to communications
+                ticks_per_day = max(1, self.hours_per_day * 60)
+                current_hour = (current_tick % ticks_per_day) // 60
+                current_minute = (current_tick % ticks_per_day) % 60
+                time_str = f"{current_hour:02d}:{current_minute:02d}"
+
+                for comm in generated_comms:
+                    if 'time' not in comm:
+                        comm['time'] = time_str
+                    # Add thread_id for email replies
+                    if comm.get('type') == 'email' and message_to_reply.thread_id:
+                        comm['thread_id'] = message_to_reply.thread_id
+
+                # Process through standard pipeline
+                self._process_json_communications(
+                    generated_comms,
+                    current_tick,
+                    person,
+                    source="inbox_reply_batch"
+                )
+
+                # Dispatch immediately
+                se, sc = self._dispatch_scheduled(person, current_tick, people_by_id)
+                emails_sent += se
+                chats_sent += sc
+
+                # Mark as replied and record stats
+                if se > 0 or sc > 0:
+                    self.inbox_manager.mark_replied(
+                        person_id=person.id,
+                        message_id=message_to_reply.message_id,
+                        replied_tick=current_tick
+                    )
+
+                    # Record for daily limits tracking
+                    if se > 0:
+                        self._record_daily_message(person.id, day_index, 'email')
+                    if sc > 0:
+                        self._record_daily_message(person.id, day_index, 'chat')
+
+                    logger.info(
+                        f"[INBOX_REPLY_BATCH] {person.name} replied to {message_to_reply.sender_name} "
+                        f"(emails={se}, chats={sc}, tick={current_tick})"
+                    )
+                else:
+                    logger.debug(
+                        f"[INBOX_REPLY_BATCH] No messages dispatched for {person.name} "
+                        f"after generating reply"
+                    )
+
+            logger.info(
+                f"[INBOX_REPLY_BATCH] Batch processing complete: "
+                f"{emails_sent} emails, {chats_sent} chats sent (tick={current_tick})"
+            )
+
+        except Exception as e:
+            logger.warning(
+                f"[INBOX_REPLY_BATCH] Batch processing failed: {e}, "
+                f"falling back to synchronous processing",
+                exc_info=True
+            )
+
+            # Fallback to synchronous processing if batch fails
+            for req in inbox_reply_requests:
+                try:
+                    person = req["person"]
+                    message_to_reply = req["message_to_reply"]
+                    day_index = req["day_index"]
+
+                    logger.debug(
+                        f"[INBOX_REPLY_FALLBACK] Processing request for {person.name} "
+                        f"synchronously"
+                    )
+
+                    # Generate reply synchronously
+                    generated_comms = self.communication_generator.generate_fallback_communications(
+                        person=person,
+                        current_tick=req["current_tick"],
+                        hourly_plan=req["hourly_plan"],
+                        daily_plan=req["daily_plan"],
+                        project=req["project"],
+                        inbox_messages=req["inbox_messages"],
+                        collaborators=req["collaborators"]
+                    )
+
+                    if not generated_comms:
+                        continue
+
+                    # Same processing as batch path
+                    ticks_per_day = max(1, self.hours_per_day * 60)
+                    current_hour = (current_tick % ticks_per_day) // 60
+                    current_minute = (current_tick % ticks_per_day) % 60
+                    time_str = f"{current_hour:02d}:{current_minute:02d}"
+
+                    for comm in generated_comms:
+                        if 'time' not in comm:
+                            comm['time'] = time_str
+                        if comm.get('type') == 'email' and message_to_reply.thread_id:
+                            comm['thread_id'] = message_to_reply.thread_id
+
+                    self._process_json_communications(
+                        generated_comms,
+                        current_tick,
+                        person,
+                        source="inbox_reply_fallback"
+                    )
+
+                    se, sc = self._dispatch_scheduled(person, current_tick, people_by_id)
+                    emails_sent += se
+                    chats_sent += sc
+
+                    if se > 0 or sc > 0:
+                        self.inbox_manager.mark_replied(
+                            person_id=person.id,
+                            message_id=message_to_reply.message_id,
+                            replied_tick=current_tick
+                        )
+
+                        if se > 0:
+                            self._record_daily_message(person.id, day_index, 'email')
+                        if sc > 0:
+                            self._record_daily_message(person.id, day_index, 'chat')
+
+                        logger.info(
+                            f"[INBOX_REPLY_FALLBACK] {person.name} replied to {message_to_reply.sender_name} "
+                            f"(emails={se}, chats={sc}, tick={current_tick})"
+                        )
+
+                except Exception as e2:
+                    logger.warning(
+                        f"[INBOX_REPLY_FALLBACK] Failed for {person.name}: {e2}",
+                        exc_info=True
+                    )
+
+        return (emails_sent, chats_sent)
+
+    def _schedule_from_json(
+        self,
+        person: PersonRead,
+        parsed_json: dict[str, Any],
+        current_tick: int
+    ) -> None:
+        """
+        Schedule communications from parsed JSON plan.
+        
+        Args:
+            person: Worker persona
+            parsed_json: Structured plan with tasks and communications
+            current_tick: Current simulation tick
+        """
+        if person.id not in self._scheduled_comms:
+            self._scheduled_comms[person.id] = {}
+        
+        communications = parsed_json.get('communications', [])
+        if not communications:
+            logger.debug(f"[SCHEDULE_JSON] No communications in parsed plan for {person.name}")
+            return
+        
+        scheduled_count = 0
+        for comm in communications:
+            try:
+                # Parse time
+                time_str = comm.get('time', '')
+                if not time_str or ':' not in time_str:
+                    logger.warning(f"[SCHEDULE_JSON] Invalid time format: {time_str}")
+                    continue
+                
+                hour, minute = map(int, time_str.split(':'))
+                tick = (hour * 60) + minute
+                
+                # Build action dict based on communication type
+                if comm.get('type') == 'email':
+                    action = {
+                        'type': 'email',
+                        'time': time_str,
+                        'to': comm.get('to', ''),
+                        'cc': comm.get('cc', []),
+                        'bcc': comm.get('bcc', []),
+                        'subject': comm.get('subject', ''),
+                        'body': comm.get('body', ''),
+                        '_source': 'json_plan'
+                    }
+                elif comm.get('type') == 'email_reply':
+                    action = {
+                        'type': 'email',
+                        'time': time_str,
+                        'to': comm.get('to', ''),
+                        'cc': comm.get('cc', []),
+                        'subject': comm.get('subject', ''),
+                        'body': comm.get('body', ''),
+                        'thread_id': comm.get('reply_to'),  # Use reply_to as thread_id
+                        '_source': 'json_plan'
+                    }
+                elif comm.get('type') == 'chat':
+                    action = {
+                        'type': 'chat',
+                        'time': time_str,
+                        'to': comm.get('to', ''),
+                        'message': comm.get('message', ''),
+                        '_source': 'json_plan'
+                    }
+                else:
+                    logger.warning(f"[SCHEDULE_JSON] Unknown communication type: {comm.get('type')}")
+                    continue
+                
+                # Schedule the action
+                if tick not in self._scheduled_comms[person.id]:
+                    self._scheduled_comms[person.id][tick] = []
+                self._scheduled_comms[person.id][tick].append(action)
+                scheduled_count += 1
+                
+                logger.debug(
+                    f"[SCHEDULE_JSON] {person.name} scheduled {comm.get('type')} at {time_str}"
+                )
+                
+            except Exception as e:
+                logger.error(f"[SCHEDULE_JSON] Failed to schedule communication: {comm}, error: {e}")
+        
+        logger.info(
+            f"[SCHEDULE_JSON] Scheduled {scheduled_count}/{len(communications)} communications "
+            f"for {person.name} from parsed JSON"
+        )
+
     def _schedule_from_hourly_plan(self, person: PersonRead, plan_text: str, current_tick: int) -> None:
         import re
-        ticks_per_day = max(1, self.hours_per_day)
+
+        # Try JSON parsing first
+        json_comms = self._try_parse_json_communications(plan_text)
+        if json_comms is not None:
+            logger.info(
+                f"[JSON_COMMS] Parsed {len(json_comms)} communications from JSON "
+                f"for {person.name} (tick={current_tick})"
+            )
+            self._process_json_communications(json_comms, current_tick, person)
+            return
+
+        # Fall back to regex parsing (supports both English and Korean)
+        logger.debug(
+            f"[REGEX_FALLBACK] No JSON found, using regex parsing "
+            f"for {person.name} (tick={current_tick})"
+        )
+
+        ticks_per_day = max(1, self.hours_per_day * 60)
         day_index = (current_tick - 1) // ticks_per_day
         tick_of_day = (current_tick - 1) % ticks_per_day
         base_tick = day_index * ticks_per_day + 1
@@ -354,23 +1473,41 @@ class SimulationEngine:
         if not lines:
             return
         sched = self._scheduled_comms.setdefault(person.id, {})
-        # Accept optional cc/bcc prior to ':'
+
+        # English patterns - allow optional leading whitespace and bullets (-, *, •)
         email_re = re.compile(
-            r"^Email\s+at\s+(\d{2}:\d{2})\s+to\s+([^:]+?)"
+            r"^\s*[-*•]?\s*Email\s+at\s+(\d{2}:\d{2})\s+to\s+([^:]+?)"
             r"(?:\s+cc\s+([^:]+?))?"
             r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
-        # Reply to email syntax: "Reply at HH:MM to [email-id] cc PERSON: Subject | Body"
         reply_re = re.compile(
-            r"^Reply\s+at\s+(\d{2}:\d{2})\s+to\s+\[([^\]]+)\]"
+            r"^\s*[-*•]?\s*Reply\s+at\s+(\d{2}:\d{2})\s+to\s+\[([^\]]+)\]"
             r"(?:\s+cc\s+([^:]+?))?"
             r"(?:\s+bcc\s+([^:]+?))?\s*:\s*(.*)$",
             re.I,
         )
-        chat_re = re.compile(r"^Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
+        chat_re = re.compile(r"^\s*[-*•]?\s*Chat\s+at\s+(\d{2}:\d{2})\s+(?:with|to)\s+([^:]+):\s*(.*)$", re.I)
+
+        # Korean patterns (이메일, 채팅, 답장) - allow optional leading whitespace and bullets (-, *, •)
+        email_ko_re = re.compile(
+            r"^\s*[-*•]?\s*이메일\s+(\d{2}:\d{2})에\s+([^:]+?)"
+            r"(?:\s+참조\s+([^:]+?))?"
+            r"(?:\s+숨은참조\s+([^:]+?))?\s*:\s*(.*)$",
+            re.I,
+        )
+        reply_ko_re = re.compile(
+            r"^\s*[-*•]?\s*답장\s+(\d{2}:\d{2})에\s+\[([^\]]+)\]"
+            r"(?:\s+참조\s+([^:]+?))?"
+            r"(?:\s+숨은참조\s+([^:]+?))?\s*:\s*(.*)$",
+            re.I,
+        )
+        chat_ko_re = re.compile(r"^\s*[-*•]?\s*채팅\s+(\d{2}:\d{2})에\s+([^:]+)(?:과|와):\s*(.*)$", re.I)
+
+        # Track parsed communications to detect duplicates
+        parsed_comms = []
+        
         for ln in lines:
-            m = email_re.match(ln)
             channel = None
             when = None
             target = None
@@ -378,6 +1515,9 @@ class SimulationEngine:
             cc_raw = None
             bcc_raw = None
             reply_to_email_id = None
+
+            # Try English email pattern
+            m = email_re.match(ln)
             if m:
                 channel = 'email'
                 when = m.group(1)
@@ -386,21 +1526,48 @@ class SimulationEngine:
                 bcc_raw = (m.group(4) or '').strip()
                 payload = (m.group(5) or '').strip()
             else:
-                # Try reply syntax
-                m = reply_re.match(ln)
+                # Try Korean email pattern
+                m = email_ko_re.match(ln)
                 if m:
                     channel = 'email'
                     when = m.group(1)
-                    reply_to_email_id = (m.group(2) or '').strip()
+                    target = (m.group(2) or '').strip()
                     cc_raw = (m.group(3) or '').strip()
                     bcc_raw = (m.group(4) or '').strip()
                     payload = (m.group(5) or '').strip()
-                    # target will be determined from the parent email
                 else:
-                    m = chat_re.match(ln)
+                    # Try English reply syntax
+                    m = reply_re.match(ln)
                     if m:
-                        channel = 'chat'
-                        when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+                        channel = 'email'
+                        when = m.group(1)
+                        reply_to_email_id = (m.group(2) or '').strip()
+                        cc_raw = (m.group(3) or '').strip()
+                        bcc_raw = (m.group(4) or '').strip()
+                        payload = (m.group(5) or '').strip()
+                    else:
+                        # Try Korean reply syntax
+                        m = reply_ko_re.match(ln)
+                        if m:
+                            channel = 'email'
+                            when = m.group(1)
+                            reply_to_email_id = (m.group(2) or '').strip()
+                            cc_raw = (m.group(3) or '').strip()
+                            bcc_raw = (m.group(4) or '').strip()
+                            payload = (m.group(5) or '').strip()
+                        else:
+                            # Try English chat pattern
+                            m = chat_re.match(ln)
+                            if m:
+                                channel = 'chat'
+                                when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+                            else:
+                                # Try Korean chat pattern
+                                m = chat_ko_re.match(ln)
+                                if m:
+                                    channel = 'chat'
+                                    when, target, payload = m.group(1), m.group(2).strip(), m.group(3).strip()
+
             if not channel:
                 continue
             try:
@@ -419,6 +1586,16 @@ class SimulationEngine:
                 entry['cc'] = [x.strip() for x in cc_raw.split(',') if x.strip()]
             if bcc_raw:
                 entry['bcc'] = [x.strip() for x in bcc_raw.split(',') if x.strip()]
+
+            # Create a signature for duplicate detection (channel + target + first 50 chars of payload)
+            signature = (channel, target.lower() if target else '', payload[:50] if payload else '')
+            
+            # Check if we've already parsed this communication (handles mixed English/Korean duplicates)
+            if signature in parsed_comms:
+                logger.debug(f"Skipping duplicate communication: {channel} to {target}")
+                continue
+            
+            parsed_comms.append(signature)
 
             # Deduplicate: check if identical entry already scheduled for this tick
             existing = sched.setdefault(t, [])
@@ -441,6 +1618,15 @@ class SimulationEngine:
         actions = by_tick.pop(current_tick, [])
         if not actions:
             return 0, 0
+        
+        # Calculate day index for daily limit tracking
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (current_tick - 1) // day_ticks
+
+        # Calculate current week for project validation (REQ-2.3.1)
+        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+        current_week = ((current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
+
         # Helper to avoid simultaneous mirrored DMs: if both sides scheduled the same message
         # at the same minute, only the lower-id sender will fire.
         handle_index = {p.chat_handle.lower(): p for p in people_by_id.values()}
@@ -559,6 +1745,10 @@ class SimulationEngine:
                 if original_sender:
                     # If we found the parent email, reply to its sender
                     target = original_sender
+                    logger.info(
+                        f"[INBOX] Generating reply for {person.name} to email-id [{reply_to_email_id}] "
+                        f"(thread_id={thread_id}, tick={current_tick})"
+                    )
                 else:
                     # If email-id not found, log warning and skip
                     logger.warning(f"Reply email-id [{reply_to_email_id}] not found in recent emails for {person.name}")
@@ -610,6 +1800,59 @@ class SimulationEngine:
                 if thread_id is None:
                     thread_id = f"thread-{uuid.uuid4().hex[:16]}"
 
+                # Check daily limits before sending
+                if not self._check_daily_limits(person.id, day_index, 'email'):
+                    continue
+
+                # Validate project assignment for all recipients (REQ-2.3.1)
+                # Filter out invalid recipients instead of dropping entire email
+                all_recipients = [email_to] + cc_emails + bcc_emails
+                valid_recipients = []
+                invalid_recipients = []
+
+                for recipient_email in all_recipients:
+                    if self._validate_project_communication(
+                        sender_email=person.email_address,
+                        recipient_email=recipient_email,
+                        subject=subject,
+                        current_week=current_week
+                    ):
+                        valid_recipients.append(recipient_email)
+                    else:
+                        invalid_recipients.append(recipient_email)
+
+                # Skip email only if NO valid recipients remain
+                if not valid_recipients:
+                    logger.info(
+                        f"[PROJECT_VALIDATION] Skipping email from {person.email_address}: "
+                        f"No valid recipients (all {len(invalid_recipients)} filtered). "
+                        f"Subject: {subject[:80]}"
+                    )
+                    continue
+
+                # Log filtered recipients for debugging
+                if invalid_recipients:
+                    logger.debug(
+                        f"[PROJECT_VALIDATION] Filtered {len(invalid_recipients)} invalid recipient(s) "
+                        f"from {person.email_address}: {', '.join(invalid_recipients)}. "
+                        f"Sending to {len(valid_recipients)} valid recipient(s)."
+                    )
+
+                # Update recipient lists to only include valid recipients
+                # Primary recipient must be valid (it's first in all_recipients)
+                if email_to not in valid_recipients:
+                    # Primary recipient is invalid - skip this email
+                    logger.info(
+                        f"[PROJECT_VALIDATION] Skipping email from {person.email_address}: "
+                        f"Primary recipient {email_to} not on shared project. "
+                        f"Subject: {subject[:80]}"
+                    )
+                    continue
+
+                # Filter CC/BCC lists to only valid recipients
+                cc_emails = [email for email in cc_emails if email in valid_recipients]
+                bcc_emails = [email for email in bcc_emails if email in valid_recipients]
+
                 if self._can_send(tick=current_tick, channel='email', sender=person.email_address, recipient_key=recipients_key, subject=subject, body=body):
                     result = self.email_gateway.send_email(
                         sender=person.email_address,
@@ -619,9 +1862,47 @@ class SimulationEngine:
                         cc=cc_emails,
                         bcc=bcc_emails,
                         thread_id=thread_id,
-                        sent_at_iso=dt_iso
+                        sent_at_iso=dt_iso,
+                        persona_id=person.id
                     )
                     emails += 1
+                    
+                    # Log the exchange
+                    recipient_id = None
+                    recipient_person = email_index.get(email_to.lower())
+                    if recipient_person:
+                        recipient_id = recipient_person.id
+                    
+                    self._log_exchange(
+                        tick=current_tick,
+                        sender_id=person.id,
+                        recipient_id=recipient_id,
+                        channel='email',
+                        subject=subject,
+                        summary=body[:100] if body else None
+                    )
+                    
+                    # Get source for tracking
+                    source = act.get('_source', 'unknown')
+                    
+                    # Record the sent email for daily limit tracking and volume metrics
+                    self._record_daily_message(person.id, day_index, 'email')
+                    self._update_volume_metrics(person.id, day_index, 'email', source)
+                    
+                    # Track quality metrics
+                    # Check if message has project context (mentions project name or common project terms)
+                    has_project_context = False
+                    text_to_check = (subject + " " + body).lower()
+                    if any(term in text_to_check for term in ['project', '프로젝트', '[', 'milestone', '마일스톤']):
+                        has_project_context = True
+                    
+                    self.quality_metrics.record_email(
+                        subject=subject,
+                        thread_id=thread_id,
+                        has_project_context=has_project_context,
+                        source=source,
+                        person_id=person.id
+                    )
 
                     # Track sent email for threading context (store email_id if available)
                     if result and isinstance(result, dict):
@@ -646,15 +1927,135 @@ class SimulationEngine:
                                 if recipient_person.id not in self._recent_emails:
                                     self._recent_emails[recipient_person.id] = deque(maxlen=10)
                                 self._recent_emails[recipient_person.id].append(email_record)
+                                
+                                # Add to InboxManager for tracking and reply generation
+                                from .inbox_manager import InboxMessage
+                                message_type, needs_reply = self.inbox_manager.classify_message_type(subject, body, self._locale)
+                                inbox_msg = InboxMessage(
+                                    message_id=email_id,
+                                    sender_id=person.id,
+                                    sender_name=person.name,
+                                    subject=subject,
+                                    body=body,
+                                    thread_id=thread_id,
+                                    received_tick=current_tick,
+                                    message_type=message_type,
+                                    needs_reply=needs_reply,
+                                    channel='email'
+                                )
+                                self.inbox_manager.add_message(recipient_person.id, inbox_msg)
+                        
+                        # Queue an inbound message to the primary recipient to enable a natural reply/ack during their next planning
+                        primary_recipient = email_index.get((email_to or '').lower())
+                        if primary_recipient is not None:
+                            # Derive a short action item from the subject when possible
+                            action_item = None
+                            if subject:
+                                action_item = subject.strip()
+                            inbound = _InboundMessage(
+                                sender_id=person.id,
+                                sender_name=person.name,
+                                subject=subject,
+                                summary=(body[:140] + '...') if isinstance(body, str) and len(body) > 160 else (body or subject or ''),
+                                action_item=action_item,
+                                message_type='email',
+                                channel='email',
+                                tick=current_tick,
+                            )
+                            self._queue_runtime_message(primary_recipient, inbound)
             elif channel == 'chat' and chat_to:
                 # Deterministic guard: only the lexicographically smaller handle sends to avoid mirrored DMs.
                 s_handle = person.chat_handle.lower()
                 r_handle = chat_to.lower()
                 if s_handle > r_handle:
                     continue
+                # Check daily limits before sending
+                if not self._check_daily_limits(person.id, day_index, 'chat'):
+                    continue
+                # Project validation: only allow chat if sender and recipient share an ACTIVE project
+                TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+                current_week = ((current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if current_tick > 0 else 1
+                recipient_person = handle_index.get(chat_to)
+                if recipient_person is not None:
+                    if not self._validate_project_pair(person.id, recipient_person.id, current_week):
+                        logger.info(
+                            f"[PROJECT_VALIDATION] Skipping chat from {person.chat_handle} to {chat_to}: "
+                            f"no shared active project in week {current_week}"
+                        )
+                        continue
+
                 if self._can_send(tick=current_tick, channel='chat', sender=person.chat_handle, recipient_key=(chat_to,), subject=None, body=payload):
-                    self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso)
+                    result = self.chat_gateway.send_dm(sender=person.chat_handle, recipient=chat_to, body=payload, sent_at_iso=dt_iso, persona_id=person.id)
                     chats += 1
+                    
+                    # Log the exchange
+                    recipient_id = None
+                    recipient_person = handle_index.get(chat_to)
+                    if recipient_person:
+                        recipient_id = recipient_person.id
+                    
+                    self._log_exchange(
+                        tick=current_tick,
+                        sender_id=person.id,
+                        recipient_id=recipient_id,
+                        channel='chat',
+                        subject=None,
+                        summary=payload
+                    )
+                    
+                    # Get source for tracking
+                    source = act.get('_source', 'unknown')
+                    
+                    # Record the sent chat for daily limit tracking and volume metrics
+                    self._record_daily_message(person.id, day_index, 'chat')
+                    self._update_volume_metrics(person.id, day_index, 'chat', source)
+                    
+                    # Track quality metrics
+                    has_project_context = False
+                    text_to_check = payload.lower()
+                    if any(term in text_to_check for term in ['project', '프로젝트', '[', 'milestone', '마일스톤']):
+                        has_project_context = True
+                    
+                    source = act.get('_source', 'unknown')
+                    
+                    self.quality_metrics.record_chat(
+                        has_project_context=has_project_context,
+                        source=source,
+                        person_id=person.id
+                    )
+                    
+                    # Queue inbound for recipient to enable conversational acks during their next planning cycle
+                    recipient = handle_index.get(r_handle)
+                    if recipient is not None:
+                        # Add to InboxManager for tracking
+                        from .inbox_manager import InboxMessage
+                        message_id = result.get('id', f'chat-{current_tick}-{chats}') if isinstance(result, dict) else f'chat-{current_tick}-{chats}'
+                        message_type, needs_reply = self.inbox_manager.classify_message_type(None, payload, self._locale)
+                        inbox_msg = InboxMessage(
+                            message_id=message_id,
+                            sender_id=person.id,
+                            sender_name=person.name,
+                            subject="",
+                            body=payload,
+                            thread_id=None,
+                            received_tick=current_tick,
+                            message_type=message_type,
+                            needs_reply=needs_reply,
+                            channel='chat'
+                        )
+                        self.inbox_manager.add_message(recipient.id, inbox_msg)
+                        
+                        inbound = _InboundMessage(
+                            sender_id=person.id,
+                            sender_name=person.name,
+                            subject=f"DM from {person.name}",
+                            summary=payload,
+                            action_item=None,
+                            message_type='dm',
+                            channel='chat',
+                            tick=current_tick,
+                        )
+                        self._queue_runtime_message(recipient, inbound)
         return emails, chats
     def _schedule_direct_comm(self, person_id: int, tick: int, channel: str, target: str, payload: str) -> None:
         by_tick = self._scheduled_comms.setdefault(person_id, {})
@@ -681,7 +2082,7 @@ class SimulationEngine:
             total_minutes = int(hours) * 60 + int(minutes)
         except Exception:
             return 0
-        ticks_per_day = max(1, self.hours_per_day)
+        ticks_per_day = max(1, self.hours_per_day * 60)
         ticks_float = (total_minutes / 1440) * ticks_per_day
         if round_up:
             tick = math.ceil(ticks_float)
@@ -690,8 +2091,8 @@ class SimulationEngine:
         return max(0, min(ticks_per_day, tick))
 
     def _parse_work_hours_to_ticks(self, work_hours: str) -> tuple[int, int]:
-        ticks_per_day = max(1, self.hours_per_day)
-        if ticks_per_day < 6:
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        if ticks_per_day < 60:
             return (0, ticks_per_day)
         if not work_hours or '-' not in work_hours:
             return (0, ticks_per_day)
@@ -711,38 +2112,112 @@ class SimulationEngine:
             cache[person.id] = (start_tick, end_tick)
         self._work_hours_ticks = cache
 
+    def _is_work_hours_tick(self, tick: int) -> bool:
+        """
+        Check if a tick falls within work hours (09:00-17:00 on weekdays).
+
+        Uses 480-tick workday system (8-hour days) consistent with all other simulation logic.
+        - Work hours: 09:00-17:00 mapped to 480-tick scale (ticks 180-340 of each day)
+        - Weekends: Days 5-6 of each week (Saturday-Sunday) are skipped
+
+        Returns False for:
+        - Before 09:00 (ticks 0-179 of day)
+        - After 17:00 (ticks 341-479 of day)
+        - Weekends (days 5-6 of each week)
+
+        This allows the simulation to skip non-work ticks for efficiency while ensuring
+        daily planning triggers correctly at tick 180 (09:00) every workday.
+        """
+        # Use 480-tick workday system (consistent with rest of simulation)
+        day_ticks = max(1, self.hours_per_day * 60)  # 480 ticks per 8-hour workday
+
+        # Check if it's a weekend (5-day work week: days 5-6 are Saturday-Sunday)
+        day_index = (tick - 1) // day_ticks if tick > 0 else 0
+        day_of_week = day_index % 7
+        if day_of_week >= 5:
+            return False
+
+        # Map 09:00-17:00 to 480-tick scale
+        # 09:00 = 540 minutes = (540/1440) * 480 = 180 ticks
+        # 17:00 = 1020 minutes = (1020/1440) * 480 = 340 ticks
+        WORK_START_TICK = 180  # 09:00 in 480-tick scale
+        WORK_END_TICK = 340    # 17:00 in 480-tick scale
+
+        # Check if it's during work hours
+        tick_of_day = (tick - 1) % day_ticks if tick > 0 else 0
+        return WORK_START_TICK <= tick_of_day <= WORK_END_TICK
+
     def _is_within_work_hours(self, person: PersonRead, tick: int) -> bool:
         if not self.hours_per_day:
             return True
+
+        # Check if it's a weekend (5-day work week: days 5-6 are Saturday-Sunday)
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // day_ticks
+        day_of_week = day_index % 7
+        # Days 5 and 6 of each week are Saturday and Sunday
+        if day_of_week >= 5:
+            return False
+
         window = self._work_hours_ticks.get(person.id)
         if not window:
             return True
         start_tick, end_tick = window
-        tick_of_day = (tick - 1) % self.hours_per_day
+        tick_of_day = (tick - 1) % day_ticks
         if start_tick <= end_tick:
             return start_tick <= tick_of_day < end_tick
         return tick_of_day >= start_tick or tick_of_day < end_tick
 
     def _format_sim_time(self, tick: int) -> str:
         if tick <= 0:
-            return "Day 0 00:00"
-        ticks_per_day = max(1, self.hours_per_day)
-        day_index = (tick - 1) // ticks_per_day + 1
-        tick_of_day = (tick - 1) % ticks_per_day
-        minutes = int((tick_of_day / ticks_per_day) * 1440)
-        hour = minutes // 60
-        minute = minutes % 60
+            return "Day 0 09:00"
+
+        # Use calendar days (24-hour days) for consistent day numbering with project timelines
+        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
+        day_index = ((tick - 1) // TICKS_PER_CALENDAR_DAY) + 1
+        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+
+        # Map tick-of-day to wall-clock time (00:00-23:59)
+        # Each tick = 1 minute in a 24-hour day
+        total_minutes = tick_of_day
+        hour = total_minutes // 60
+        minute = total_minutes % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
     def _sim_datetime_for_tick(self, tick: int) -> datetime | None:
         base = self._sim_base_dt
         if not base:
             return None
-        ticks_per_day = max(1, self.hours_per_day)
-        day_index = (tick - 1) // ticks_per_day
-        tick_of_day = (tick - 1) % ticks_per_day
-        minutes = int((tick_of_day / ticks_per_day) * 1440)
-        return base + timedelta(days=day_index, minutes=minutes)
+
+        # Use calendar days (24-hour days) for consistent day numbering
+        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
+        day_index = (tick - 1) // TICKS_PER_CALENDAR_DAY
+        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+
+        # Each tick = 1 minute in a 24-hour day
+        total_minutes = tick_of_day
+
+        return base + timedelta(days=day_index, minutes=total_minutes)
+
+    def _compute_comm_stagger(self, person_id: int, day_index: int) -> int:
+        """Compute a deterministic minute-level stagger for scheduled communications.
+
+        The offset is derived from the simulation seed, person ID, and day index
+        to ensure reproducibility while avoiding synchronized sends. Returns a
+        small offset in [-max, +max] minutes, where max is configured by
+        VDOS_COMM_STAGGER_MAX_MINUTES (default 7).
+        """
+        max_min = max(0, int(self._comm_stagger_max_minutes))
+        if max_min == 0:
+            return 0
+        base_seed = self._current_seed if self._current_seed is not None else 0
+        local_seed = (base_seed * 1315423911) ^ (person_id * 2654435761) ^ (day_index * 97531)
+        rng = random.Random(local_seed & 0xFFFFFFFF)
+        offset = rng.randint(-max_min, max_min)
+        if offset == 0 and max_min > 0:
+            # Nudge away from 0 to ensure actual staggering
+            offset = 1 if (person_id + day_index) % 2 == 0 else -1
+        return offset
 
 
     def _planner_context_summary(self, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -967,7 +2442,8 @@ class SimulationEngine:
         if current_week is None:
             # Calculate current week from simulation state
             status = self._fetch_state()
-            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            day_ticks = max(1, self.hours_per_day * 60)
+            current_day = (status.current_tick - 1) // day_ticks if status.current_tick > 0 else 0
             current_week = (current_day // 5) + 1  # 1-indexed weeks, assuming 5-day work weeks
 
         with get_connection() as conn:
@@ -1079,6 +2555,41 @@ class SimulationEngine:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [self._row_to_simulation_report(row) for row in rows]
 
+    # ------------------------------------------------------------------
+    # Projects listing (for UI hydration)
+    # ------------------------------------------------------------------
+    def list_all_projects_with_assignees(self) -> list[dict[str, Any]]:
+        """Return all projects with their assigned person ids.
+
+        Shape:
+            [
+              {
+                'project': { ...project_plan_fields },
+                'assigned_person_ids': [int, ...]
+              },
+              ...
+            ]
+        """
+        with get_connection() as conn:
+            proj_rows = conn.execute(
+                "SELECT * FROM project_plans ORDER BY start_week ASC, id ASC"
+            ).fetchall()
+            results: list[dict[str, Any]] = []
+            for row in proj_rows:
+                proj = self._row_to_project_plan(row)
+                assigned = [
+                    r["person_id"]
+                    for r in conn.execute(
+                        "SELECT person_id FROM project_assignments WHERE project_id = ? ORDER BY person_id",
+                        (proj["id"],),
+                    ).fetchall()
+                ]
+                results.append({
+                    "project": proj,
+                    "assigned_person_ids": assigned,
+                })
+            return results
+
     def _initialise_project_plan(self, request: SimulationStartRequest, team: Sequence[PersonRead]) -> None:
         if not team:
             raise RuntimeError("Cannot initialise project plan without any personas")
@@ -1146,7 +2657,9 @@ class SimulationEngine:
                 generated_by=department_head.id if department_head else None,
                 duration_weeks=request.duration_weeks,
             )
-            for person in team:
+            # PERFORMANCE: Parallelize initial planning to avoid 50-75s startup time
+            # Generate daily and hourly plans in parallel for all team members
+            def generate_initial_plans_for_person(person):
                 daily_result = self._generate_daily_plan(person, plan_record, day_index=0)
                 self._generate_hourly_plan(
                     person,
@@ -1155,6 +2668,18 @@ class SimulationEngine:
                     tick=0,
                     reason="initialisation",
                 )
+                return person
+
+            # Optional: disable tick-0 initial planning for strict off-hours starts
+            disable_initial = (os.getenv("VDOS_DISABLE_INITIAL_PLANNING", "0").strip().lower() in {"1", "true", "yes", "on"})
+            if not disable_initial:
+                with ThreadPoolExecutor(max_workers=min(4, len(team))) as executor:
+                    futures = [executor.submit(generate_initial_plans_for_person, person) for person in team]
+                    for future in as_completed(futures):
+                        try:
+                            future.result()
+                        except Exception as e:
+                            logger.error(f"Failed to generate initial plans: {e}", exc_info=True)
 
     def _get_active_project_for_person(self, person_id: int, week: int) -> dict[str, Any] | None:
         """Get the active project for a person at a given week, considering project timelines."""
@@ -1217,6 +2742,239 @@ class SimulationEngine:
 
             all_rows = list(rows) + [r for r in unassigned_rows if r["id"] not in assigned_ids]
             return [self._row_to_project_plan(row) for row in all_rows]
+
+    def _validate_project_pair(self, sender_id: int, recipient_id: int, current_week: int) -> bool:
+        """Return True if sender and recipient share at least one active project in the given week.
+
+        Considers both explicitly assigned projects and unassigned active projects (everyone).
+        """
+        try:
+            s_projects = self._get_all_active_projects_for_person(sender_id, current_week)
+            r_projects = self._get_all_active_projects_for_person(recipient_id, current_week)
+            if not s_projects or not r_projects:
+                return False
+            def _pid(p):
+                return p.get("id") if isinstance(p, dict) else getattr(p, "id", None)
+            s_ids = { _pid(p) for p in s_projects if _pid(p) is not None }
+            r_ids = { _pid(p) for p in r_projects if _pid(p) is not None }
+            return bool(s_ids & r_ids)
+        except Exception:
+            return False
+
+    def _get_project_collaborators(
+        self,
+        person_id: int,
+        current_week: int,
+        all_people: dict[int, PersonRead],
+        project_id: int | None = None
+    ) -> list[PersonRead]:
+        """
+        Get collaborators for a person based on shared project assignments.
+
+        Returns personas who are assigned to at least one of the same projects
+        as the given person. If a person has no project assignments (works on
+        unassigned projects), returns all other personas.
+
+        Args:
+            person_id: ID of the person to get collaborators for
+            current_week: Current simulation week
+            all_people: Dictionary of all personas by ID
+            project_id: Optional specific project ID to filter by (REQ-2.2.1)
+                       If provided, only returns collaborators on THIS specific project.
+                       If None, returns collaborators on ANY shared project (old behavior).
+
+        Returns:
+            List of PersonRead objects representing project collaborators
+        """
+        with get_connection() as conn:
+            # If project_id is specified, only get collaborators for that specific project (REQ-2.2.1)
+            if project_id is not None:
+                # Verify the person is assigned to this project
+                person_on_project = conn.execute(
+                    """
+                    SELECT 1 FROM project_assignments pa
+                    INNER JOIN project_plans pp ON pa.project_id = pp.id
+                    WHERE pa.person_id = ? AND pa.project_id = ?
+                    AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                    """,
+                    (person_id, project_id, current_week, current_week)
+                ).fetchone()
+
+                if not person_on_project:
+                    # Person not on this project, return empty list
+                    return []
+
+                # Get all people assigned to THIS specific project
+                collaborator_rows = conn.execute(
+                    """
+                    SELECT DISTINCT pa.person_id
+                    FROM project_assignments pa
+                    INNER JOIN project_plans pp ON pa.project_id = pp.id
+                    WHERE pa.project_id = ?
+                    AND pa.person_id != ?
+                    AND pp.start_week <= ?
+                    AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                    """,
+                    (project_id, person_id, current_week, current_week)
+                ).fetchall()
+
+                collaborator_ids = {row['person_id'] for row in collaborator_rows}
+                return [all_people[pid] for pid in collaborator_ids if pid in all_people]
+
+            # Original behavior: Get projects assigned to this person
+            person_projects = conn.execute(
+                """
+                SELECT DISTINCT pa.project_id
+                FROM project_assignments pa
+                INNER JOIN project_plans pp ON pa.project_id = pp.id
+                WHERE pa.person_id = ?
+                AND pp.start_week <= ?
+                AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                """,
+                (person_id, current_week, current_week)
+            ).fetchall()
+
+            person_project_ids = {row['project_id'] for row in person_projects}
+
+            # If person has no specific project assignments, they work on unassigned projects
+            # In this case, return all other personas (existing behavior)
+            if not person_project_ids:
+                return [p for p in all_people.values() if p.id != person_id]
+
+            # Get all people assigned to the same projects
+            collaborator_rows = conn.execute(
+                """
+                SELECT DISTINCT pa.person_id
+                FROM project_assignments pa
+                INNER JOIN project_plans pp ON pa.project_id = pp.id
+                WHERE pa.project_id IN ({})
+                AND pa.person_id != ?
+                AND pp.start_week <= ?
+                AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                """.format(','.join('?' * len(person_project_ids))),
+                (*person_project_ids, person_id, current_week, current_week)
+            ).fetchall()
+
+            collaborator_ids = {row['person_id'] for row in collaborator_rows}
+
+            # Also include people with no assignments (they work on unassigned projects)
+            people_with_no_assignments = conn.execute(
+                """
+                SELECT DISTINCT p.id
+                FROM people p
+                WHERE p.id NOT IN (SELECT DISTINCT person_id FROM project_assignments)
+                AND p.id != ?
+                """,
+                (person_id,)
+            ).fetchall()
+
+            for row in people_with_no_assignments:
+                collaborator_ids.add(row['id'])
+
+            # Return PersonRead objects for collaborators
+            return [all_people[pid] for pid in collaborator_ids if pid in all_people]
+
+    def _validate_project_communication(
+        self,
+        sender_email: str,
+        recipient_email: str,
+        subject: str | None,
+        current_week: int
+    ) -> bool:
+        """
+        Validate that sender and recipient are both assigned to the project being discussed (REQ-2.3.1).
+
+        Args:
+            sender_email: Email address of sender
+            recipient_email: Email address of recipient
+            subject: Email subject line (may contain project identifier like "[Project OMEGA]")
+            current_week: Current simulation week
+
+        Returns:
+            True if validation passes (both on same project or no project identifier found),
+            False if validation fails (project identified but recipient not assigned)
+        """
+        if not subject:
+            # No subject, allow (backward compatibility for chats without project context)
+            return True
+
+        # Extract project name from subject
+        import re
+        # Try English format: [Project NAME]
+        match = re.search(r'\[Project ([A-Z]+)\]', subject)
+        if not match:
+            # Try Korean format: [프로젝트 NAME]
+            match = re.search(r'\[프로젝트 ([A-Z]+)\]', subject)
+        if not match:
+            # Try without brackets
+            match = re.search(r'(?:Project|프로젝트)\s+([A-Z]+)', subject)
+
+        if not match:
+            # No project identifier found, allow (REQ-2.4.1 - backward compatibility)
+            return True
+
+        project_name = match.group(1)
+
+        # Look up project ID by name
+        with get_connection() as conn:
+            project_row = conn.execute(
+                """
+                SELECT id FROM project_plans
+                WHERE project_name LIKE ?
+                AND start_week <= ?
+                AND (start_week + duration_weeks - 1) >= ?
+                """,
+                (f"%{project_name}%", current_week, current_week)
+            ).fetchone()
+
+            if not project_row:
+                # Project not found or not active, allow (might be future/past project reference)
+                logger.debug(f"Project '{project_name}' not found or not active in week {current_week}")
+                return True
+
+            project_id = project_row['id']
+
+            # Get sender's persona
+            sender_row = conn.execute(
+                "SELECT id FROM people WHERE email_address = ?",
+                (sender_email,)
+            ).fetchone()
+
+            # Get recipient's persona
+            recipient_row = conn.execute(
+                "SELECT id FROM people WHERE email_address = ?",
+                (recipient_email,)
+            ).fetchone()
+
+            if not sender_row or not recipient_row:
+                # Sender or recipient not in persona database, allow (might be external)
+                return True
+
+            sender_id = sender_row['id']
+            recipient_id = recipient_row['id']
+
+            # Check if both are assigned to this project
+            sender_on_project = conn.execute(
+                "SELECT 1 FROM project_assignments WHERE person_id = ? AND project_id = ?",
+                (sender_id, project_id)
+            ).fetchone()
+
+            recipient_on_project = conn.execute(
+                "SELECT 1 FROM project_assignments WHERE person_id = ? AND project_id = ?",
+                (recipient_id, project_id)
+            ).fetchone()
+
+            # Validation fails if recipient is NOT on the project (REQ-2.3.1)
+            if not recipient_on_project:
+                logger.warning(
+                    f"[PROJECT_VALIDATION] Rejecting communication about '{project_name}': "
+                    f"recipient {recipient_email} (ID {recipient_id}) not assigned to project {project_id}. "
+                    f"Subject: {subject[:80]}"
+                )
+                return False
+
+            # Validation passes
+            return True
 
     def _resolve_department_head(
         self, people: Sequence[PersonRead], requested_name: str | None
@@ -1296,7 +3054,7 @@ class SimulationEngine:
         }
 
     def _generate_daily_plan(
-        self, person: PersonRead, project_plan: dict[str, Any], day_index: int
+        self, person: PersonRead, project_plan: dict[str, Any], day_index: int, all_active_projects: list[dict[str, Any]] | None = None
     ) -> PlanResult:
         # Get all active people for team roster
         team = self._get_active_people()
@@ -1305,11 +3063,12 @@ class SimulationEngine:
             result = self._call_planner(
                 'generate_daily_plan',
                 worker=person,
-                project_plan=project_plan['plan'],
+                project_plan=project_plan,  # Pass full dict to include project_name
                 day_index=day_index,
                 duration_weeks=self.project_duration_weeks,
                 team=team,
                 model_hint=self._planner_model_hint,
+                all_active_projects=all_active_projects,  # Pass all active projects for multi-project support
             )
         except PlanningError as exc:
             raise RuntimeError(f"Unable to generate daily plan for {person.name}: {exc}") from exc
@@ -1383,8 +3142,29 @@ class SimulationEngine:
         adjustments: list[str] | None = None,
         all_active_projects: list[dict[str, Any]] | None = None,
     ) -> PlanResult:
-        # Get all active people for team roster
-        team = self._get_active_people()
+        # Calculate current week for project-specific team filtering (REQ-2.2.1)
+        # Use calendar weeks to match project configuration (REQ-2.1.2)
+        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+        current_week = ((tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if tick > 0 else 1
+
+        # Get project-specific team roster (REQ-2.2.1)
+        # Only include teammates who are on the PRIMARY project being planned
+        project_id = project_plan.get('id') if isinstance(project_plan, dict) else None
+        all_people = {p.id: p for p in self._get_active_people()}
+
+        if project_id is not None:
+            # Filter to only collaborators on this specific project
+            team = self._get_project_collaborators(
+                person_id=person.id,
+                current_week=current_week,
+                all_people=all_people,
+                project_id=project_id
+            )
+        else:
+            # Fall back to all active people if no project ID (backward compatibility)
+            team = list(all_people.values())
+            if person.id in all_people:
+                team = [p for p in team if p.id != person.id]
 
         # Get recent emails for this person (for threading context)
         recent_emails = list(self._recent_emails.get(person.id, []))
@@ -1393,7 +3173,7 @@ class SimulationEngine:
             result = self._call_planner(
                 'generate_hourly_plan',
                 worker=person,
-                project_plan=project_plan['plan'],
+                project_plan=project_plan,  # Pass full dict to include project_name
                 daily_plan=daily_plan_text,
                 tick=tick,
                 context_reason=reason,
@@ -1412,6 +3192,54 @@ class SimulationEngine:
             content = f"{result.content}\n\nAdjustments from live collaboration:\n{bullets}"
             content_result = PlanResult(content=content, model_used=result.model_used, tokens_used=result.tokens_used)
             context += f";adjustments={len(adjustments)}"
+
+        # NEW: Parse natural language plan into structured JSON and schedule communications
+        if self.plan_parser is not None:
+            try:
+                # Extract project name for parser context
+                project_name = None
+                if isinstance(project_plan, dict):
+                    project_name = project_plan.get('project_name')
+                
+                # Build name-to-handle mapping for Korean name resolution
+                name_to_handle = {p.name: p.chat_handle for p in team if p.id != person.id}
+                
+                # Parse the plan
+                parsed_json = self.plan_parser.parse_plan(
+                    plan_text=content_result.content,
+                    worker_name=person.name,
+                    work_hours=getattr(person, 'work_hours', '09:00-18:00'),
+                    team_emails=[p.email_address for p in team if p.id != person.id],
+                    team_handles=[p.chat_handle for p in team if p.id != person.id],
+                    project_name=project_name,
+                    name_to_handle=name_to_handle
+                )
+                
+                # Schedule communications from parsed JSON
+                self._schedule_from_json(person, parsed_json, tick)
+                
+                logger.info(
+                    f"[PLAN_PARSER] Successfully parsed and scheduled plan for {person.name} "
+                    f"({len(parsed_json.get('communications', []))} communications)"
+                )
+                
+            except ParsingError as e:
+                logger.warning(
+                    f"[PLAN_PARSER] Failed to parse plan for {person.name}: {e}, "
+                    f"falling back to regex parser"
+                )
+                # Fall back to regex parsing
+                self._schedule_from_hourly_plan(person, content_result.content, tick)
+            except Exception as e:
+                logger.error(
+                    f"[PLAN_PARSER] Unexpected error parsing plan for {person.name}: {e}, "
+                    f"falling back to regex parser"
+                )
+                # Fall back to regex parsing
+                self._schedule_from_hourly_plan(person, content_result.content, tick)
+        else:
+            # Plan parser disabled, use regex parsing
+            self._schedule_from_hourly_plan(person, content_result.content, tick)
 
         self._store_worker_plan(
             person_id=person.id,
@@ -1488,20 +3316,21 @@ class SimulationEngine:
         return self._row_to_worker_plan(row) if row else None
 
     def _ensure_daily_plan(
-        self, person: PersonRead, day_index: int, project_plan: dict[str, Any]
+        self, person: PersonRead, day_index: int, project_plan: dict[str, Any], all_active_projects: list[dict[str, Any]] | None = None
     ) -> str:
         existing = self._fetch_worker_plan(
             person.id, "daily", tick=day_index, exact_tick=True
         )
         if existing:
             return existing["content"]
-        result = self._generate_daily_plan(person, project_plan, day_index)
+        result = self._generate_daily_plan(person, project_plan, day_index, all_active_projects)
         return result.content
 
     def _summarise_plan(self, plan_text: str, max_lines: int = 4) -> str:
         lines = [line.strip() for line in plan_text.splitlines() if line.strip()]
         if not lines:
-            return "No plan provided yet."
+            # Return empty summary so callers can choose a sensible fallback
+            return ""
         # Drop placeholder headers and meta lines
         filtered: list[str] = []
         for line in lines:
@@ -1611,9 +3440,9 @@ class SimulationEngine:
             return existing
         daily_plan_text = self._ensure_daily_plan(person, day_index, project_plan)
 
-        # Use hourly summaries instead of all tick logs
-        start_hour = day_index * (self.hours_per_day // 60)
-        end_hour = (day_index + 1) * (self.hours_per_day // 60)
+        # Use hourly summaries (hour indices are 0..hours_per_day-1 per day)
+        start_hour = day_index * self.hours_per_day
+        end_hour = (day_index + 1) * self.hours_per_day
         with get_connection() as conn:
             summary_rows = conn.execute(
                 "SELECT hour_index, summary FROM hourly_summaries WHERE person_id = ? AND hour_index BETWEEN ? AND ? ORDER BY hour_index",
@@ -1689,6 +3518,45 @@ class SimulationEngine:
             "model_used": row["model_used"],
             "tokens_used": row["tokens_used"],
             "created_at": row["created_at"],
+        }
+
+    # ------------------------------------------------------------------
+    # Project management (delete)
+    # ------------------------------------------------------------------
+    def delete_project(self, project_id: int) -> dict[str, Any]:
+        """Delete a project and its associations (assignments),
+        and remove any events that reference the project by id or name.
+
+        Returns a small summary of what was deleted.
+        """
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM project_plans WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            if not row:
+                raise RuntimeError(f"Project id {project_id} not found")
+
+            project = self._row_to_project_plan(row)
+
+            # Delete the project (assignments are removed via ON DELETE CASCADE)
+            conn.execute("DELETE FROM project_plans WHERE id = ?", (project_id,))
+
+            # Best-effort: cleanup events that referenced the project
+            try:
+                conn.execute(
+                    "DELETE FROM events WHERE project_id = ? OR project_id = ?",
+                    (str(project_id), project["project_name"]),
+                )
+            except Exception:
+                pass
+
+        # Invalidate cache since the latest project might have been removed
+        self._project_plan_cache = None
+
+        return {
+            "deleted_id": project_id,
+            "project_name": project["project_name"],
         }
 
     def _generate_simulation_report(self, project_plan: dict[str, Any], total_ticks: int) -> dict[str, Any]:
@@ -1819,8 +3687,31 @@ class SimulationEngine:
 
     def start(self, request: SimulationStartRequest | None = None) -> SimulationState:
         seed = self._derive_seed(request)
+        self._current_seed = seed
         self._random.seed(seed)
         self._reset_runtime_state()
+        
+        # Initialize CommunicationGenerator with seed, planner, and locale
+        self.communication_generator = CommunicationGenerator(
+            planner=self.planner,
+            locale=self._locale,
+            random_seed=seed
+        )
+        logger.info(f"Initialized CommunicationGenerator with seed={seed}, locale={self._locale}")
+        
+        # Initialize PlanParser for converting natural language plans to JSON
+        enable_plan_parser = os.getenv("VDOS_ENABLE_PLAN_PARSER", "true").strip().lower() in {"1", "true", "yes", "on"}
+        if enable_plan_parser:
+            try:
+                self.plan_parser = PlanParser()
+                logger.info("Initialized PlanParser for structured plan extraction")
+            except Exception as e:
+                logger.warning(f"Failed to initialize PlanParser: {e}, will use regex fallback")
+                self.plan_parser = None
+        else:
+            self.plan_parser = None
+            logger.info("PlanParser disabled via VDOS_ENABLE_PLAN_PARSER")
+        
         all_people = self.list_people()
         if not all_people:
             raise RuntimeError("Cannot start simulation without any personas")
@@ -1844,30 +3735,68 @@ class SimulationEngine:
             self._planner_model_hint = request.model_hint
             self._initialise_project_plan(request, active_people)
         self._set_running(True)
+        # Anchor the simulation base datetime to local midnight of the dominant timezone
+        # among active people, then convert to UTC. This ensures that a tick's wall-clock
+        # minute-of-day corresponds to the workers' local day boundaries.
         try:
-            self._sim_base_dt = datetime.now(timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            # Choose the most common timezone among active people; default to 'UTC'.
+            tz_counts: dict[str, int] = {}
+            for p in active_people:
+                tz = getattr(p, 'timezone', None) or 'UTC'
+                tz_counts[tz] = tz_counts.get(tz, 0) + 1
+            dominant_tz = max(tz_counts, key=tz_counts.get) if tz_counts else 'UTC'
+
+            if ZoneInfo is not None:
+                local = now_utc.astimezone(ZoneInfo(dominant_tz))
+                local_midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+                self._sim_base_dt = local_midnight.astimezone(timezone.utc)
+            else:
+                # Fallback: use UTC midnight
+                self._sim_base_dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         except Exception:
+            # Last resort: leave unset (engine will omit sent_at and servers will default)
             self._sim_base_dt = None
         self._sync_worker_runtimes(active_people)
         # Schedule a kickoff chat/email at the first working minute for each worker
         try:
-            ticks_per_day = max(1, self.hours_per_day)
+            ticks_per_day = max(1, self.hours_per_day * 60)
+            # Calendar week size for project timelines
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            # Active people map for collaborator lookup
+            people_by_id = {p.id: p for p in active_people}
             for person in active_people:
                 start_end = self._work_hours_ticks.get(person.id, (0, ticks_per_day))
                 start_tick_of_day = start_end[0]
                 base_tick = 1  # day 1 start
-                kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes
-                # pick a collaborator to target
-                recipients = self._select_collaborators(person, active_people)
-                target = recipients[0] if recipients else None
-                if target:
-                    if self._locale == 'ko':
-                        self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?")
-                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "제목: 킥오프\n본문: 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
-                    else:
-                        self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, f"Morning! Quick sync on priorities?")
-                        self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Subject: Quick kickoff\nBody: Lining up tasks for today — ping me with blockers.")
+                kickoff_tick = base_tick + max(0, start_tick_of_day) + 5  # +5 minutes (minute ticks)
+
+                # Only schedule kickoff if the person has at least one ACTIVE project in week 1
+                current_week = 1
+                active_projects = self._get_all_active_projects_for_person(person.id, current_week)
+                if not active_projects:
+                    continue
+
+                # Choose collaborators strictly from the same active project
+                project_for_collab = active_projects[0]
+                collaborators = self._get_project_collaborators(
+                    person_id=person.id,
+                    current_week=current_week,
+                    all_people=people_by_id,
+                    project_id=project_for_collab["id"] if isinstance(project_for_collab, dict) else getattr(project_for_collab, "id", None),
+                )
+                target = collaborators[0] if collaborators else None
+                if not target:
+                    continue
+
+                if self._locale == 'ko':
+                    self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, "좋은 아침입니다! 오늘 우선순위 빠르게 맞춰볼까요?")
+                    self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, "킥오프 | 오늘 진행할 작업 정리했습니다 — 문의사항 있으면 알려주세요.")
+                else:
+                    self._schedule_direct_comm(person.id, kickoff_tick, "chat", target.chat_handle, f"Morning! Quick sync on priorities?")
+                    self._schedule_direct_comm(person.id, kickoff_tick + 30, "email", target.email_address, f"Quick kickoff | Lining up tasks for today — ping me with blockers.")
         except Exception:
+            # Kickoff scheduling is best-effort; if collaborator or project lookup fails, skip.
             pass
         status = self._fetch_state()
         return SimulationState(
@@ -1991,9 +3920,9 @@ class SimulationEngine:
                 current_day = 0
                 current_week = 1
             else:
-                # Ensure hours_per_day is at least 1 to prevent division by zero
-                hours_per_day = max(1, self.hours_per_day)
-                current_day = (status.current_tick - 1) // hours_per_day
+                # Use minute ticks per day for calculations
+                day_ticks = max(1, self.hours_per_day * 60)
+                current_day = (status.current_tick - 1) // day_ticks
                 current_week = max(1, (current_day // 5) + 1)
             
             # Get active projects using verified calculation (start_week <= current_week <= end_week)
@@ -2104,9 +4033,9 @@ class SimulationEngine:
                         current_day = 0
                         current_week = 1
                     else:
-                        # Ensure hours_per_day is at least 1 to prevent division by zero
-                        hours_per_day = max(1, self.hours_per_day)
-                        current_day = (state.current_tick - 1) // hours_per_day
+                        # Use minute ticks per day for calculations
+                        day_ticks = max(1, self.hours_per_day * 60)
+                        current_day = (state.current_tick - 1) // day_ticks
                         current_week = max(1, (current_day // 5) + 1)
                     
                     # Get active projects for current week using enhanced calculation
@@ -2216,7 +4145,8 @@ class SimulationEngine:
             people_by_id = {person.id: person for person in people}
 
             # Calculate current week for multi-project support
-            current_day = (status.current_tick - 1) // self.hours_per_day if status.current_tick > 0 else 0
+            day_ticks = max(1, self.hours_per_day * 60)
+            current_day = (status.current_tick - 1) // day_ticks if status.current_tick > 0 else 0
             current_week = (current_day // 5) + 1  # 1-indexed weeks, assuming 5-day work weeks
 
             emails_sent = 0
@@ -2224,12 +4154,20 @@ class SimulationEngine:
 
             for _ in range(ticks):
                 status.current_tick += 1
+
+                # WORK HOURS FILTER: Skip all processing for non-work hours ticks
+                # This dramatically improves performance by skipping 16 hours/day + weekends
+                # Work hours: Mon-Fri 09:00-17:00 (ticks 540-1020 of each calendar day)
+                if not self._is_work_hours_tick(status.current_tick):
+                    self._update_tick(status.current_tick, "off_hours_skip")
+                    continue
+
                 self._reset_tick_sends()
                 self._update_tick(status.current_tick, reason)
                 self._refresh_status_overrides(status.current_tick)
                 event_adjustments, _ = self._maybe_generate_events(people, status.current_tick, project_plan)
-                day_index = (status.current_tick - 1) // self.hours_per_day
-                tick_of_day = (status.current_tick - 1) % self.hours_per_day if self.hours_per_day > 0 else 0
+                day_index = (status.current_tick - 1) // day_ticks
+                tick_of_day = (status.current_tick - 1) % day_ticks if self.hours_per_day > 0 else 0
                 # Prune stale plan-attempt counters (keep only this minute)
                 if self._hourly_plan_attempts:
                     keys = list(self._hourly_plan_attempts.keys())
@@ -2247,6 +4185,15 @@ class SimulationEngine:
                     working = self._is_within_work_hours(person, status.current_tick)
                     adjustments: list[str] = list(event_adjustments.get(person.id, []))
                     override = self._status_overrides.get(person.id)
+                    # Respect offline-style overrides: do not plan while unavailable
+                    offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+                    if override and (override[0] in offline_statuses):
+                        # Drain incoming into queue as reminders and skip planning
+                        if incoming:
+                            for message in incoming:
+                                self._get_worker_runtime(person).queue(message)
+                        logger.info("Skipping planning for %s at tick %s due to status override: %s", person.name, status.current_tick, override[0])
+                        continue
                     if override and override[0] == 'SickLeave':
                         incoming = []
                         adjustments.append('Observe sick leave and hold tasks until recovered.')
@@ -2275,7 +4222,15 @@ class SimulationEngine:
                     if se_pre or sc_pre:
                         # If we sent scheduled comms at this minute, skip fallback sending to avoid duplication
                         continue
-                    should_plan = bool(incoming) or bool(adjustments) or reason != 'auto' or (tick_of_day == 0)
+                    # Plan at the start of each worker's day (their work window), not only at absolute day start
+                    start_end = self._work_hours_ticks.get(person.id, (0, day_ticks))
+                    work_start_tick = start_end[0] if self.hours_per_day > 0 else 0
+                    should_plan = (
+                        bool(incoming)
+                        or bool(adjustments)
+                        or reason != 'auto'
+                        or (tick_of_day == work_start_tick)
+                    )
                     if not should_plan:
                         continue
                     # Hourly planning limiter per minute
@@ -2303,17 +4258,24 @@ class SimulationEngine:
                             continue
                         ack_phrase = (message.action_item or message.summary or ("요청하신 내용" if self._locale == 'ko' else "your latest update")).rstrip('.')
                         if self._locale == 'ko':
-                            # More varied and natural Korean acknowledgments
+                            # Casual and natural Korean acknowledgments for chat
                             import random
                             ack_patterns = [
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다.",
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 진행하겠습니다.",
-                                f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중입니다.",
-                                f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리하겠습니다.",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했어요!",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 진행할게요~",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 작업 중이에요",
+                                f"{sender_person.name.split()[0]}님, 알겠습니다. {ack_phrase} 처리할게요",
+                                f"{sender_person.name.split()[0]}님, 네~ {ack_phrase} 바로 시작할게요",
+                                f"{sender_person.name.split()[0]}님, {ack_phrase} 확인했습니다. 진행하겠습니다",
                             ]
                             ack_body = random.choice(ack_patterns)
                         else:
                             ack_body = f"{sender_person.name.split()[0]}, I'm on {ack_phrase}."
+                        # Only acknowledge if on a shared active project
+                        TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+                        current_week_for_validation = ((status.current_tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if status.current_tick > 0 else 1
+                        if sender_person is not None and not self._validate_project_pair(person.id, sender_person.id, current_week_for_validation):
+                            continue
                         if self._can_send(
                             tick=status.current_tick,
                             channel='chat',
@@ -2328,6 +4290,7 @@ class SimulationEngine:
                                 recipient=sender_person.chat_handle,
                                 body=ack_body,
                                 sent_at_iso=(dt.isoformat() if dt else None),
+                                persona_id=person.id
                             )
                             chats_sent += 1
                         self._log_exchange(status.current_tick, person.id, sender_person.id, 'chat', None, ack_body)
@@ -2347,6 +4310,26 @@ class SimulationEngine:
                     active_projects = self._get_all_active_projects_for_person(person.id, current_week)
                     if not active_projects:
                         active_projects = [project_plan] if project_plan else []
+                    # Prefer assigned projects when multiple are active
+                    if active_projects:
+                        try:
+                            with get_connection() as conn:
+                                rows = conn.execute(
+                                    """
+                                    SELECT pp.id FROM project_plans pp
+                                    INNER JOIN project_assignments pa ON pp.id = pa.project_id
+                                    WHERE pa.person_id = ? AND pp.start_week <= ? AND (pp.start_week + pp.duration_weeks - 1) >= ?
+                                    ORDER BY pp.start_week ASC
+                                    """,
+                                    (person.id, current_week, current_week),
+                                ).fetchall()
+                            assigned_ids = [r["id"] for r in rows]
+                            if assigned_ids:
+                                assigned_first = [p for p in active_projects if p.get("id") in assigned_ids]
+                                unassigned_rest = [p for p in active_projects if p.get("id") not in assigned_ids]
+                                active_projects = assigned_first + unassigned_rest
+                        except Exception:
+                            pass
 
                     # Skip planning if person has no active projects (idle until assigned)
                     if not active_projects:
@@ -2358,10 +4341,10 @@ class SimulationEngine:
                         )
                         continue
 
-                    # Use first project for daily plan, but pass all projects to hourly planner
+                    # Use first (assigned-first) project for daily plan primary reference, but pass all projects for multi-project support
                     primary_project = active_projects[0]
 
-                    daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project)
+                    daily_plan_text = self._ensure_daily_plan(person, day_index, primary_project, active_projects if len(active_projects) > 1 else None)
 
                     # Collect planning task for parallel execution
                     planning_task = (
@@ -2392,6 +4375,8 @@ class SimulationEngine:
                     plan_results = []
 
                 # PHASE 3: Process results and send communications
+                inbox_reply_requests = []  # Collect inbox reply requests for batch processing
+
                 for person, hourly_result in plan_results:
                     context = person_contexts[person.id]
                     override = context['override']
@@ -2412,189 +4397,81 @@ class SimulationEngine:
                         context=None,
                     )
 
+                    # Task 6: Block ALL communication generation for away/offline personas
+                    # Check status early before scheduling or dispatching any communications
+                    offline_statuses = {"SickLeave", "Offline", "Absent", "Vacation", "Leave", "Away", "휴가", "병가", "자리비움"}
+                    if override and (override[0] in offline_statuses):
+                        logger.debug(
+                            f"[STATUS_BLOCK] Blocking all communications for {person.name} due to status: {override[0]} "
+                            f"(tick={status.current_tick})"
+                        )
+                        continue
+
                     # Schedule any explicitly timed comms from the hourly plan
                     try:
                         self._schedule_from_hourly_plan(person, hourly_result.content, status.current_tick)
                     except Exception:
                         pass
-                    if override and override[0] == 'SickLeave':
-                        continue
 
-                    recipients = self._select_collaborators(person, people)
-                    # Dispatch scheduled comms for this tick before any fallback sends
+                    # Dispatch scheduled communications from hourly plans
                     se, sc = self._dispatch_scheduled(person, status.current_tick, people_by_id)
                     emails_sent += se
                     chats_sent += sc
-                    if se or sc:
-                        continue
-                    if not recipients:
-                        subject = f"Update for {person.name}"
-                        body_lines = [
-                            f"Project: {person_project['project_name']}",
-                            f"Daily focus:\n{daily_summary}",
-                            "",
-                            f"Hourly plan:\n{hourly_summary}",
-                            "",
-                            "Keep the runway clear for surprises.",
-                        ]
-                        body_text = "\n".join(body_lines)
-                        if self._can_send(
-                            tick=status.current_tick,
-                            channel='email',
-                            sender=self.sim_manager_email,
-                            recipient_key=(person.email_address,),
-                            subject=subject,
-                            body=body_text,
-                        ):
-                            dt = self._sim_datetime_for_tick(status.current_tick)
-                            self.email_gateway.send_email(
-                                sender=self.sim_manager_email,
-                                to=[person.email_address],
-                                subject=subject,
-                                body=body_text,
-                                sent_at_iso=(dt.isoformat() if dt else None),
-                            )
-                            emails_sent += 1
-                        self._log_exchange(status.current_tick, None, person.id, "email", subject, body_text)
-                        chat_body = f"Quick update: {hourly_summary.replace('\n', ' / ')}\nLet me know if you need support."
-                        if self._can_send(
-                            tick=status.current_tick,
-                            channel='chat',
-                            sender=self.sim_manager_handle,
-                            recipient_key=(person.chat_handle,),
-                            subject=None,
-                            body=chat_body,
-                        ):
-                            dt = self._sim_datetime_for_tick(status.current_tick)
-                            self.chat_gateway.send_dm(
-                                sender=self.sim_manager_handle,
-                                recipient=person.chat_handle,
-                                body=chat_body,
-                                sent_at_iso=(dt.isoformat() if dt else None),
-                            )
-                            chats_sent += 1
-                        self._log_exchange(status.current_tick, None, person.id, "chat", None, chat_body)
-                        continue
-                    action_item = self._derive_action_item(hourly_summary, daily_summary)
-                    for i, recipient in enumerate(recipients):
-                        subject = f"{'업데이트' if self._locale == 'ko' else 'Update'}: {person.name} → {recipient.name}"
-                        if self._locale == 'ko':
-                            body_lines = [
-                                f"{recipient.name.split()[0]}님 안녕하세요,",
-                                "",
-                                "현재 집중 작업:",
-                                hourly_summary or daily_summary or "주요 작업에 집중하고 있습니다.",
-                                "",
-                                f"요청: {action_item}",
-                                "필요하시면 언제든 말씀해 주세요.",
-                            ]
-                        else:
-                            body_lines = [
-                                f"Hey {recipient.name.split()[0]},",
-                                "",
-                                "Current focus:",
-                                hourly_summary or daily_summary or "Heads down on deliverables.",
-                                "",
-                                f"Request: {action_item}",
-                                "Ping me if you need anything shifted.",
-                            ]
-                        body = "\n".join(body_lines)
-                        # Suggest CCs for fallback emails (dept head + one relevant peer)
-                        cc_suggest: list[str] = []
-                        try:
-                            head = next((p for p in people if getattr(p, 'is_department_head', False)), None)
-                        except Exception:
-                            head = None
-                        if head and head.id not in {person.id, recipient.id}:
-                            cc_email = getattr(head, 'email_address', None)
-                            if cc_email:
-                                cc_suggest.append(cc_email)
-                        def _role(s: str | None) -> str:
-                            return (s or '').strip().lower()
-                        s_role = _role(getattr(person, 'role', None))
-                        want_peer = None
-                        if any(k in s_role for k in ("devops", "site reliability")):
-                            want_peer = "dev"
-                        elif any(k in s_role for k in ("developer", "engineer", "dev")):
-                            want_peer = "designer"
-                        elif any(k in s_role for k in ("design", "designer")):
-                            want_peer = "dev"
-                        elif any(k in s_role for k in ("product", "pm", "manager")):
-                            want_peer = "dev"
-                        if want_peer:
-                            for p in people:
-                                if p.id in {person.id, recipient.id}:
-                                    continue
-                                if want_peer in _role(getattr(p, 'role', None)):
-                                    peer_email = getattr(p, 'email_address', None)
-                                    if peer_email:
-                                        cc_suggest.append(peer_email)
-                                        break
-                        if self._can_send(
-                            tick=status.current_tick,
-                            channel='email',
-                            sender=person.email_address,
-                            recipient_key=(recipient.email_address,),
-                            subject=subject,
-                            body=body,
-                        ):
-                            dt = self._sim_datetime_for_tick(status.current_tick)
-                            self.email_gateway.send_email(
-                                sender=person.email_address,
-                                to=[recipient.email_address],
-                                subject=subject,
-                                body=body,
-                                cc=cc_suggest,
-                                sent_at_iso=(dt.isoformat() if dt else None),
-                            )
-                            emails_sent += 1
-                        self._log_exchange(status.current_tick, person.id, recipient.id, "email", subject, body)
 
-                        # Reduce frequency of auto-generated updates for more natural communication
-                        if i == 0 and os.getenv("VDOS_REDUCE_AUTO_UPDATES", "false").lower() != "true":
-                            chat_body = (f"간단 업데이트: {action_item}" if self._locale == 'ko' else f"Quick update: {action_item}")
-                            if self._can_send(
-                                tick=status.current_tick,
-                                channel='chat',
-                                sender=person.chat_handle,
-                                recipient_key=(recipient.chat_handle,),
-                                subject=None,
-                                body=chat_body,
-                            ):
-                                dt = self._sim_datetime_for_tick(status.current_tick)
-                                self.chat_gateway.send_dm(
-                                    sender=person.chat_handle,
-                                    recipient=recipient.chat_handle,
-                                    body=chat_body,
-                                    sent_at_iso=(dt.isoformat() if dt else None),
-                                )
-                                chats_sent += 1
-                        self._log_exchange(status.current_tick, person.id, recipient.id, "chat", None, chat_body)
+                    # BATCH OPTIMIZATION: Collect inbox reply requests instead of processing one-by-one
+                    # Check if this persona should generate an inbox reply
+                    # Note: We collect requests here and process them in batch in PHASE 4
+                    inbox_reply_request = self._prepare_inbox_reply_request(
+                        person=person,
+                        current_tick=status.current_tick,
+                        people_by_id=people_by_id,
+                        day_index=day_index,
+                        person_project=person_project,
+                        hourly_summary=hourly_summary,
+                        daily_summary=daily_summary,
+                        current_week=current_week
+                    )
+                    if inbox_reply_request:
+                        inbox_reply_requests.append(inbox_reply_request)
 
-                        inbound = _InboundMessage(
-                            sender_id=person.id,
-                            sender_name=person.name,
-                            subject=subject,
-                            summary=action_item,
-                            action_item=action_item,
-                            message_type="update",
-                            channel="email+chat",
-                            tick=status.current_tick,
-                        )
-                        self._queue_runtime_message(recipient, inbound)
+                    # Automatic fallback generation removed as part of email volume reduction (Task 1)
+                    # Personas now only communicate when:
+                    # 1. They have explicit JSON communications in their hourly plans
+                    # 2. They are responding to inbox messages (inbox-driven replies - Task 4 IMPLEMENTED with BATCH PROCESSING)
+                    # 3. Event-driven notifications (sick leave, etc.) are triggered by the event injection system
+
+                # PHASE 4: Process inbox reply requests in batch for performance optimization
+                # This phase processes all collected inbox reply requests concurrently using async batch processing
+                # Performance: 4-5x faster than sequential processing for multiple personas
+                if inbox_reply_requests:
+                    batch_emails, batch_chats = self._process_inbox_reply_batch(
+                        inbox_reply_requests=inbox_reply_requests,
+                        current_tick=status.current_tick,
+                        people_by_id=people_by_id
+                    )
+                    emails_sent += batch_emails
+                    chats_sent += batch_chats
 
                 # Generate hourly summaries at the end of each hour (every 60 ticks)
+                # PERFORMANCE: Parallelized to avoid blocking - runs 5x faster with ThreadPoolExecutor
                 if status.current_tick % 60 == 0:
                     completed_hour = (status.current_tick // 60) - 1
-                    for person in people:
-                        try:
-                            self._generate_hourly_summary(person, completed_hour)
-                        except Exception as e:
-                            logger.warning(f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}")
+                    # Use ThreadPoolExecutor to generate summaries in parallel instead of sequentially
+                    with ThreadPoolExecutor(max_workers=min(4, len(people))) as executor:
+                        futures = {
+                            executor.submit(self._generate_hourly_summary, person, completed_hour): person
+                            for person in people
+                        }
+                        for future in as_completed(futures):
+                            person = futures[future]
+                            try:
+                                future.result()
+                            except Exception as e:
+                                logger.warning(f"Failed to generate hourly summary for {person.name} hour {completed_hour}: {e}")
 
-                # Generate daily reports at the end of each day
-                if status.current_tick % self.hours_per_day == 0:
-                    completed_day = (status.current_tick // self.hours_per_day) - 1
+                # Generate daily reports at the end of each day (hours_per_day * 60 minutes)
+                if status.current_tick % day_ticks == 0:
+                    completed_day = (status.current_tick // day_ticks) - 1
                     for person in people:
                         self._generate_daily_report(person, completed_day, project_plan)
 
@@ -2891,6 +4768,10 @@ class SimulationEngine:
                 conn.execute("DELETE FROM chat_rooms")
                 conn.execute("DELETE FROM chat_users")
 
+                # Delete project-related tables
+                conn.execute("DELETE FROM project_chat_rooms")
+                conn.execute("DELETE FROM project_assignments")
+
                 # Delete any remaining simulation artifacts
                 conn.execute("DELETE FROM hourly_summaries")
 
@@ -2928,18 +4809,28 @@ class SimulationEngine:
         immediate: dict[int, list[_InboundMessage]] = {}
         if not people:
             return adjustments, immediate
+
+        # Skip event generation on weekends (5-day work week)
+        day_ticks = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // day_ticks
+        day_of_week = day_index % 7
+        if day_of_week >= 5:
+            return adjustments, immediate
+
         rng = self._random
         # Gate event generation to humane frequencies to avoid per-minute GPT replanning.
-        tick_of_day = (tick - 1) % max(1, self.hours_per_day)
+        tick_of_day = (tick - 1) % day_ticks
 
         # Sick leave event: consider once per day around mid-morning.
-        if tick_of_day == int(60 * max(1, self.hours_per_day) / 480):  # ~10:00
+        # Consider once per day around ~1 hour into the workday
+        if tick_of_day == 60:
             # Roughly 5% daily chance across the team
             if rng.random() < 0.05:
                 active_people = [p for p in people if self._status_overrides.get(p.id, (None, 0))[0] != 'SickLeave']
                 if active_people:
                     target = rng.choice(active_people)
-                    until_tick = tick + self.hours_per_day
+                    # Set status override until end of workday (in minute ticks)
+                    until_tick = tick + (day_ticks - tick_of_day)
                 self._set_status_override(target.id, 'SickLeave', until_tick, f'Sick leave triggered at tick {tick}')
                 rest_message = _InboundMessage(
                     sender_id=0,
@@ -2959,11 +4850,14 @@ class SimulationEngine:
                 if head and head.id != target.id:
                     subject = f'Coverage needed: {target.name} is out sick'
                     body = f"{target.name} reported sick leave at tick {tick}. Please redistribute their urgent work."
+                    # Use simulated timestamp for consistency with other communications
+                    dt = self._sim_datetime_for_tick(tick)
                     self.email_gateway.send_email(
                         sender=self.sim_manager_email,
                         to=[head.email_address],
                         subject=subject,
                         body=body,
+                        sent_at_iso=(dt.isoformat() if dt else None),
                     )
                     self._log_exchange(tick, None, head.id, 'email', subject, body)
                     head_message = _InboundMessage(
@@ -2983,47 +4877,99 @@ class SimulationEngine:
                 self._record_event('sick_leave', [target.id], tick, {'until_tick': until_tick})
 
         # Client feature request: at most a few times per day (every ~2 hours), low probability.
-        if (tick_of_day % int(120 * max(1, self.hours_per_day) / 480) == 0) and (rng.random() < 0.10):
+        if (tick_of_day % 120 == 0) and (rng.random() < 0.10):
             head = next((p for p in people if getattr(p, 'is_department_head', False)), people[0])
-            feature = rng.choice([
-                'refresh hero messaging',
-                'prepare launch analytics dashboard',
-                'add testimonial carousel',
-                'deliver onboarding walkthrough',
-            ])
-            subject = f'Client request: {feature}'
-            body = f"Client requested {feature}. Align on next steps within this cycle."
+            
+            # Feature names in English and Korean
+            # Using more universally understandable feature requests
+            features = {
+                'update main page banner': '메인 페이지 배너 업데이트',
+                'prepare analytics dashboard': '분석 대시보드 준비',
+                'add customer review section': '고객 리뷰 섹션 추가',
+                'improve user onboarding flow': '사용자 온보딩 플로우 개선',
+                'optimize mobile performance': '모바일 성능 최적화',
+                'add search functionality': '검색 기능 추가',
+            }
+            feature_en = rng.choice(list(features.keys()))
+            feature_ko = features[feature_en]
+            
+            # Use Korean for Korean locale, English otherwise
+            feature = feature_ko if self._locale == 'ko' else feature_en
+            
+            if self._locale == 'ko':
+                subject = f'클라이언트 요청: {feature}'
+                body = f"클라이언트가 {feature} 작업을 요청했습니다. 이번 주기 내에 다음 단계를 조율해주세요."
+            else:
+                subject = f'Client request: {feature}'
+                body = f"Client requested {feature}. Align on next steps within this cycle."
+            
             head_message = _InboundMessage(
                 sender_id=0,
                 sender_name='Simulation Manager',
                 subject=subject,
                 summary=body,
-                action_item=f'Plan response to client request: {feature}.',
+                action_item=f'Plan response to client request: {feature}.' if self._locale != 'ko' else f'클라이언트 요청에 대한 응답 계획: {feature}',
                 message_type='event',
                 channel='email',
                 tick=tick,
             )
             self._queue_runtime_message(head, head_message)
             immediate.setdefault(head.id, []).append(head_message)
-            adjustments.setdefault(head.id, []).append(f'Plan response to client request: {feature}.')
+            
+            if self._locale == 'ko':
+                adjustments.setdefault(head.id, []).append(f'클라이언트 요청에 대한 응답 계획: {feature}')
+            else:
+                adjustments.setdefault(head.id, []).append(f'Plan response to client request: {feature}.')
 
-            collaborators = [p for p in people if p.id != head.id]
+            # Get project-specific collaborators for the department head
+            # This ensures the partner is from the same project(s)
+            # Fix: Use calendar weeks (10080 ticks = 7*24*60) to match project configuration
+            TICKS_PER_CALENDAR_WEEK = 7 * 24 * 60  # 10,080 ticks
+            current_week = ((tick - 1) // TICKS_PER_CALENDAR_WEEK) + 1 if tick > 0 else 1
+            people_by_id = {p.id: p for p in people}
+
+            # Get head's active projects and pick first one
+            active_projects = self._get_all_active_projects_for_person(head.id, current_week)
+            project_for_collab = active_projects[0] if active_projects else None
+
+            collaborators = self._get_project_collaborators(
+                person_id=head.id,
+                current_week=current_week,
+                all_people=people_by_id,
+                project_id=project_for_collab["id"] if isinstance(project_for_collab, dict) else getattr(project_for_collab, "id", None) if project_for_collab else None
+            )
             if collaborators:
                 partner = rng.choice(collaborators)
+                
+                # Use casual Korean for chat messages
+                if self._locale == 'ko':
+                    # Casual Korean chat message
+                    summary_text = f'{head.name}님과 {feature} 작업 협력'
+                    action_text = f'{head.name}님과 {feature} 작업 협력'
+                    chat_body = f"{head.name}님, {feature} 건으로 클라이언트 요청 들어왔어요. 같이 진행해요~"
+                else:
+                    summary_text = f'Partner with {head.name} on {feature}.'
+                    action_text = f'Support {head.name} on {feature}.'
+                    chat_body = f"Client request: {feature}. Let's sync on next steps."
+                
                 partner_message = _InboundMessage(
                     sender_id=head.id,
                     sender_name=head.name,
                     subject=subject,
-                    summary=f'Partner with {head.name} on {feature}.',
-                    action_item=f'Support {head.name} on {feature}.',
+                    summary=summary_text,
+                    action_item=action_text,
                     message_type='event',
                     channel='chat',
                     tick=tick,
                 )
                 self._queue_runtime_message(partner, partner_message)
                 immediate.setdefault(partner.id, []).append(partner_message)
-                adjustments.setdefault(partner.id, []).append(f'Partner with {head.name} on client request: {feature}.')
-                chat_body = f"Client request: {feature}. Let's sync on next steps."
+                
+                if self._locale == 'ko':
+                    adjustments.setdefault(partner.id, []).append(f'{head.name}님과 클라이언트 요청 작업 협력: {feature}')
+                else:
+                    adjustments.setdefault(partner.id, []).append(f'Partner with {head.name} on client request: {feature}.')
+                
                 targets = [head.id, partner.id]
             else:
                 targets = [head.id]
@@ -3032,8 +4978,21 @@ class SimulationEngine:
         return adjustments, immediate
 
     def _bootstrap_channels(self) -> None:
+        # Ensure Simulation Manager identities exist
         self.email_gateway.ensure_mailbox(self.sim_manager_email, "Simulation Manager")
         self.chat_gateway.ensure_user(self.sim_manager_handle, "Simulation Manager")
+        # Ensure all existing personas have provisioned mailboxes and chat users
+        try:
+            people = self.list_people()
+            for p in people:
+                if getattr(p, 'email_address', None):
+                    self.email_gateway.ensure_mailbox(p.email_address, p.name)
+                if getattr(p, 'chat_handle', None):
+                    self.chat_gateway.ensure_user(p.chat_handle, p.name)
+        except Exception:
+            # Non-fatal: servers may not be up at engine init; they will be
+            # provisioned lazily on first use
+            pass
 
     def _ensure_state_row(self) -> None:
         with get_connection() as conn:
@@ -3061,6 +5020,40 @@ class SimulationEngine:
                 "UPDATE simulation_state SET auto_tick = ? WHERE id = 1",
                 (1 if enabled else 0,),
             )
+
+    def get_current_tick(self) -> int:
+        """
+        Get the current simulation tick.
+
+        Returns:
+            int: Current tick number
+        """
+        status = self._fetch_state()
+        return status.current_tick
+
+    def set_current_tick(self, tick: int) -> None:
+        """
+        Set the current simulation tick (for replay/time-travel).
+
+        This is used by the replay manager to jump to specific ticks.
+        Updates the tick in the database without logging to tick_log.
+
+        Args:
+            tick: Tick number to jump to
+
+        Raises:
+            ValueError: If tick < 0
+        """
+        if tick < 0:
+            raise ValueError(f"Tick must be >= 0, got {tick}")
+
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE simulation_state SET current_tick = ? WHERE id = 1",
+                (tick,),
+            )
+
+        logger.info(f"[REPLAY] Current tick set to {tick}")
 
     def _update_tick(self, tick: int, reason: str) -> None:
         with get_connection() as conn:
@@ -3149,9 +5142,3 @@ class SimulationEngine:
         close_chat = getattr(self.chat_gateway, "close", None)
         if callable(close_chat):
             close_chat()
-
-
-
-
-
-

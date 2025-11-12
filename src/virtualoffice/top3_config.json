@@ -1,0 +1,17 @@
+{
+  "weights": {
+    "priority_high": 3.0,
+    "priority_medium": 2.0,
+    "priority_low": 1.0,
+    "deadline_emphasis": 24.0,
+    "deadline_base": 1.0,
+    "evidence_per_item": 0.1,
+    "evidence_max_bonus": 0.5,
+    "recipient_type_cc_penalty": 0.7
+  },
+  "entities": {
+    "requester": {},
+    "type": {}
+  },
+  "instruction": ""
+}

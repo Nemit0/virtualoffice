@@ -11,6 +11,22 @@
 - [Environment Variables](reference/environment-variables.md) - Configuration reference
 
 ### Core Modules
+
+#### Refactored Engine Modules
+- [SimulationState](modules/simulation_state.md) - State persistence and database operations
+- [TickManager](modules/tick_manager.md) - Time advancement and work hours
+- [EventSystem](modules/event_system.md) - Event injection and processing
+- [CommunicationHub](modules/communication_hub.md) - Email/chat coordination
+- [WorkerRuntime](modules/worker_runtime.md) - Per-worker state management
+- [ProjectManager](modules/project_manager.md) - Project plans and assignments
+
+#### Prompt Management System
+- [Prompt System](modules/prompt_system.md) - Centralized YAML-based prompt templates
+- [VirtualWorker Context](modules/virtual_worker_context.md) - Context classes for planning
+
+#### Service Modules
+- [Localization System](modules/localization.md) - Centralized localization management for Korean/English support
+- [Planner](modules/planner.md) - GPT and Stub planner implementations
 - [Email Server](modules/email-server.md) - Email communication service
 - [Chat Server](modules/chat-server.md) - Chat and DM service
 - [Simulation Manager](modules/sim-manager.md) - Orchestration engine
@@ -24,10 +40,15 @@
 - [Simulation Manager API](api/API_REFERENCE.md) - REST endpoints for simulation control, export/import
 
 ### Workflows
+- [Testing](workflows/testing.md) - Comprehensive testing documentation
 - [Simulation Lifecycle](workflows/simulation-lifecycle.md) - How simulations run from start to finish
 - [Worker Behavior](workflows/worker-behavior.md) - How virtual workers plan and act
 - [Token Tracking](workflows/token-tracking.md) - Token usage tracking system
 - [Multi-Project Mode](workflows/multi-project.md) - Running concurrent projects
+
+### Guides
+- [Template Authoring](guides/template_authoring.md) - Creating and managing YAML prompt templates
+- [Migration Guide](guides/migration_guide.md) - Migrating to the refactored engine architecture
 
 ### Developer Reference
 - [Classes Reference](reference/classes.md) - All classes with methods and properties
@@ -56,6 +77,7 @@ pip install -r requirements.txt
 echo "OPENAI_API_KEY=your-key-here" > .env
 
 # Optional: Enable Korean localization for workplace simulations
+# This activates the centralized localization system for Korean content
 echo "VDOS_LOCALE=ko" >> .env
 ```
 
@@ -167,8 +189,9 @@ print(f"Advanced to tick {result['current_tick']}: {result['emails_sent']} email
 1. **Email Server (Port 8000)**: Handles email operations, mailboxes, drafts
 2. **Chat Server (Port 8001)**: Manages chat rooms, DMs, and user presence
 3. **Simulation Manager (Port 8015)**: Orchestrates the simulation, manages ticks, workers, and planning
-4. **PySide6 GUI**: Desktop interface for developers to control and monitor simulations
-5. **SQLite Database**: Single shared database for all services
+4. **Localization System**: Centralized management of localizable strings and Korean workplace content
+5. **PySide6 GUI**: Desktop interface for developers to control and monitor simulations
+6. **SQLite Database**: Single shared database for all services
 
 ## Core Concepts
 
@@ -209,6 +232,9 @@ python -m pytest
 # Run specific test file
 python -m pytest tests/test_sim_manager.py
 
+# Run Korean persona integration test
+python test_korean_persona.py
+
 # Run with coverage
 python -m pytest --cov=virtualoffice
 ```
@@ -238,7 +264,8 @@ virtualoffice/
 │   ├── virtualWorkers/          # Persona system
 │   │   └── worker.py           # Worker persona and markdown builder
 │   ├── common/                  # Shared utilities
-│   │   └── db.py               # SQLite database helpers
+│   │   ├── db.py               # SQLite database helpers
+│   │   └── localization.py     # Centralized localization system
 │   ├── utils/                   # Utility functions
 │   │   ├── completion_util.py  # OpenAI API wrapper
 │   │   └── pdf_to_md.py        # PDF processing utility
@@ -248,6 +275,7 @@ virtualoffice/
 │   ├── conftest.py             # Test configuration and fixtures
 │   ├── test_*.py               # Individual test modules
 │   └── virtualoffice.py        # Test utilities
+├── test_korean_persona.py      # Korean localization integration test
 ├── docs/                        # Documentation
 ├── simulation_output/           # Generated simulation artifacts
 ├── agent_reports/              # AI-generated analysis reports
