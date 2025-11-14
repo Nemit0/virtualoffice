@@ -21,9 +21,17 @@ output/
 
 # Caches and database files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 *.log
+
+# Email clustering artifacts
+*.faiss
+*.npy
 
 # C extensions
 *.so
