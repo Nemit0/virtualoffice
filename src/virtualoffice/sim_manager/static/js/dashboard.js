@@ -270,6 +270,18 @@ function setActiveTab(tabName) {
       console.error('[REPLAY] Failed to refresh metadata:', err);
     });
   }
+  if (tabName === 'clusters') {
+    // Initialize clustering tab when switching to it
+    console.log('[Dashboard] Switching to clusters tab, initializing...');
+    setTimeout(() => {
+      if (window.initClustering) {
+        console.log('[Dashboard] Calling window.initClustering()');
+        window.initClustering();
+      } else {
+        console.error('[Dashboard] window.initClustering not available!');
+      }
+    }, 100);
+  }
 }
 
 /**

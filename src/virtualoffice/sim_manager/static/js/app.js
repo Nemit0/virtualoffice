@@ -4,6 +4,9 @@
 // Import the existing dashboard logic as a module so it runs on load
 import './dashboard.js';
 
+// Import clustering module
+import './clustering.js';
+
 // In future steps, we will replace the monolith with modular imports like:
 // import './core/refresh.js';
 // import './features/emails/index.js';
