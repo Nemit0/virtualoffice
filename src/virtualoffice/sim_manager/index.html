@@ -29,6 +29,8 @@
         id="tab-chat-button">Chat</button>
       <button class="tab-button" data-tab="replay" role="tab" aria-selected="false" aria-controls="tab-replay"
         id="tab-replay-button">Replay</button>
+      <button class="tab-button" data-tab="clusters" role="tab" aria-selected="false" aria-controls="tab-clusters"
+        id="tab-clusters-button">📊 Email Clusters</button>
     </nav>
     <section id="control-panel">
       <h2>Controls</h2>
@@ -714,6 +716,167 @@
         </div>
       </div>
     </section>
+
+    <!-- Email Clusters Tab -->
+    <section id="tab-clusters" class="tabbed-section" style="display: none;" role="tabpanel"
+      aria-labelledby="tab-clusters-button">
+      <h2>📊 Email Cluster Visualization</h2>
+
+      <p style="margin-bottom: 16px; color: #64748b;">
+        Visualize email patterns and discover communication clusters using AI-powered embeddings and t-SNE dimensionality reduction.
+      </p>
+
+      <div class="clustering-container">
+        <!-- Controls Card -->
+        <div class="card">
+          <h3>Controls</h3>
+
+          <div class="form-group">
+            <label for="cluster-persona-select">Select Persona</label>
+            <select id="cluster-persona-select">
+              <option value="">Loading personas...</option>
+            </select>
+          </div>
+
+          <!-- Clustering Parameters -->
+          <div style="margin: 16px 0; padding: 16px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600;">Clustering Parameters</h4>
+
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="dbscan-eps" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span>DBSCAN Epsilon (eps)</span>
+                <span id="dbscan-eps-value" style="color: #3b82f6; font-weight: 600;">10.0</span>
+              </label>
+              <input type="range" id="dbscan-eps" min="1.0" max="30.0" step="0.5" value="10.0"
+                     style="width: 100%;" title="Distance threshold for clustering. Higher = larger clusters">
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Distance threshold (try 8-15 for most datasets)</div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="dbscan-min-samples" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span>Min Samples per Cluster</span>
+                <span id="dbscan-min-samples-value" style="color: #3b82f6; font-weight: 600;">3</span>
+              </label>
+              <input type="range" id="dbscan-min-samples" min="2" max="10" step="1" value="3"
+                     style="width: 100%;" title="Minimum points to form a cluster">
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Minimum points to form a cluster</div>
+            </div>
+
+            <div class="form-group">
+              <label for="tsne-perplexity" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span>t-SNE Perplexity</span>
+                <span id="tsne-perplexity-value" style="color: #3b82f6; font-weight: 600;">30</span>
+              </label>
+              <input type="range" id="tsne-perplexity" min="5" max="50" step="5" value="30"
+                     style="width: 100%;" title="Balances local vs global structure">
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Balances local vs global structure in visualization</div>
+            </div>
+          </div>
+
+          <!-- Auto-Optimization -->
+          <div style="margin: 16px 0; padding: 16px; background: #f0f9ff; border-radius: 4px; border: 1px solid #bae6fd;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #0369a1;">🤖 Auto-Optimize Parameters</h4>
+
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="cluster-optimize-guideline" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500;">
+                Clustering Goal (Natural Language)
+              </label>
+              <input
+                type="text"
+                id="cluster-optimize-guideline"
+                placeholder="e.g., 'Group by intent', 'Organize by project', 'Categorize by topic'"
+                style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;"
+              />
+              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+                Tell GPT what kind of clusters you want. Leave blank for general categorization.
+              </div>
+            </div>
+
+            <button
+              id="cluster-auto-optimize-btn"
+              style="width: 100%; padding: 10px; background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%); color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
+              onmouseover="this.style.opacity='0.9'"
+              onmouseout="this.style.opacity='1'"
+            >
+              ✨ Auto-Optimize with GPT
+            </button>
+
+            <div style="font-size: 11px; color: #64748b; margin-top: 8px; text-align: center;">
+              Tests multiple configurations and uses GPT to find the best clustering
+            </div>
+          </div>
+
+          <div id="cluster-status-info" style="margin: 16px 0; padding: 12px; background: #f8fafc; border-radius: 4px; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong>Status:</strong> <span id="cluster-status-text">Not indexed</span><br>
+                <span id="cluster-status-details" style="color: #64748b; font-size: 13px;"></span>
+              </div>
+              <button id="cluster-index-btn" style="margin-left: 12px;">🔄 Index Data</button>
+            </div>
+          </div>
+
+          <div id="cluster-progress" style="display: none; margin: 16px 0;">
+            <div style="margin-bottom: 8px;">
+              <strong>Indexing Progress</strong>
+              <span id="cluster-progress-percent" style="float: right;">0%</span>
+            </div>
+            <div style="width: 100%; height: 24px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+              <div id="cluster-progress-bar" style="width: 0%; height: 100%; background: #3b82f6; transition: width 0.3s;"></div>
+            </div>
+            <div id="cluster-progress-step" style="margin-top: 8px; color: #64748b; font-size: 13px;">Initializing...</div>
+          </div>
+
+          <!-- Cluster Statistics -->
+          <div id="cluster-stats" style="display: none; margin-top: 16px; padding: 16px; background: #f8fafc; border-radius: 4px;">
+            <h4 style="margin: 0 0 12px 0;">Statistics</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <div style="color: #64748b; font-size: 12px;">Total Emails</div>
+                <div style="font-size: 20px; font-weight: 600;" id="stat-total-emails">-</div>
+              </div>
+              <div>
+                <div style="color: #64748b; font-size: 12px;">Clusters</div>
+                <div style="font-size: 20px; font-weight: 600;" id="stat-num-clusters">-</div>
+              </div>
+              <div>
+                <div style="color: #64748b; font-size: 12px;">Noise Points</div>
+                <div style="font-size: 20px; font-weight: 600;" id="stat-noise-points">-</div>
+              </div>
+              <div>
+                <div style="color: #64748b; font-size: 12px;">Avg Cluster Size</div>
+                <div style="font-size: 20px; font-weight: 600;" id="stat-avg-size">-</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cluster List -->
+          <div id="cluster-list" style="display: none; margin-top: 16px;">
+            <h4 style="margin: 0 0 12px 0;">Clusters</h4>
+            <div id="cluster-list-items" style="max-height: 300px; overflow-y: auto;">
+              <!-- Will be populated by JavaScript -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Visualization Card -->
+        <div class="card" style="flex: 2;">
+          <h3>3D Visualization</h3>
+
+          <div id="cluster-viz-placeholder" style="display: flex; align-items: center; justify-content: center; min-height: 500px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px; color: #94a3b8; text-align: center; padding: 40px;">
+            <div>
+              <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+              <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Visualization Available</div>
+              <div style="font-size: 14px;">Select a persona and click "Index Data" to build the cluster visualization</div>
+            </div>
+          </div>
+
+          <div id="cluster-visualization" style="display: none; width: 100%; height: 600px;">
+            <!-- Plotly will render here -->
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- Preview Filter Modal -->
@@ -762,10 +925,13 @@
     </div>
   </div>
 
+  <!-- Plotly.js for 3D Visualizations -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
   <script>
     console.log('[INLINE TEST] JavaScript is working!');
     console.log('[INLINE TEST] Timestamp:', new Date().toISOString());
-    
+
     // Performance monitoring for page load
     window.addEventListener('load', () => {
       const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
@@ -776,6 +942,7 @@
     });
   </script>
   <script type="module" src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/clustering.js"></script>
 </body>
 
 </html>
