@@ -580,9 +580,18 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         person_id: int,
         plan_type: PlanTypeLiteral | None = Query(default=None),
         limit: int | None = Query(default=20, ge=1, le=200),
+        before_tick: int | None = Query(default=None, ge=0),
         engine: SimulationEngine = Depends(get_engine),
     ) -> list[WorkerPlanRead]:
-        return engine.list_worker_plans(person_id, plan_type=plan_type, limit=limit)
+        """Get worker plans for a persona.
+        
+        Args:
+            person_id: Persona ID
+            plan_type: Optional filter by plan type
+            limit: Maximum number of plans to return
+            before_tick: Optional filter to only show plans at or before this tick (for replay mode)
+        """
+        return engine.list_worker_plans(person_id, plan_type=plan_type, limit=limit, before_tick=before_tick)
 
     @app.get(f"{API_PREFIX}/people/{{person_id}}/daily-reports", response_model=list[DailyReportRead], tags=["Reports & Analytics"])
     def get_daily_reports(
@@ -590,7 +599,26 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         day_index: int | None = Query(default=None, ge=0),
         limit: int | None = Query(default=20, ge=1, le=200),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> list[DailyReportRead]:
+        """Get daily reports for a persona.
+        
+        Args:
+            person_id: Persona ID
+            day_index: Optional filter by day index (0-based)
+            limit: Maximum number of reports to return
+            
+        In replay mode, if no day_index is specified, automatically calculates the current day
+        from the current tick to avoid showing future reports.
+        """
+        # If in replay mode and no day_index specified, calculate from current tick
+        if day_index is None:
+            current_tick = engine.get_current_tick()
+            max_tick = replay.get_max_generated_tick()
+            if current_tick < max_tick:  # In replay mode
+                # Calculate current day from tick (calendar day)
+                day_index = (current_tick - 1) // (24 * 60) if current_tick > 0 else 0
+        
         return engine.list_daily_reports(person_id, day_index=day_index, limit=limit)
 
     @app.get(f"{API_PREFIX}/simulation/reports", response_model=list[SimulationReportRead], tags=["Reports & Analytics"])
@@ -1094,6 +1122,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
     def admin_rewind(
         tick: int = Body(..., embed=True, ge=0),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> dict[str, Any]:
         """Rewind the simulation to a specific tick and purge later data.
 
@@ -1103,6 +1132,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         - Deletes worker plans/summaries/reports/exchanges/tick logs after cutoff
         - Deletes events with at_tick strictly greater than cutoff
         - Deletes emails and chats with sent_at after the simulated cutoff datetime (when available)
+        - Updates replay manager state
         """
         try:
             # Best effort stop
@@ -1167,6 +1197,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 if _exists('simulation_state'):
                     conn.execute('UPDATE simulation_state SET current_tick = ? WHERE id = 1', (cutoff,))
 
+            # Update replay manager state
+            max_tick = replay.get_max_generated_tick()
+            if cutoff < max_tick:
+                replay.mode = 'replay'
+            else:
+                replay.mode = 'live'
+
             return {
                 'message': f'Rewound to tick {cutoff}',
                 'cutoff': cutoff,
@@ -1174,6 +1211,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 'day_index_cutoff': day_index_cutoff,
                 'cutoff_iso': cutoff_iso,
                 'deleted': deleted,
+                'replay_mode': replay.mode,
             }
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Failed to rewind: {exc}')
@@ -1287,8 +1325,12 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         since_timestamp: str | None = Query(default=None),
         before_id: int | None = Query(default=None),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> dict[str, list[dict]]:
-        """Return inbox/sent emails for the given person by proxying the email server."""
+        """Return inbox/sent emails for the given person by proxying the email server.
+        
+        In replay mode, automatically filters emails to only show those sent before the current tick.
+        """
         people = engine.list_people()
         person = next((p for p in people if p.id == person_id), None)
         if not person:
@@ -1305,6 +1347,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             params["since_timestamp"] = since_timestamp
         if before_id is not None:
             params["before_id"] = before_id
+        
+        # Add replay boundary if in replay mode
+        current_tick = engine.get_current_tick()
+        max_tick = replay.get_max_generated_tick()
+        if current_tick < max_tick:  # In replay mode
+            boundary_time = engine._sim_datetime_for_tick(current_tick)
+            params["before_timestamp"] = boundary_time.isoformat()
 
         result: dict[str, list[dict]] = {"inbox": [], "sent": []}
         try:
@@ -1328,8 +1377,12 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         since_id: int | None = Query(default=None),
         since_timestamp: str | None = Query(default=None),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> dict[str, list[dict]]:
-        """Return chat messages visible to a user (DMs and/or rooms) via the chat server."""
+        """Return chat messages visible to a user (DMs and/or rooms) via the chat server.
+        
+        In replay mode, automatically filters messages to only show those sent before the current tick.
+        """
         people = engine.list_people()
         person = next((p for p in people if p.id == person_id), None)
         if not person:
@@ -1343,6 +1396,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             params["since_id"] = since_id
         if since_timestamp is not None:
             params["since_timestamp"] = since_timestamp
+        
+        # Add replay boundary if in replay mode
+        current_tick = engine.get_current_tick()
+        max_tick = replay.get_max_generated_tick()
+        if current_tick < max_tick:  # In replay mode
+            boundary_time = engine._sim_datetime_for_tick(current_tick)
+            params["before_timestamp"] = boundary_time.isoformat()
 
         result: dict[str, list[dict]] = {"dms": [], "rooms": []}
         try:
@@ -1380,8 +1440,12 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         since_id: int | None = Query(default=None),
         since_timestamp: str | None = Query(default=None),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> list[dict]:
-        """Return messages for a specific chat room via the chat server."""
+        """Return messages for a specific chat room via the chat server.
+        
+        In replay mode, automatically filters messages to only show those sent before the current tick.
+        """
         chat_client = getattr(engine.chat_gateway, "client", None)
         if chat_client is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Chat client unavailable")
@@ -1391,6 +1455,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
             params["since_id"] = since_id
         if since_timestamp is not None:
             params["since_timestamp"] = since_timestamp
+        
+        # Add replay boundary if in replay mode
+        current_tick = engine.get_current_tick()
+        max_tick = replay.get_max_generated_tick()
+        if current_tick < max_tick:  # In replay mode
+            boundary_time = engine._sim_datetime_for_tick(current_tick)
+            params["before_timestamp"] = boundary_time.isoformat()
 
         try:
             response = chat_client.get(f"/rooms/{room_slug}/messages", params=params)

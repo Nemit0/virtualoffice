@@ -141,7 +141,19 @@ class CommunicationGenerator:
             for msg in recent:
                 sender = msg.get("sender_name", "Unknown")
                 subject = msg.get("subject", msg.get("message", ""))[:50]
-                inbox_items.append(f"- From {sender}: {subject}")
+
+                # Include CC information for email messages
+                cc_info = ""
+                if msg.get("cc_addresses"):
+                    cc_names = ", ".join(msg["cc_addresses"])
+                    cc_info = f" (CC: {cc_names})"
+
+                # Include recipient role if available
+                role_info = ""
+                if msg.get("my_role") == "cc":
+                    role_info = " [You were CC'd]"
+
+                inbox_items.append(f"- From {sender}: {subject}{cc_info}{role_info}")
             inbox_summary = "\n".join(inbox_items)
         
         return {

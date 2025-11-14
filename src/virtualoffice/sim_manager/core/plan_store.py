@@ -90,10 +90,22 @@ class PlanStore:
         return [self._row_to_worker_plan(row) for row in rows]
 
     def list_hourly_plans_in_range(self, person_id: int, start_tick: int, end_tick: int) -> List[dict[str, Any]]:
+        """Get hourly plans in a tick range, returning only the latest plan per tick (handles replanning)."""
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT tick, content FROM worker_plans WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ? ORDER BY tick",
-                (person_id, start_tick, end_tick),
+                """
+                SELECT wp1.tick, wp1.content
+                FROM worker_plans wp1
+                INNER JOIN (
+                    SELECT tick, MAX(id) as max_id
+                    FROM worker_plans
+                    WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ?
+                    GROUP BY tick
+                ) wp2 ON wp1.tick = wp2.tick AND wp1.id = wp2.max_id
+                WHERE wp1.person_id = ? AND wp1.plan_type = 'hourly'
+                ORDER BY wp1.tick
+                """,
+                (person_id, start_tick, end_tick, person_id),
             ).fetchall()
         return [{"tick": row["tick"], "content": row["content"]} for row in rows]
 

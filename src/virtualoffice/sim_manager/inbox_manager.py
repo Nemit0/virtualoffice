@@ -9,7 +9,7 @@ This module provides inbox tracking for received messages, enabling:
 Requirements: R-2.1, R-2.2, R-2.3, R-7.1-R-7.5
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import logging
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class InboxMessage:
     """
     Represents a received message in a persona's inbox.
-    
+
     Attributes:
         message_id: Unique identifier for the message
         sender_id: ID of the persona who sent the message
@@ -33,6 +33,9 @@ class InboxMessage:
         message_type: Classification (question, request, blocker, update, report)
         channel: Communication channel ('email' or 'chat')
         replied_tick: Simulation tick when reply was sent (None if not replied)
+        to_addresses: List of primary recipients (TO field)
+        cc_addresses: List of CC recipients (visible to all recipients)
+        my_role: How this persona received the message ('to', 'cc', or 'bcc')
     """
     message_id: int
     sender_id: int
@@ -45,6 +48,9 @@ class InboxMessage:
     message_type: str
     channel: str
     replied_tick: Optional[int] = None
+    to_addresses: list[str] = field(default_factory=list)
+    cc_addresses: list[str] = field(default_factory=list)
+    my_role: str = 'to'
 
 
 class InboxManager:

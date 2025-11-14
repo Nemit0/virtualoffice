@@ -9,3 +9,7 @@ briefcase
 markitdown
 markitdown[all]
 pytest
+numpy>=1.24.0
+scikit-learn>=1.3.0
+faiss-cpu>=1.7.4
+plotly>=5.18.0

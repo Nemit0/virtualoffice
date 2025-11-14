@@ -304,6 +304,18 @@ logs/
 vdos.db
 *.db
 
+# Email clustering data
+email_clusters.db
+email_clusters.db-shm
+email_clusters.db-wal
+email_embeddings_*.faiss
+email_embeddings_*.npy
+*.faiss.index
+
+# SQLite temporary files
+*.db-shm
+*.db-wal
+
 # Token usage tracking
 token_usage.json
 

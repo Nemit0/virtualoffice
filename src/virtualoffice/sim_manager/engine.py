@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS simulation_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     current_tick INTEGER NOT NULL,
     is_running INTEGER NOT NULL,
-    auto_tick INTEGER NOT NULL DEFAULT 0
+    auto_tick INTEGER NOT NULL DEFAULT 0,
+    sim_base_dt TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tick_log (
@@ -406,6 +407,7 @@ class SimulationEngine:
         self._ensure_state_row()
         self._bootstrap_channels()
         self._load_status_overrides()
+        self._load_sim_base_dt()
         self._sync_worker_runtimes(self.list_people())
 
     def _reset_tick_sends(self) -> None:
@@ -698,6 +700,9 @@ class SimulationEngine:
         base_tick = day_index * ticks_per_day + 1
         sched = self._scheduled_comms.setdefault(person.id, {})
 
+        # Clear future schedules when replanning (prevents duplicates)
+        self._clear_future_scheduled_comms(person, current_tick)
+
         for comm in communications:
             try:
                 comm_type = comm.get('type', '').lower()
@@ -948,7 +953,10 @@ class SimulationEngine:
                 "subject": message_to_reply.subject,
                 "body": message_to_reply.body,
                 "message_type": message_to_reply.message_type,
-                "thread_id": message_to_reply.thread_id
+                "thread_id": message_to_reply.thread_id,
+                "to_addresses": message_to_reply.to_addresses,
+                "cc_addresses": message_to_reply.cc_addresses,
+                "my_role": message_to_reply.my_role
             }]
             
             # Generate reply
@@ -964,7 +972,8 @@ class SimulationEngine:
                 daily_plan=daily_plan,
                 project=project,
                 inbox_messages=inbox_context,
-                collaborators=collaborators
+                collaborators=collaborators,
+                model_hint=self._planner_model_hint
             )
             
             if not generated_comms:
@@ -1135,7 +1144,10 @@ class SimulationEngine:
             "subject": message_to_reply.subject,
             "body": message_to_reply.body,
             "message_type": message_to_reply.message_type,
-            "thread_id": message_to_reply.thread_id
+            "thread_id": message_to_reply.thread_id,
+            "to_addresses": message_to_reply.to_addresses,
+            "cc_addresses": message_to_reply.cc_addresses,
+            "my_role": message_to_reply.my_role
         }]
 
         logger.info(
@@ -1305,7 +1317,8 @@ class SimulationEngine:
                         daily_plan=req["daily_plan"],
                         project=req["project"],
                         inbox_messages=req["inbox_messages"],
-                        collaborators=req["collaborators"]
+                        collaborators=req["collaborators"],
+                        model_hint=self._planner_model_hint
                     )
 
                     if not generated_comms:
@@ -1446,6 +1459,36 @@ class SimulationEngine:
             f"for {person.name} from parsed JSON"
         )
 
+    def _clear_future_scheduled_comms(self, person: PersonRead, current_tick: int) -> int:
+        """
+        Clear all future scheduled communications for a person when they replan.
+
+        When a persona replans, their new plan supersedes the old one, so we clear
+        any previously scheduled communications that haven't been dispatched yet.
+
+        Args:
+            person: The persona whose schedule to clear
+            current_tick: Current simulation tick (schedules > this will be cleared)
+
+        Returns:
+            Number of future ticks cleared
+        """
+        sched = self._scheduled_comms.get(person.id)
+        if not sched:
+            return 0
+
+        ticks_to_clear = [t for t in sched.keys() if t > current_tick]
+        for t in ticks_to_clear:
+            del sched[t]
+
+        if ticks_to_clear:
+            logger.debug(
+                f"[REPLAN] Cleared {len(ticks_to_clear)} future scheduled ticks for {person.name} "
+                f"at tick {current_tick}"
+            )
+
+        return len(ticks_to_clear)
+
     def _schedule_from_hourly_plan(self, person: PersonRead, plan_text: str, current_tick: int) -> None:
         import re
 
@@ -1473,6 +1516,9 @@ class SimulationEngine:
         if not lines:
             return
         sched = self._scheduled_comms.setdefault(person.id, {})
+
+        # Clear future schedules when replanning (prevents duplicates)
+        self._clear_future_scheduled_comms(person, current_tick)
 
         # English patterns - allow optional leading whitespace and bullets (-, *, •)
         email_re = re.compile(
@@ -1927,10 +1973,14 @@ class SimulationEngine:
                                 if recipient_person.id not in self._recent_emails:
                                     self._recent_emails[recipient_person.id] = deque(maxlen=10)
                                 self._recent_emails[recipient_person.id].append(email_record)
-                                
+
                                 # Add to InboxManager for tracking and reply generation
                                 from .inbox_manager import InboxMessage
                                 message_type, needs_reply = self.inbox_manager.classify_message_type(subject, body, self._locale)
+
+                                # Determine recipient role (to/cc)
+                                my_role = 'to' if recipient_addr == email_to else 'cc'
+
                                 inbox_msg = InboxMessage(
                                     message_id=email_id,
                                     sender_id=person.id,
@@ -1941,7 +1991,10 @@ class SimulationEngine:
                                     received_tick=current_tick,
                                     message_type=message_type,
                                     needs_reply=needs_reply,
-                                    channel='email'
+                                    channel='email',
+                                    to_addresses=[email_to],
+                                    cc_addresses=cc_emails.copy(),
+                                    my_role=my_role
                                 )
                                 self.inbox_manager.add_message(recipient_person.id, inbox_msg)
                         
@@ -2041,7 +2094,10 @@ class SimulationEngine:
                             received_tick=current_tick,
                             message_type=message_type,
                             needs_reply=needs_reply,
-                            channel='chat'
+                            channel='chat',
+                            to_addresses=[r_handle],  # Chat target
+                            cc_addresses=[],  # No CC in direct chat
+                            my_role='to'
                         )
                         self.inbox_manager.add_message(recipient.id, inbox_msg)
                         
@@ -2189,13 +2245,18 @@ class SimulationEngine:
         if not base:
             return None
 
-        # Use calendar days (24-hour days) for consistent day numbering
-        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
-        day_index = (tick - 1) // TICKS_PER_CALENDAR_DAY
-        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+        # Use configured work hours per day (default 8-hour workdays)
+        ticks_per_day = max(1, self.hours_per_day * 60)  # e.g., 480 ticks for 8-hour workdays
+        day_index = (tick - 1) // ticks_per_day
+        tick_of_day = (tick - 1) % ticks_per_day
 
-        # Each tick = 1 minute in a 24-hour day
-        total_minutes = tick_of_day
+        # Offset by work start hour (default 09:00)
+        # This ensures tick 1 = 09:00, not 00:00
+        work_start_hour = 9  # Most personas use 09:00-17:00 or 09:00-18:00
+        work_start_minutes = work_start_hour * 60
+
+        # Each tick = 1 minute within the workday, offset by work start time
+        total_minutes = work_start_minutes + tick_of_day
 
         return base + timedelta(days=day_index, minutes=total_minutes)
 
@@ -2510,6 +2571,7 @@ class SimulationEngine:
         person_id: int,
         plan_type: str | None = None,
         limit: int | None = None,
+        before_tick: int | None = None,
     ) -> List[dict[str, Any]]:
         self.get_person(person_id)
         query = "SELECT * FROM worker_plans WHERE person_id = ?"
@@ -2517,6 +2579,9 @@ class SimulationEngine:
         if plan_type:
             query += " AND plan_type = ?"
             params.append(plan_type)
+        if before_tick is not None:
+            query += " AND tick <= ?"
+            params.append(before_tick)
         query += " ORDER BY id DESC"
         if limit:
             query += " LIMIT ?"
@@ -3391,13 +3456,24 @@ class SimulationEngine:
         if existing:
             return existing
 
-        # Get all hourly plans for this hour
+        # Get all hourly plans for this hour (only latest plan per tick to avoid duplicates from replanning)
         start_tick = hour_index * 60 + 1
         end_tick = (hour_index + 1) * 60
         with get_connection() as conn:
             hourly_rows = conn.execute(
-                "SELECT tick, content FROM worker_plans WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ? ORDER BY tick",
-                (person.id, start_tick, end_tick),
+                """
+                SELECT wp1.tick, wp1.content
+                FROM worker_plans wp1
+                INNER JOIN (
+                    SELECT tick, MAX(id) as max_id
+                    FROM worker_plans
+                    WHERE person_id = ? AND plan_type = 'hourly' AND tick BETWEEN ? AND ?
+                    GROUP BY tick
+                ) wp2 ON wp1.tick = wp2.tick AND wp1.id = wp2.max_id
+                WHERE wp1.person_id = ? AND wp1.plan_type = 'hourly'
+                ORDER BY wp1.tick
+                """,
+                (person.id, start_tick, end_tick, person.id),
             ).fetchall()
 
         if not hourly_rows:
@@ -3754,9 +3830,17 @@ class SimulationEngine:
             else:
                 # Fallback: use UTC midnight
                 self._sim_base_dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Persist sim_base_dt to database
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE simulation_state SET sim_base_dt = ? WHERE id = 1",
+                    (self._sim_base_dt.isoformat(),)
+                )
+            logger.info(f"Simulation base datetime set to: {self._sim_base_dt.isoformat()}")
         except Exception:
             # Last resort: leave unset (engine will omit sent_at and servers will default)
             self._sim_base_dt = None
+            logger.warning("Failed to set sim_base_dt, timestamps will fall back to real time")
         self._sync_worker_runtimes(active_people)
         # Schedule a kickoff chat/email at the first working minute for each worker
         try:
@@ -4378,23 +4462,29 @@ class SimulationEngine:
                 inbox_reply_requests = []  # Collect inbox reply requests for batch processing
 
                 for person, hourly_result in plan_results:
-                    context = person_contexts[person.id]
-                    override = context['override']
-                    daily_plan_text = context['daily_plan_text']
-                    primary_project = context['primary_project']
+                    ctx = person_contexts[person.id]
+                    override = ctx['override']
+                    daily_plan_text = ctx['daily_plan_text']
+                    primary_project = ctx['primary_project']
+                    adjustments = ctx['adjustments']
                     # person_project is the dict with project details
                     person_project = primary_project if isinstance(primary_project, dict) else {'project_name': 'Unknown Project'}
 
                     daily_summary = self._summarise_plan(daily_plan_text, max_lines=3)
                     hourly_summary = self._summarise_plan(hourly_result.content)
 
-                    # Store the hourly plan
+                    # Build context string matching single-worker planning format
+                    plan_context = f"reason={reason}"
+                    if adjustments:
+                        plan_context += f";adjustments={len(adjustments)}"
+
+                    # Store the hourly plan with proper context
                     self._store_worker_plan(
                         person_id=person.id,
                         tick=status.current_tick,
                         plan_type="hourly",
                         result=hourly_result,
-                        context=None,
+                        context=plan_context,
                     )
 
                     # Task 6: Block ALL communication generation for away/offline personas
@@ -4536,6 +4626,21 @@ class SimulationEngine:
         with get_connection() as conn:
             rows = conn.execute("SELECT worker_id, status, until_tick FROM worker_status_overrides").fetchall()
         self._status_overrides = {row["worker_id"]: (row["status"], row["until_tick"]) for row in rows}
+
+    def _load_sim_base_dt(self) -> None:
+        """Load sim_base_dt from database if simulation has already started."""
+        with get_connection() as conn:
+            row = conn.execute("SELECT sim_base_dt FROM simulation_state WHERE id = 1").fetchone()
+            if row and row["sim_base_dt"]:
+                try:
+                    self._sim_base_dt = datetime.fromisoformat(row["sim_base_dt"])
+                    logger.info(f"Loaded sim_base_dt from database: {self._sim_base_dt.isoformat()}")
+                except (ValueError, TypeError) as exc:
+                    logger.warning(f"Failed to parse sim_base_dt from database: {exc}")
+                    self._sim_base_dt = None
+            else:
+                # Not yet set - will be set when simulation starts
+                self._sim_base_dt = None
 
     def _queue_runtime_message(self, recipient: PersonRead, message: _InboundMessage) -> None:
         runtime = self._get_worker_runtime(recipient)
@@ -4999,7 +5104,7 @@ class SimulationEngine:
             row = conn.execute("SELECT id FROM simulation_state WHERE id = 1").fetchone()
             if not row:
                 conn.execute(
-                    "INSERT INTO simulation_state(id, current_tick, is_running, auto_tick) VALUES (1, 0, 0, 0)"
+                    "INSERT INTO simulation_state(id, current_tick, is_running, auto_tick, sim_base_dt) VALUES (1, 0, 0, 0, NULL)"
                 )
 
     def _fetch_state(self) -> SimulationStatus:
