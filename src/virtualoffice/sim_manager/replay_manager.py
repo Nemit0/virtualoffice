@@ -39,9 +39,15 @@ class ReplayManager:
         self.engine = engine
         self.mode: str = 'live'  # 'live' or 'replay'
 
-        # Calendar day constants (1440 ticks per 24-hour day)
-        self.TICKS_PER_CALENDAR_DAY = 24 * 60  # 1440 ticks
+        # Workday constants (uses engine's hours_per_day configuration)
+        # For 8-hour workdays: 8 * 60 = 480 ticks per day
         self.TICKS_PER_HOUR = 60
+        self.BASE_HOUR = 9  # Work starts at 09:00
+
+    @property
+    def ticks_per_day(self) -> int:
+        """Get ticks per day from engine configuration."""
+        return max(1, self.engine.hours_per_day * 60)
 
     def get_max_generated_tick(self) -> int:
         """
@@ -72,8 +78,8 @@ class ReplayManager:
         max_tick = self.get_max_generated_tick()
         current_tick = self.engine.get_current_tick()
 
-        # Calculate days simulated
-        total_days = (max_tick // self.TICKS_PER_CALENDAR_DAY) + 1 if max_tick > 0 else 0
+        # Calculate days simulated (using workday model)
+        total_days = (max_tick // self.ticks_per_day) + 1 if max_tick > 0 else 0
 
         # Get communication counts
         with get_connection() as conn:
@@ -95,12 +101,15 @@ class ReplayManager:
             "mode": "replay" if is_replay else "live",
             "is_replay": is_replay,
             "total_emails": email_count,
-            "total_chats": chat_count
+            "total_chats": chat_count,
+            "ticks_per_day": self.ticks_per_day,
+            "base_hour": self.BASE_HOUR
         }
 
     def tick_to_time(self, tick: int) -> dict:
         """
         Convert a tick number to day/hour/minute representation.
+        Uses workday model with 09:00 start time.
 
         Args:
             tick: Tick number to convert
@@ -108,10 +117,13 @@ class ReplayManager:
         Returns:
             dict: { "day": int, "hour": int, "minute": int, "sim_time": str }
         """
-        day = ((tick - 1) // self.TICKS_PER_CALENDAR_DAY) + 1
-        tick_of_day = (tick - 1) % self.TICKS_PER_CALENDAR_DAY
-        hour = tick_of_day // 60
-        minute = tick_of_day % 60
+        day = ((tick - 1) // self.ticks_per_day) + 1
+        tick_of_day = (tick - 1) % self.ticks_per_day
+
+        # Add 09:00 offset (work starts at 9 AM)
+        total_minutes = tick_of_day
+        hour = self.BASE_HOUR + (total_minutes // 60)
+        minute = total_minutes % 60
 
         return {
             "day": day,
@@ -123,10 +135,11 @@ class ReplayManager:
     def time_to_tick(self, day: int, hour: int, minute: int) -> int:
         """
         Convert day/hour/minute to tick number.
+        Uses workday model with 09:00 start time.
 
         Args:
             day: Day number (1-indexed)
-            hour: Hour (0-23)
+            hour: Hour (9-16 for 8-hour workdays, or 9-23 generally)
             minute: Minute (0-59)
 
         Returns:
@@ -135,14 +148,18 @@ class ReplayManager:
         # Validate inputs
         if day < 1:
             raise ValueError(f"Day must be >= 1, got {day}")
-        if not (0 <= hour <= 23):
-            raise ValueError(f"Hour must be 0-23, got {hour}")
+        if hour < self.BASE_HOUR:
+            raise ValueError(f"Hour must be >= {self.BASE_HOUR} (work start time), got {hour}")
         if not (0 <= minute <= 59):
             raise ValueError(f"Minute must be 0-59, got {minute}")
 
-        # Calculate tick
-        # Day 1 starts at tick 1, so: (day - 1) * ticks_per_day + 1
-        tick = ((day - 1) * self.TICKS_PER_CALENDAR_DAY) + (hour * 60) + minute + 1
+        # Calculate tick with 09:00 offset
+        # Subtract BASE_HOUR to convert from wall-clock time to tick-of-day
+        hours_since_start = hour - self.BASE_HOUR
+        tick_of_day = (hours_since_start * 60) + minute
+
+        # Day 1 starts at tick 1
+        tick = ((day - 1) * self.ticks_per_day) + tick_of_day + 1
 
         return tick
 

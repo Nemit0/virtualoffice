@@ -72,11 +72,14 @@ function updateReplayIndicator(metadata) {
   const headerIndicator = document.getElementById('header-replay-indicator');
 
   if (metadata.is_replay) {
-    // Calculate day and time from current tick
+    // Calculate day and time from current tick using workday model
     const currentTick = metadata.current_tick;
-    const day = Math.floor((currentTick - 1) / 1440) + 1;
-    const tickOfDay = (currentTick - 1) % 1440;
-    const hour = Math.floor(tickOfDay / 60);
+    const ticksPerDay = metadata.ticks_per_day || 480;  // Default to 480 if not provided
+    const baseHour = metadata.base_hour || 9;  // Default to 09:00 if not provided
+
+    const day = Math.floor((currentTick - 1) / ticksPerDay) + 1;
+    const tickOfDay = (currentTick - 1) % ticksPerDay;
+    const hour = baseHour + Math.floor(tickOfDay / 60);
     const minute = tickOfDay % 60;
     const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 

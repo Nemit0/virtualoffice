@@ -2172,15 +2172,16 @@ class SimulationEngine:
         if tick <= 0:
             return "Day 0 09:00"
 
-        # Use calendar days (24-hour days) for consistent day numbering with project timelines
-        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
-        day_index = ((tick - 1) // TICKS_PER_CALENDAR_DAY) + 1
-        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+        # Use workday model (hours_per_day * 60 ticks per day, starting at 09:00)
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        day_index = ((tick - 1) // ticks_per_day) + 1
+        tick_of_day = (tick - 1) % ticks_per_day
 
-        # Map tick-of-day to wall-clock time (00:00-23:59)
-        # Each tick = 1 minute in a 24-hour day
+        # Map tick-of-day to work time (09:00-17:00 for 8-hour days)
+        # Each tick = 1 minute of work time, starting at 09:00
+        base_hour = 9  # Work starts at 09:00
         total_minutes = tick_of_day
-        hour = total_minutes // 60
+        hour = base_hour + (total_minutes // 60)
         minute = total_minutes % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
@@ -2189,13 +2190,14 @@ class SimulationEngine:
         if not base:
             return None
 
-        # Use calendar days (24-hour days) for consistent day numbering
-        TICKS_PER_CALENDAR_DAY = 24 * 60  # 1,440 ticks = 24 hours
-        day_index = (tick - 1) // TICKS_PER_CALENDAR_DAY
-        tick_of_day = (tick - 1) % TICKS_PER_CALENDAR_DAY
+        # Use workday model (hours_per_day * 60 ticks per day)
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        day_index = (tick - 1) // ticks_per_day
+        tick_of_day = (tick - 1) % ticks_per_day
 
-        # Each tick = 1 minute in a 24-hour day
-        total_minutes = tick_of_day
+        # Each tick = 1 minute of work time, starting at 09:00
+        # Add 9 hours offset to start at 09:00 instead of 00:00
+        total_minutes = tick_of_day + (9 * 60)  # 9-hour offset
 
         return base + timedelta(days=day_index, minutes=total_minutes)
 
