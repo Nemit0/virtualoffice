@@ -15,7 +15,8 @@ export function setStatus(message, isError = false) {
 
 /**
  * Switch between dashboard tabs
- * @param {string} tabName - The name of the tab to switch to ('controls', 'emails', 'chat')
+ * @param {string} tabName - The name of the tab to switch to
+ *   ('controls', 'emails', 'chat', 'replay', 'clusters')
  */
 export function switchTab(tabName) {
   const controlIds = [
@@ -42,6 +43,7 @@ export function switchTab(tabName) {
   const emailsSection = document.getElementById('tab-emails');
   const chatSection = document.getElementById('tab-chat');
   const replaySection = document.getElementById('tab-replay');
+  const clustersSection = document.getElementById('tab-clusters');
 
   if (emailsSection) {
     emailsSection.style.display = (tabName === 'emails') ? '' : 'none';
@@ -54,6 +56,10 @@ export function switchTab(tabName) {
   if (replaySection) {
     replaySection.style.display = (tabName === 'replay') ? '' : 'none';
     replaySection.setAttribute('aria-hidden', (tabName !== 'replay').toString());
+  }
+  if (clustersSection) {
+    clustersSection.style.display = (tabName === 'clusters') ? '' : 'none';
+    clustersSection.setAttribute('aria-hidden', (tabName !== 'clusters').toString());
   }
 
   // Announce tab change to screen readers

@@ -72,7 +72,7 @@ class ServerProcess:
 def main():
     """
     Main entry point for VDOS application.
-    Starts all three servers and opens the dashboard in browser.
+    Starts core backend servers and opens the dashboard in browser.
     """
     print("=" * 70)
     print("VDOS - Virtual Department Operations Simulator")
@@ -99,6 +99,12 @@ def main():
             host=os.getenv("VDOS_SIM_HOST", "127.0.0.1"),
             port=int(os.getenv("VDOS_SIM_PORT", "8015"))
         ),
+        ServerProcess(
+            name="Clustering",
+            module="virtualoffice.servers.clustering.app:app",
+            host=os.getenv("VDOS_CLUSTER_HOST", "127.0.0.1"),
+            port=int(os.getenv("VDOS_CLUSTER_PORT", "8016"))
+        ),
     ]
 
     # Start servers sequentially
@@ -114,6 +120,7 @@ def main():
     print(f"Chat Server:       http://{servers[0].host}:{servers[0].port}")
     print(f"Email Server:      http://{servers[1].host}:{servers[1].port}")
     print(f"Simulation Server: http://{servers[2].host}:{servers[2].port}")
+    print(f"Clustering Server: http://{servers[3].host}:{servers[3].port}")
     print()
     print("Opening VDOS Dashboard in browser...")
     print("=" * 70)

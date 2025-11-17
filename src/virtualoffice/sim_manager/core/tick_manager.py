@@ -191,18 +191,23 @@ class TickManager:
         Example:
             >>> tm = TickManager(hours_per_day=8)
             >>> tm.format_sim_time(1)
-            "Day 1 00:00"
-            >>> tm.format_sim_time(24)
-            "Day 3 00:00"
+            "Day 1 09:00"
+            >>> tm.format_sim_time(60)
+            "Day 1 10:00"
         """
         if tick <= 0:
-            return "Day 0 00:00"
-        ticks_per_day = max(1, self.hours_per_day)
-        day_index = (tick - 1) // ticks_per_day + 1
+            return "Day 0 09:00"
+
+        # Workday model: hours_per_day * 60 ticks per day,
+        # each tick = 1 simulated minute, starting at 09:00.
+        ticks_per_day = max(1, self.hours_per_day * 60)
+        day_index = ((tick - 1) // ticks_per_day) + 1
         tick_of_day = (tick - 1) % ticks_per_day
-        minutes = int((tick_of_day / ticks_per_day) * 1440)
-        hour = minutes // 60
-        minute = minutes % 60
+
+        base_hour = 9  # Work starts at 09:00
+        total_minutes = tick_of_day
+        hour = base_hour + (total_minutes // 60)
+        minute = total_minutes % 60
         return f"Day {day_index} {hour:02d}:{minute:02d}"
 
     def sim_datetime_for_tick(self, tick: int) -> datetime | None:
@@ -218,11 +223,16 @@ class TickManager:
         base = self._sim_base_dt
         if not base:
             return None
-        ticks_per_day = max(1, self.hours_per_day)
+
+        # Workday model: hours_per_day * 60 ticks per day,
+        # each tick = 1 simulated minute, starting at 09:00.
+        ticks_per_day = max(1, self.hours_per_day * 60)
         day_index = (tick - 1) // ticks_per_day
         tick_of_day = (tick - 1) % ticks_per_day
-        minutes = int((tick_of_day / ticks_per_day) * 1440)
-        return base + timedelta(days=day_index, minutes=minutes)
+
+        # Minutes since midnight: 09:00 + tick_of_day minutes
+        total_minutes = tick_of_day + (9 * 60)
+        return base + timedelta(days=day_index, minutes=total_minutes)
 
     # ====================================================================
     # Centralized Tick Conversion Utilities

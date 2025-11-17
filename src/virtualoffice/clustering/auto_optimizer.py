@@ -61,22 +61,22 @@ def generate_parameter_grid(num_emails: int) -> list[ParameterConfig]:
     """
     if num_emails < 100:
         # Small dataset - test wide range since lower values might produce all noise
-         = [15.0, 20.0, 25.0, 30.0]
-        min_samples_values = [2]
-        perplexity_values = [10, 20, 30]
+        eps_values = [15.0, 20.0, 25.0, 30.0, 35, 40]
+        min_samples_values = [3]
+        perplexity_values = [10, 20, 30, 40]
     elif num_emails < 300:
         # Medium dataset
-         = [8.0, 12.0, 16.0, 20.0, 25.0]
+        eps_values = [8.0, 12.0, 16.0, 20.0, 25.0]
         min_samples_values = [3, 4]
         perplexity_values = [15, 25, 35]
     else:
         # Large dataset
-         = [10.0, 15.0, 20.0, 25.0, 30.0]
+        eps_values = [10.0, 15.0, 20.0, 25.0, 30.0]
         min_samples_values = [4, 5]
         perplexity_values = [20, 30, 40]
 
     configs = []
-    for eps in :
+    for eps in eps_values:
         for min_samples in min_samples_values:
             for perplexity in perplexity_values:
                 configs.append(ParameterConfig(eps, min_samples, perplexity))

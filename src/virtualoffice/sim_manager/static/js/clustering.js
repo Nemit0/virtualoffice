@@ -102,6 +102,13 @@ async function loadPersonas() {
 
     } catch (error) {
         console.error('[Clustering] Error loading personas:', error);
+
+        const select = document.getElementById('cluster-persona-select');
+        if (select) {
+            select.innerHTML = '<option value=\"\">Failed to load personas</option>';
+            select.disabled = true;
+        }
+
         showError('Failed to load personas. Make sure the clustering server is running.');
     }
 }

@@ -74,7 +74,7 @@ class SimulationState(BaseModel):
     current_tick: int = 0
     is_running: bool = False
     auto_tick: bool = False
-    sim_time: str = "Day 0 00:00"
+    sim_time: str = "Day 0 09:00"
 
 
 class SimulationAdvanceRequest(BaseModel):
