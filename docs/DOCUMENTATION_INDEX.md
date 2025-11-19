@@ -101,10 +101,11 @@ docs/
 │   └── communication_diversity_troubleshooting.md  # ✓ Created (2025-11-05) - Troubleshooting guide for communication diversity
 ├── GETTING_STARTED.md                        # ✓ Updated (2025-10-28) - Added Prompt Management System section
 ├── api/                                       # API documentation (directory created)
-│   ├── style_filter_endpoints.md            # ✓ Created (2025-10-30) - Style filter API endpoints
-│   ├── email-api.md                          # (To be created)
-│   ├── chat-api.md                           # (To be created)
-│   └── sim-manager-api.md                    # (To be created)
+  │   ├── style_filter_endpoints.md            # ✓ Created (2025-10-30) - Style filter API endpoints
+  │   ├── chat-api.md                          # ✓ Created - Chat server endpoints (room + DM APIs)
+  │   ├── API_REFERENCE.md                     # ✓ Created - Consolidated API reference for all services
+  │   ├── clustering-api.md                    # ✓ Created (2025-11-19) - Clustering server endpoints
+  │   └── email-api.md                         # (To be created)
 ├── workflows/                                 # Workflow documentation (directory created)
 │   ├── testing.md                           # ✓ Created - Comprehensive testing documentation
 │   ├── simulation-lifecycle.md               # ✓ Created - Simulation flow across lifecycle + planning orchestrator
@@ -266,11 +267,12 @@ Each module needs detailed documentation including:
 - ✅ **communication_diversity_troubleshooting.md**: Complete troubleshooting guide for communication diversity features including common issues, rollback procedures, debugging tips, FAQ, and support resources (Nov 5, 2025)
 
 ### API Documentation (`docs/api/`)
-Complete REST API reference for each service:
-- All endpoints with methods
-- Request/response schemas
-- Example requests with curl/httpx
-- Error codes and responses
+  Complete REST API reference for each service:
+  - All endpoints with methods
+  - Request/response schemas
+  - Example requests with curl/httpx
+  - Error codes and responses
+  - Clustering server API for email-topic visualization
 - Authentication (if applicable)
 
 ### Workflow Documentation (`docs/workflows/`)

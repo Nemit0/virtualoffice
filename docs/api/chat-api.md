@@ -112,8 +112,14 @@ Content-Type: application/json
 
 #### Get Room Messages
 ```http
-GET /rooms/{room_slug}/messages?limit=100&offset=0
+GET /rooms/{room_slug}/messages?since_id=0&since_timestamp=&before_timestamp=&limit=100
 ```
+
+**Query Parameters:**
+- `since_id` (optional): Only return messages with ID greater than this value (for polling new messages).
+- `since_timestamp` (optional): Only return messages sent after this ISO timestamp.
+- `before_timestamp` (optional): Only return messages sent on or before this ISO timestamp (for replay mode).
+- `limit` (optional): Maximum number of messages to return (chronological order).
 
 **Example:**
 ```http
@@ -144,7 +150,7 @@ GET /rooms/project-alpha/messages?limit=50
 
 #### Send Direct Message
 ```http
-POST /dm
+POST /dms
 Content-Type: application/json
 
 {
@@ -166,20 +172,61 @@ Content-Type: application/json
 }
 ```
 
+**Notes:**
+- The server automatically creates a DM room with slug `dm:{handle1}:{handle2}` (handles sorted alphabetically and normalized to lowercase).
+- If the DM room already exists, the message is appended to that room.
+
+#### Get User Direct Messages
+
+```http
+GET /users/{handle}/dms?since_id=0&since_timestamp=&before_timestamp=&limit=100
+```
+
+**Query Parameters:**
+- `since_id` (optional): Only return messages with ID greater than this value.
+- `since_timestamp` (optional): Only return messages sent after this ISO timestamp.
+- `before_timestamp` (optional): Only return messages sent on or before this ISO timestamp (for replay/scrollback).
+- `limit` (optional): Maximum number of messages to return (chronological order).
+
+**Example:**
+```http
+GET /users/alice/dms?since_id=50&limit=100
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 51,
+    "room_slug": "dm:alice:bob",
+    "sender": "bob",
+    "body": "Can we review the auth flow later today?",
+    "sent_at": "2025-10-23T10:07:00Z"
+  }
+]
+```
+
 ### User Management
 
-#### Get User Information
+#### Create or Update User
 ```http
-GET /users/{handle}
+PUT /users/{handle}
+Content-Type: application/json
+
+{
+  "display_name": "Alice Johnson"
+}
 ```
+
+**Description:**
+- Creates a user if it does not exist, or updates the `display_name` if the user already exists.
+- User handles are normalised to lowercase and trimmed.
 
 **Response:**
 ```json
 {
   "handle": "alice",
-  "display_name": "Alice Johnson",
-  "created_at": "2025-10-23T09:00:00Z",
-  "last_seen": "2025-10-23T10:05:00Z"
+  "display_name": "Alice Johnson"
 }
 ```
 
@@ -359,7 +406,7 @@ dm_data = {
     "recipient": "bob", 
     "body": "Private message"
 }
-response = httpx.post("http://127.0.0.1:8001/dm", json=dm_data)
+response = httpx.post("http://127.0.0.1:8001/dms", json=dm_data)
 dm = response.json()
 
 # Get user's rooms (includes DM rooms)
@@ -457,20 +504,10 @@ Future API versions will be available at:
 
 ### Debug Endpoints
 
-#### Health Check
-```http
-GET /health
-```
-
-#### Room Statistics
-```http
-GET /rooms/{slug}/stats
-```
-
-#### User Activity
-```http
-GET /users/{handle}/activity
-```
+The current Chat Server implementation does not expose additional debug-specific endpoints beyond the core APIs above. For troubleshooting, use:
+- Standard chat endpoints to inspect stored data (rooms, messages, DMs)
+- Simulation Manager monitoring endpoints under `/api/v1/monitor/chat/...`
+- Application logs from the Chat Server process
 
 ## Related Documentation
 
