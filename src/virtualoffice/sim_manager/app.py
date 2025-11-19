@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query, Request, status
@@ -354,6 +354,106 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
 
     def get_replay_manager(request: Request) -> ReplayManager:
         return request.app.state.replay_manager
+
+    def _get_replay_cutoff_timestamp(engine: SimulationEngine, replay: ReplayManager) -> str | None:
+        """Return simulated cutoff timestamp for the current replay tick.
+
+        When the simulation is rewound using the replay/time-machine controls,
+        the engine's ``current_tick`` is set to the selected tick while the
+        database continues to store communications with simulated ``sent_at``
+        timestamps. To keep the monitoring endpoints in sync with replay, we
+        derive a timestamp boundary for the current tick and pass it through to
+        the email/chat servers via ``before_timestamp``.
+
+        The cutoff is only applied when we are effectively in replay mode
+        (``current_tick`` is behind the max generated tick). In live mode this
+        function returns ``None`` and monitoring shows the latest data.
+        """
+        try:
+            current_tick = engine.get_current_tick()
+            max_tick = replay.get_max_generated_tick()
+        except Exception:
+            return None
+
+        # Only apply cutoff when we are behind the latest generated tick
+        if current_tick <= 0 or max_tick <= 0 or current_tick >= max_tick:
+            return None
+
+        # Primary path: derive cutoff from persisted simulation_state.sim_base_dt
+        try:
+            with get_connection() as conn:
+                row = conn.execute("SELECT * FROM simulation_state WHERE id = 1").fetchone()
+            base_iso: str | None = None
+            if row is not None:
+                try:
+                    # sqlite3.Row supports dict-style access
+                    base_iso = row["sim_base_dt"]  # type: ignore[index]
+                except Exception:
+                    base_iso = None
+
+            if base_iso:
+                try:
+                    base_dt = datetime.fromisoformat(base_iso)
+                    ticks_per_day = max(1, engine.hours_per_day * 60)
+                    day_index = (current_tick - 1) // ticks_per_day
+                    tick_of_day = (current_tick - 1) % ticks_per_day
+                    # Workday model: ticks are minutes since 09:00
+                    total_minutes = tick_of_day + (9 * 60)
+                    dt = base_dt + timedelta(days=day_index, minutes=total_minutes)
+                    return dt.isoformat()
+                except Exception:
+                    pass
+        except Exception:
+            # If anything fails while reading from the DB, fall back to the
+            # in-memory engine time model.
+            pass
+
+        # Fallback: use engine's internal helper if available
+        try:
+            dt = engine._sim_datetime_for_tick(current_tick)  # type: ignore[attr-defined]
+            return dt.isoformat() if dt is not None else None
+        except Exception:
+            return None
+
+    def _parse_iso_timestamp(value: str | None) -> datetime | None:
+        """Best-effort ISO8601 parser that normalizes to naive UTC.
+
+        The email and chat servers store ``sent_at`` as ISO strings without
+        timezone information, while the simulation manager typically uses
+        timezone-aware UTC timestamps. To compare them safely we:
+
+        - Treat missing/empty values as None
+        - Convert ``...Z`` to ``+00:00`` when present
+        - Strip timezone info and compare as naive datetimes
+        """
+        if not value:
+            return None
+        try:
+            text = value
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            dt = datetime.fromisoformat(text)
+            return dt.replace(tzinfo=None)
+        except Exception:
+            return None
+
+    def _filter_messages_by_cutoff(items: list[dict], cutoff_iso: str | None) -> list[dict]:
+        """Filter email/chat messages by ``sent_at <= cutoff`` in replay mode."""
+        if not cutoff_iso or not items:
+            return items
+
+        cutoff_dt = _parse_iso_timestamp(cutoff_iso)
+        if cutoff_dt is None:
+            return items
+
+        filtered: list[dict] = []
+        for item in items:
+            sent_at_raw = item.get("sent_at")
+            sent_dt = _parse_iso_timestamp(sent_at_raw if isinstance(sent_at_raw, str) else None)
+            # If parsing fails, keep the item (fail-open) to avoid hiding data unexpectedly
+            if sent_dt is None or sent_dt <= cutoff_dt:
+                filtered.append(item)
+        return filtered
 
     @app.get(f"{API_PREFIX}/people", response_model=list[PersonRead], tags=["Personas"])
     def list_people(engine: SimulationEngine = Depends(get_engine)) -> list[PersonRead]:
@@ -1287,18 +1387,24 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         since_timestamp: str | None = Query(default=None),
         before_id: int | None = Query(default=None),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> dict[str, list[dict]]:
-        """Return inbox/sent emails for the given person by proxying the email server."""
+        """Return inbox/sent emails for the given person by proxying the email server.
+
+        In replay mode, results are automatically limited to emails whose
+        simulated ``sent_at`` is at or before the current replay tick.
+        """
         people = engine.list_people()
         person = next((p for p in people if p.id == person_id), None)
         if not person:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+
         # Use the underlying HttpEmailGateway client if available
         email_client = getattr(engine.email_gateway, "client", None)
         if email_client is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Email client unavailable")
 
-        params = {"limit": limit}
+        params: dict[str, object] = {"limit": limit}
         if since_id is not None:
             params["since_id"] = since_id
         if since_timestamp is not None:
@@ -1318,6 +1424,15 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 result["sent"] = r_out.json()
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Email proxy failed: {exc}")
+
+        # Apply replay-time filtering on top of server-side limits. This ensures
+        # that the Emails tab respects the current replay position even if the
+        # downstream email server ignores or does not support time filters.
+        cutoff_iso = _get_replay_cutoff_timestamp(engine, replay)
+        if cutoff_iso is not None:
+            result["inbox"] = _filter_messages_by_cutoff(result["inbox"], cutoff_iso)
+            result["sent"] = _filter_messages_by_cutoff(result["sent"], cutoff_iso)
+
         return result
 
     @app.get(f"{API_PREFIX}/monitor/chat/messages/{{person_id}}", tags=["Monitoring"])
@@ -1328,8 +1443,13 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         since_id: int | None = Query(default=None),
         since_timestamp: str | None = Query(default=None),
         engine: SimulationEngine = Depends(get_engine),
+        replay: ReplayManager = Depends(get_replay_manager),
     ) -> dict[str, list[dict]]:
-        """Return chat messages visible to a user (DMs and/or rooms) via the chat server."""
+        """Return chat messages visible to a user (DMs and/or rooms) via the chat server.
+
+        In replay mode, results are automatically limited to messages whose
+        simulated ``sent_at`` is at or before the current replay tick.
+        """
         people = engine.list_people()
         person = next((p for p in people if p.id == person_id), None)
         if not person:
@@ -1338,7 +1458,7 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
         if chat_client is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Chat client unavailable")
 
-        params = {"limit": limit}
+        params: dict[str, object] = {"limit": limit}
         if since_id is not None:
             params["since_id"] = since_id
         if since_timestamp is not None:
@@ -1356,6 +1476,12 @@ def create_app(engine: SimulationEngine | None = None) -> FastAPI:
                 result["rooms"] = rr.json()
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Chat proxy failed: {exc}")
+
+        cutoff_iso = _get_replay_cutoff_timestamp(engine, replay)
+        if cutoff_iso is not None:
+            result["dms"] = _filter_messages_by_cutoff(result["dms"], cutoff_iso)
+            result["rooms"] = _filter_messages_by_cutoff(result["rooms"], cutoff_iso)
+
         return result
     @app.get(f"{API_PREFIX}/monitor/chat/rooms/{{person_id}}", tags=["Monitoring"])
     def monitor_chat_rooms(
