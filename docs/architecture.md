@@ -7,6 +7,7 @@ VDOS is a three-tier architecture with FastAPI services, a Web Dashboard, and a 
 ```mermaid
 graph LR
   Dashboard[Web Dashboard] -->|HTTP| Sim[Simulation Manager :8015]
+  Dashboard -->|HTTP| Cluster[Clustering Server :8016]
   Sim -->|HTTP| Email[Email Server :8000]
   Sim -->|HTTP| Chat[Chat Server :8001]
   Sim -->|OpenAI| OA[(api.openai.com)]
@@ -1072,7 +1073,31 @@ if self.style_filter and persona_id:
 - `worker_exchange_log` - Communication history (logs all sent emails and chats with sender, recipient, channel, subject, and summary for pattern analysis)
 - `worker_status_overrides` - Sick leave, etc.
 
-### 4. Virtual Workers (Enhanced)
+### 4. Clustering Server (Port 8016)
+**Location**: `src/virtualoffice/clustering/`, `src/virtualoffice/servers/clustering/`
+
+**Responsibilities**:
+- Build email-topic clusters for each persona using embeddings + t-SNE + DBSCAN
+- Persist clustering metadata and 3D positions for visualization
+- Provide APIs for the web dashboard to render interactive cluster views
+
+**Key Components**:
+- `cluster_engine.py` - Orchestrates the full clustering pipeline (extract → embed → reduce → cluster → label)
+- `db.py` - Clustering database schema and data access helpers
+- `faiss_store.py` - FAISS-based vector index per persona
+- `label_generator.py` - GPT-powered cluster label generation
+- `servers/clustering/app.py` - FastAPI server exposing clustering endpoints
+
+**Core Endpoints** (`virtualoffice.servers.clustering.app`):
+- `GET /clustering/personas` - List personas and their indexing status
+- `POST /clustering/index/{persona_id}` - Build (or rebuild) index for a persona
+- `GET /clustering/{persona_id}/status` - Check indexing progress
+- `GET /clustering/{persona_id}/data` - Get 3D points + cluster labels for visualization
+- `GET /clustering/{persona_id}/email/{email_id}` - Detailed email view with cluster info
+- `GET /clustering/{persona_id}/cluster/{cluster_id}` - Cluster summary + sample emails
+- `DELETE /clustering/{persona_id}/index` - Clear clustering data for a persona
+
+### 5. Virtual Workers (Enhanced)
 **Location**: `src/virtualoffice/virtualWorkers/`
 
 **Responsibilities**:
@@ -1533,13 +1558,8 @@ When a worker receives a message:
 | `VDOS_SIM_PORT` | 8015 | Simulation server port |
 | `VDOS_SIM_BASE_URL` | http://127.0.0.1:8015 | Full simulation base URL |
 | `VDOS_DB_PATH` | src/virtualoffice/vdos.db | Database path |
-| `VDOS_DB_URL` | sqlite:///./vdos.db | Database connection URL |
-| `VDOS_TICK_MS` | 50 | Wall-clock milliseconds per tick |
-| `VDOS_BUSINESS_DAYS` | 5 | Default simulation duration |
-| `VDOS_WORKDAY_START` | 09:00 | Business hours start |
-| `VDOS_WORKDAY_END` | 18:00 | Business hours end |
-| `VDOS_DEFAULT_BREAK_PATTERN` | 25/5,90/lunch/60 | Work/break rhythm |
-| `VDOS_LOCALE_TZ` | Asia/Seoul | Timezone for simulation |
+| `VDOS_TICK_INTERVAL_SECONDS` | 1.0 | Seconds between auto-ticks (see docs/reference/environment-variables.md) |
+| `VDOS_HOURS_PER_DAY` | 8 | Length of a simulated workday in hours |
 | `VDOS_SIM_EMAIL` | simulator@vdos.local | Simulation manager email |
 | `VDOS_SIM_HANDLE` | sim-manager | Simulation manager chat handle |
 | `VDOS_GUI_AUTOKILL_SECONDS` | - | Auto-shutdown for testing (optional) |

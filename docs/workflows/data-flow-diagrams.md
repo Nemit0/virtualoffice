@@ -905,7 +905,7 @@ Tick 1234 (Day 2, Wednesday 13:34)
       - Extract action: "Review and approve architecture"
       - Queue: _worker_runtime[1].inbox.append({...})
 
-    GET /rooms/dm:@alice_johnson:@bob_smith/messages
+    GET /rooms/dm:alice_johnson:bob_smith/messages
     → [
         {id: 789, sender: "@bob_smith", body: "Mockups are done"}
       ]

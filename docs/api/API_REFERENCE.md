@@ -1002,9 +1002,12 @@ GET /rooms/{room_slug}/messages?limit=50&since_id=0
 ```
 
 ### Get DM History
-```http
-GET /dm/{handle1}/{handle2}?limit=50
-```
+
+There is no dedicated `GET /dm/{handle1}/{handle2}` endpoint.  
+To retrieve DM history between two users:
+
+1. Call `GET /users/{handle}/dms` for one of the participants (e.g. `alice`).
+2. Filter the returned messages by `room_slug` (e.g. `dm:alice:bob`).
 
 ## Error Responses
 

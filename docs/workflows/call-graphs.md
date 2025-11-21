@@ -297,7 +297,7 @@ POST /api/v1/simulation/advance {"ticks": 60, "reason": "auto"}
    │  │     │  │        sender_id=..., subject=email.subject,
    │  │     │  │        summary=summary, channel="email", tick=tick
    │  │     │  │     ))
-   │  │     │  ├─ GET http://127.0.0.1:{cport}/rooms/dm:{handle}:{other}/messages
+    │  │     │  ├─ GET http://127.0.0.1:{cport}/rooms/dm:{handle}:{other}/messages
    │  │     │  │  └─ chat_server returns [{id, sender, body, timestamp}, ...]
    │  │     │  └─ [queue chat messages to inbox]
    │  │     └─ INSERT INTO worker_runtime_messages (recipient_id, payload)
@@ -846,8 +846,8 @@ quick_simulation.py::main() [line 320]
 │  └─ save_json(emails, "all_emails.json")
 │
 ├─ collect_all_chats(personas) [line 263]
-│  ├─ GET http://127.0.0.1:8001/rooms/dm:@alice:@bob/messages → [45 messages]
-│  ├─ GET http://127.0.0.1:8001/rooms/dm:@alice:@carol/messages → [32 messages]
+│  ├─ GET http://127.0.0.1:8001/rooms/dm:alice:bob/messages → [45 messages]
+│  ├─ GET http://127.0.0.1:8001/rooms/dm:alice:carol/messages → [32 messages]
 │  ├─ ... [for all DM pairs]
 │  └─ save_json(chats, "all_chats.json")
 │

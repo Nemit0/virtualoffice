@@ -178,6 +178,7 @@ def list_mailbox_emails(
     address: str,
     since_id: int | None = None,
     since_timestamp: str | None = None,
+    before_timestamp: str | None = None,
     before_id: int | None = None,
     limit: int | None = None,
     conn=Depends(db_dependency)
@@ -188,6 +189,7 @@ def list_mailbox_emails(
         address: Email address of the mailbox
         since_id: Only return emails with ID greater than this (for polling new messages)
         since_timestamp: Only return emails sent after this ISO timestamp (for time-based filtering)
+        before_timestamp: Only return emails sent before or at this ISO timestamp (for replay mode)
         limit: Maximum number of emails to return (newest first)
     """
     cleaned = _normalise_or_422(address)
@@ -215,6 +217,10 @@ def list_mailbox_emails(
         query += " AND e.sent_at > ?"
         params.append(since_timestamp)
 
+    if before_timestamp is not None:
+        query += " AND e.sent_at <= ?"
+        params.append(before_timestamp)
+
     if before_id is not None:
         query += " AND er.email_id < ?"
         params.append(before_id)
@@ -234,6 +240,7 @@ def list_sender_emails(
     address: str,
     since_id: int | None = None,
     since_timestamp: str | None = None,
+    before_timestamp: str | None = None,
     before_id: int | None = None,
     limit: int | None = None,
     conn=Depends(db_dependency)
@@ -244,6 +251,7 @@ def list_sender_emails(
         address: Sender email address
         since_id: Only return emails with ID greater than this
         since_timestamp: Only return emails sent after this ISO timestamp
+        before_timestamp: Only return emails sent before or at this ISO timestamp (for replay mode)
         limit: Maximum number of emails to return (newest first)
     """
     cleaned = _normalise_or_422(address)
@@ -261,6 +269,10 @@ def list_sender_emails(
     if since_timestamp is not None:
         query += " AND sent_at > ?"
         params.append(since_timestamp)
+
+    if before_timestamp is not None:
+        query += " AND sent_at <= ?"
+        params.append(before_timestamp)
 
     if before_id is not None:
         query += " AND id < ?"

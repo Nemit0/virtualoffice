@@ -62,19 +62,26 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Example**: `VDOS_DB_PATH=/data/vdos.db`
 - **Notes**: All services must point to the same database file
 
-## Simulation Configuration
-
-### VDOS_TICKS_PER_DAY
-- **Default**: `480`
-- **Description**: Number of ticks (minutes) in a simulated workday
-- **Example**: `VDOS_TICKS_PER_DAY=480`
-- **Notes**: 480 ticks = 8 hours; adjust for different workday lengths
+## Time Model & Scheduling
 
 ### VDOS_TICK_INTERVAL_SECONDS
 - **Default**: `1.0`
-- **Description**: Seconds between auto-ticks when enabled
+- **Description**: Seconds between auto-ticks when enabled.
 - **Example**: `VDOS_TICK_INTERVAL_SECONDS=0.5`
-- **Notes**: Lower values run simulation faster but use more CPU
+- **Notes**: Lower values run the simulation faster but use more CPU.
+
+### VDOS_HOURS_PER_DAY
+- **Default**: `8`
+- **Description**: Length of a simulated workday in hours.
+- **Example**: `VDOS_HOURS_PER_DAY=6`
+- **Notes**: Replaces the older `VDOS_TICKS_PER_DAY` knob. If `VDOS_TICKS_PER_DAY` is still set, it is converted to hours by dividing by 60 for backward compatibility.
+
+### VDOS_TICKS_PER_DAY (legacy)
+- **Default**: `480`
+- **Description**: Legacy setting for ticks per day (1 tick = 1 minute).
+- **Notes**: Prefer `VDOS_HOURS_PER_DAY`. Still supported for compatibility.
+
+## Simulation Configuration
 
 ### VDOS_CONTACT_COOLDOWN_TICKS
 - **Default**: `10`
@@ -94,6 +101,16 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Example**: `VDOS_AUTO_PAUSE_ON_PROJECT_END=true`
 - **Values**: `true` (enable auto-pause), `false` (disabled)
 - **Notes**: Prevents simulations from running indefinitely after all work is done. Checks for both active and future projects before pausing.
+
+### VDOS_COMM_STAGGER_MAX_MINUTES
+- **Default**: `7`
+- **Description**: Maximum number of minutes to stagger communications within a tick window.
+- **Notes**: Used to avoid bursts of messages all landing at the exact same simulated minute.
+
+### VDOS_AVOID_ROUND_MINUTES
+- **Default**: `true`
+- **Description**: When enabled, avoids scheduling communications exactly on round times (e.g. `09:00`, `10:00`).
+- **Notes**: Helps produce more natural-looking timelines.
 
 ## Simulation Identity
 
@@ -140,6 +157,11 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Description**: Model for generating simulation reports
 - **Example**: `VDOS_PLANNER_SIM_REPORT_MODEL=gpt-4o`
 
+### VDOS_PLAN_PARSER_MODEL
+- **Default**: `gpt-4o-mini`
+- **Description**: Model used by the JSON `PlanParser` when parsing hourly plans with embedded communications.
+- **Notes**: Only used when `VDOS_ENABLE_PLAN_PARSER` is enabled.
+
 ## Localization
 
 ### VDOS_LOCALE
@@ -156,6 +178,11 @@ VDOS uses environment variables for configuration. Variables can be set in:
   - Korean personas automatically use `Asia/Seoul` timezone and Korean workplace defaults
   - Fallback stub personas also localized to Korean when AI unavailable
 
+### VDOS_EXTERNAL_STAKEHOLDERS
+- **Default**: *(unset)*
+- **Description**: Comma-separated list of external stakeholder email addresses.
+- **Notes**: Used by the simulation engine and communication hub to route messages to non-simulated recipients.
+
 ## OpenAI Integration
 
 ### OPENAI_API_KEY
@@ -169,6 +196,56 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Default**: `gpt-4.1-nano`
 - **Description**: Default model for persona generation
 - **Example**: `OPENAI_MODEL=gpt-4o-mini`
+
+### OPENAI_API_KEY2
+- **Default**: None
+- **Description**: Secondary OpenAI API key used when rotating across free tier limits.
+- **Notes**: The completion utility can automatically switch between `OPENAI_API_KEY` and `OPENAI_API_KEY2` based on `VDOS_API_PROVIDER` and token usage.
+
+### VDOS_API_PROVIDER
+- **Default**: `auto`
+- **Description**: Controls which provider/key is used for GPT calls.
+- **Values**:
+  - `auto` – automatically choose based on free tier usage
+  - `openai_key1` – force `OPENAI_API_KEY`
+  - `openai_key2` – force `OPENAI_API_KEY2`
+  - `azure` – force Azure OpenAI
+
+### VDOS_OPENAI_TIMEOUT
+- **Default**: `120`
+- **Description**: Timeout (seconds) for OpenAI/Azure OpenAI requests.
+
+### VDOS_OPENAI_TEMPERATURE
+- **Default**: *(OpenAI default)*
+- **Description**: Optional override for LLM temperature (0.0–2.0). If unset, the API default is used.
+
+### FIX_ALL_GPT_MODEL
+- **Default**: `false`
+- **Description**: When `true`, forces all GPT calls through a single `FIXED_MODEL` value (for experiments/diagnostics).
+
+### FIXED_MODEL
+- **Default**: `gpt-4o`
+- **Description**: Model name used when `FIX_ALL_GPT_MODEL=true`.
+
+### AZURE_OPENAI_API_KEY
+- **Default**: None
+- **Description**: API key for Azure OpenAI.
+
+### AZURE_OPENAI_ENDPOINT
+- **Default**: None
+- **Description**: Endpoint URL for Azure OpenAI (e.g. `https://your-resource.openai.azure.com/`).
+
+### AZURE_OPENAI_API_VERSION
+- **Default**: `2025-04-01-preview`
+- **Description**: API version used for Azure OpenAI calls.
+
+### VDOS_FALLBACK_MODEL
+- **Default**: `gpt-4o-mini`
+- **Description**: Model used for GPT-powered fallback communications when enabled.
+
+### VDOS_STYLE_FILTER_ENABLED
+- **Default**: `true`
+- **Description**: Enable/disable the communication style filter (persona-specific writing style transforms).
 
 ## GUI Configuration
 
@@ -216,6 +293,28 @@ VDOS uses environment variables for configuration. Variables can be set in:
 - **Description**: Hard limit on chats per persona per day (safety net)
 - **Example**: `VDOS_MAX_CHATS_PER_DAY=100`
 - **Notes**: Prevents runaway chat generation bugs. WARNING logs when limits reached.
+
+### VDOS_THREADING_RATE
+- **Default**: `0.3`
+- **Description**: Target rate (0.0–1.0) for generating threaded email replies.
+- **Notes**: Higher values produce more reply chains; validated and clamped to safe ranges.
+
+### VDOS_FALLBACK_PROBABILITY
+- **Default**: `0.6`
+- **Description**: Base probability (0.0–1.0) of generating fallback communications when enabled.
+- **Notes**: Only used when `VDOS_ENABLE_AUTO_FALLBACK=true`.
+
+### VDOS_PARTICIPATION_BALANCE_ENABLED
+- **Default**: `true`
+- **Description**: Enable participation balancing to prevent a few personas from dominating communications.
+
+### VDOS_PARTICIPATION_THROTTLE_RATIO
+- **Default**: `1.3`
+- **Description**: Threshold ratio for throttling high-volume senders.
+
+### VDOS_PARTICIPATION_THROTTLE_PROBABILITY
+- **Default**: `0.1`
+- **Description**: Probability of suppressing communications from over-active senders when balancing is enabled.
 
 ## Example .env File
 

@@ -209,6 +209,7 @@ def list_messages(
     slug: str,
     since_id: int | None = None,
     since_timestamp: str | None = None,
+    before_timestamp: str | None = None,
     limit: int | None = None,
     conn=Depends(db_dependency)
 ):
@@ -218,6 +219,7 @@ def list_messages(
         slug: Room slug
         since_id: Only return messages with ID greater than this (for polling new messages)
         since_timestamp: Only return messages sent after this ISO timestamp
+        before_timestamp: Only return messages sent before or at this ISO timestamp (for replay mode)
         limit: Maximum number of messages to return (chronological order)
     """
     room = _room_by_slug(conn, slug)
@@ -232,6 +234,10 @@ def list_messages(
     if since_timestamp is not None:
         query += " AND sent_at > ?"
         params.append(since_timestamp)
+
+    if before_timestamp is not None:
+        query += " AND sent_at <= ?"
+        params.append(before_timestamp)
 
     query += " ORDER BY sent_at"
 
@@ -287,6 +293,7 @@ def list_user_dms(
     handle: str,
     since_id: int | None = None,
     since_timestamp: str | None = None,
+    before_timestamp: str | None = None,
     limit: int | None = None,
     conn=Depends(db_dependency)
 ):
@@ -296,6 +303,7 @@ def list_user_dms(
         handle: User's chat handle
         since_id: Only return messages with ID greater than this
         since_timestamp: Only return messages sent after this ISO timestamp
+        before_timestamp: Only return messages sent before or at this ISO timestamp (for replay mode)
         limit: Maximum number of messages to return
     """
     normalised = _normalise_handle(handle)
@@ -329,6 +337,10 @@ def list_user_dms(
     if since_timestamp is not None:
         query += " AND sent_at > ?"
         params.append(since_timestamp)
+
+    if before_timestamp is not None:
+        query += " AND sent_at <= ?"
+        params.append(before_timestamp)
 
     query += " ORDER BY sent_at"
 

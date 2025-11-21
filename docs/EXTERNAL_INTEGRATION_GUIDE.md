@@ -24,7 +24,7 @@ This guide explains how to integrate external projects with VDOS to:
 - VDOS services running:
   - Email Server: `http://127.0.0.1:8000`
   - Chat Server: `http://127.0.0.1:8001`
-  - Simulation Manager: `http://127.0.0.1:8002`
+- Simulation Manager: `http://127.0.0.1:8015`
 
 ### Default Ports (Configurable via Environment Variables)
 
@@ -34,7 +34,7 @@ VDOS_EMAIL_PORT=8000
 VDOS_CHAT_HOST=127.0.0.1
 VDOS_CHAT_PORT=8001
 VDOS_SIM_HOST=127.0.0.1
-VDOS_SIM_PORT=8002
+VDOS_SIM_PORT=8015
 ```
 
 ---
@@ -141,7 +141,7 @@ curl "http://127.0.0.1:8001/rooms/team-general/messages?since_id=100"
 
 **Endpoint**: `POST /api/v1/people/status-override`
 
-**Base URL**: `http://127.0.0.1:8002` (Simulation Manager)
+**Base URL**: `http://127.0.0.1:8015` (Simulation Manager)
 
 **Request Body**:
 ```json
@@ -192,11 +192,11 @@ curl "http://127.0.0.1:8001/rooms/team-general/messages?since_id=100"
 
 **Endpoint**: `DELETE /api/v1/people/{person_id}/status-override`
 
-**Base URL**: `http://127.0.0.1:8002` (Simulation Manager)
+**Base URL**: `http://127.0.0.1:8015` (Simulation Manager)
 
 **Example Request**:
 ```bash
-curl -X DELETE "http://127.0.0.1:8002/api/v1/people/1/status-override"
+curl -X DELETE "http://127.0.0.1:8015/api/v1/people/1/status-override"
 ```
 
 **Response**: `204 No Content`
@@ -207,11 +207,11 @@ curl -X DELETE "http://127.0.0.1:8002/api/v1/people/1/status-override"
 
 **Endpoint**: `GET /api/v1/people`
 
-**Base URL**: `http://127.0.0.1:8002` (Simulation Manager)
+**Base URL**: `http://127.0.0.1:8015` (Simulation Manager)
 
 **Example Request**:
 ```bash
-curl "http://127.0.0.1:8002/api/v1/people"
+curl "http://127.0.0.1:8015/api/v1/people"
 ```
 
 **Response**:
@@ -242,7 +242,7 @@ curl "http://127.0.0.1:8002/api/v1/people"
 
 **Endpoint**: `GET /api/v1/simulation`
 
-**Base URL**: `http://127.0.0.1:8002` (Simulation Manager)
+**Base URL**: `http://127.0.0.1:8015` (Simulation Manager)
 
 **Response**:
 ```json
@@ -275,7 +275,7 @@ sequenceDiagram
     loop Every 30 seconds
         External->>VDOS: GET /emails?since_id=X
         VDOS-->>External: New emails
-        External->>VDOS: GET /dms?since_id=Y
+        External->>VDOS: GET /users/{handle}/dms?since_id=Y
         VDOS-->>External: New DMs
         Note over External: Store messages
     end
@@ -301,7 +301,7 @@ from datetime import datetime
 class VDOSMessageCollector:
     def __init__(self, email_base="http://127.0.0.1:8000",
                  chat_base="http://127.0.0.1:8001",
-                 sim_base="http://127.0.0.1:8002"):
+                 sim_base="http://127.0.0.1:8015"):
         self.email_base = email_base
         self.chat_base = chat_base
         self.sim_base = sim_base
@@ -478,7 +478,7 @@ class VDOSMessageCollector {
   constructor(config: VDOSConfig = {}) {
     this.emailBase = config.emailBase || 'http://127.0.0.1:8000';
     this.chatBase = config.chatBase || 'http://127.0.0.1:8001';
-    this.simBase = config.simBase || 'http://127.0.0.1:8002';
+    this.simBase = config.simBase || 'http://127.0.0.1:8015';
   }
 
   async setPersonaAbsent(personName: string, durationTicks: number = 480) {
@@ -583,7 +583,7 @@ VDOS includes a built-in web dashboard for monitoring simulations in real-time.
 
 ### Accessing the Dashboard
 
-**URL**: `http://127.0.0.1:8002/` (Simulation Manager root)
+**URL**: `http://127.0.0.1:8015/` (Simulation Manager root)
 
 ### Dashboard Features
 
@@ -620,11 +620,11 @@ VDOS includes a built-in web dashboard for monitoring simulations in real-time.
    uvicorn virtualoffice.servers.chat.app:app --host 127.0.0.1 --port 8001
 
    # Terminal 3: Simulation Manager
-   uvicorn virtualoffice.sim_manager.app:app --host 127.0.0.1 --port 8002
+   uvicorn virtualoffice.sim_manager.app:app --host 127.0.0.1 --port 8015
    ```
 
 2. **Open Dashboard**:
-   - Navigate to `http://127.0.0.1:8002/` in your browser
+   - Navigate to `http://127.0.0.1:8015/` in your browser
    - You'll see the real-time simulation monitor
 
 3. **Monitor Integration**:
@@ -756,7 +756,7 @@ atexit.register(cleanup, person_id=1)
 
 For questions or issues:
 1. Check this guide first
-2. Review the simulation monitor dashboard at `http://127.0.0.1:8002/`
+2. Review the simulation monitor dashboard at `http://127.0.0.1:8015/`
 3. Check API documentation (FastAPI auto-generated docs at `/docs`)
 4. Open an issue on GitHub
 
