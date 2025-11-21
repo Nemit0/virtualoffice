@@ -1,6 +1,6 @@
 {
-  "email_url": "http://127.0.0.1:8001",
-  "chat_url": "http://127.0.0.1:8000",
+  "email_url": "http://127.0.0.1:8002",
+  "chat_url": "http://127.0.0.1:8001",
   "sim_url": "http://127.0.0.1:8015",
   "polling_interval": 30,
   "selected_persona": "leejungdu@example.com"

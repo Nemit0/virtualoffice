@@ -4771,6 +4771,7 @@ class SimulationEngine:
                 conn.execute("DELETE FROM chat_users")
 
                 # Delete project-related tables
+                self._ensure_project_chat_rooms_table(conn)
                 conn.execute("DELETE FROM project_chat_rooms")
                 conn.execute("DELETE FROM project_assignments")
 
@@ -4787,6 +4788,22 @@ class SimulationEngine:
                 auto_tick=status.auto_tick,
                 sim_time=self._format_sim_time(status.current_tick),
             )
+
+    @staticmethod
+    def _ensure_project_chat_rooms_table(conn) -> None:
+        """Ensure project_chat_rooms table exists for older databases."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_chat_rooms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                room_slug TEXT NOT NULL UNIQUE,
+                room_name TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                archived_at TEXT,
+                FOREIGN KEY(project_id) REFERENCES project_plans(id) ON DELETE CASCADE
+            )
+        """)
 
     def _record_event(self, event_type: str, target_ids: Sequence[int], tick: int, payload: dict | None = None) -> None:
         event = EventCreate(type=event_type, target_ids=list(target_ids), at_tick=tick, payload=payload)
