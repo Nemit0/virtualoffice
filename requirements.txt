@@ -9,3 +9,5 @@ briefcase
 markitdown
 markitdown[all]
 pytest
+scikit-learn
+faiss-cpu

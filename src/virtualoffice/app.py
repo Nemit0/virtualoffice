@@ -11,22 +11,24 @@ import webbrowser
 from typing import Optional
 from pathlib import Path
 
-# Load environment variables from .env file
 from dotenv import load_dotenv
-
-# Find and load .env from project root
-project_root = Path(__file__).parent.parent.parent
-env_path = project_root / '.env'
-if env_path.exists():
-    load_dotenv(env_path)
-    print(f"[VDOS] Loaded environment variables from {env_path}")
-else:
-    print(f"[VDOS] Warning: .env file not found at {env_path}")
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import uvicorn
+from virtualoffice.common.dev_logging import init_dev_logging
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+
+def _load_environment(project_root: Path) -> str:
+    """Load environment variables from .env in the project root."""
+    env_path = project_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        return f"[VDOS] Loaded environment variables from {env_path}"
+    return f"[VDOS] Warning: .env file not found at {env_path}"
 
 
 class ServerProcess:
@@ -74,6 +76,10 @@ def main():
     Main entry point for VDOS application.
     Starts core backend servers and opens the dashboard in browser.
     """
+    env_message = _load_environment(PROJECT_ROOT)
+    init_dev_logging(session_label="briefcase dev")
+    print(env_message)
+
     print("=" * 70)
     print("VDOS - Virtual Department Operations Simulator")
     print("=" * 70)

@@ -92,6 +92,7 @@ pip install -r requirements.txt
 - Communication controls: `VDOS_STYLE_FILTER_ENABLED`, `VDOS_ENABLE_AUTO_FALLBACK`, `VDOS_ENABLE_INBOX_REPLIES`, `VDOS_INBOX_REPLY_PROBABILITY`, `VDOS_MAX_EMAILS_PER_DAY`, `VDOS_MAX_CHATS_PER_DAY`, `VDOS_PARTICIPATION_BALANCE_ENABLED`, `VDOS_THREADING_RATE`, `VDOS_FALLBACK_MODEL`.
 - Locale: `VDOS_LOCALE` (`en`/`ko`), optional temperature/timeout overrides for OpenAI calls.
 - Server ports/hosts: `VDOS_CHAT_HOST/PORT`, `VDOS_EMAIL_HOST/PORT`, `VDOS_SIM_HOST/PORT`, `VDOS_CLUSTER_HOST/PORT`, DB override `VDOS_DB_PATH`.
+- Dev logging: `VDOS_DEV_LOGGING_ENABLED` (default on). When enabled, `briefcase dev` mirrors stdout/stderr to `logs/YYYYMMDD_HHMMSS_briefcase_dev.log` while preserving console output. Override log directory with `VDOS_LOG_DIR` if needed.
 
 3) **Database migrations (optional analytics tables)**
 ```bash
@@ -108,6 +109,7 @@ python -m virtualoffice.sim_manager.migrations.run_migrations
 briefcase dev
 ```
 `src/virtualoffice/app.py` starts chat -> email -> simulation -> clustering, then opens http://127.0.0.1:8015.
+Stdout/stderr are mirrored to `logs/<timestamp>_briefcase_dev.log` by default; disable via `VDOS_DEV_LOGGING_ENABLED=false` or redirect logs using `VDOS_LOG_DIR`.
 
 ### Start services manually
 ```bash
